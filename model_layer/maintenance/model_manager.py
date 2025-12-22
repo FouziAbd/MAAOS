@@ -13,7 +13,6 @@ class ModelManager:
         self.abstraction_mapping = abstraction_mapping
         self.goals = goals
         self.constraints = constraints
-        self.history = History()
 
     def model_expansion(self, new_info):
         """
