@@ -16,10 +16,11 @@ class RewardManager:
     def update_reward(self, user_input):
         """
         given a scenario description and a user input, modify the self.reward_function using an LLM to handle the natual language
+
+        currently, this does nothing to the reward_function
         :param user_input:
         :return:
         """
-        self.reward_function = lambda state: 2
         return self.reward_function
 
     def generate_reward_function(self):
