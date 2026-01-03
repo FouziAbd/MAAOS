@@ -10,15 +10,18 @@ class Agent:
     this class is the main class for the agent, it has 3 main parts: model manager, belief manager, history manager,reward manager and a planner
     """
 
-    def __init__(self, scenario_description, goal_description, LLM_model: dspy.LM):
+    def __init__(self, scenario_description, goal_description, action_space: list[str], LLM_model: dspy.LM):
         self.LLM_model = LLM_model
-        dspy.configure(lm=lm)
+        dspy.configure(lm=LLM_model)
         self.reward_manager = RewardManager(scenario_description=scenario_description, LLM_model=LLM_model,
                                             goal_description=goal_description)
-        self.model_manager = ModelManager(model="", skills=[], goals=goal_description, constraints="")
+        self.model_manager = ModelManager(model="", skills=action_space, goals=goal_description, constraints="")
         self.belief_manager = BeliefStateManager(starting_belief_state="")
         self.history_manager = History()
         self.planner = None  # still no class for it
+
+    def choose_random_action(self):
+        return self.model_manager.skills.sample()
 
 
 if __name__ == '__main__':
@@ -28,6 +31,8 @@ if __name__ == '__main__':
         api_base='http://localhost:11434',  # Standard local Ollama port
         api_key=''  # No API key needed for local Ollama
     )
-    agent = Agent(scenario_description="the state are the steps for opening a door", LLM_model=lm, goal_description="the goal is to get past the door")
+    agent = Agent(scenario_description="the state are the steps for opening a door", LLM_model=lm,action_space=[],
+                  goal_description="the goal is to get past the door")
     agent.reward_manager.generate_reward_function()
-    print(agent.reward_manager.get_reward_function()("you are close to the door, but the door is locked","breaking the door with a hammer to open a pass to go through"))
+    print(agent.reward_manager.get_reward_function()("you are close to the door, but the door is locked",
+                                                     "breaking the door with a hammer to open a pass to go through"))
