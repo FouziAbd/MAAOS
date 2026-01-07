@@ -99,7 +99,8 @@ if __name__ == "__main__":
         # If an agent is in the game but we don't have a controller for it, create one
         for agent_id in env.agents:
             if agent_id not in my_controllers:
-                my_controllers[agent_id] = Agent(scenario_description=get_scenario_description(agent_id),
+                my_controllers[agent_id] = Agent(agent_id=agent_id,
+                                                 scenario_description=get_scenario_description(agent_id),
                                                  goal_description=get_goal_description(agent_id),
                                                  action_space=env.action_space(agent_id),
                                                  LLM_model=lm)
@@ -115,7 +116,7 @@ if __name__ == "__main__":
             agent_obs = observations[agent_id]
 
             # Ask your custom class for the move
-            actions[agent_id] = my_controllers[agent_id].choose_random_action()
+            actions[agent_id] = my_controllers[agent_id].choose_action(agent_obs)
 
         observations, rewards, terminations, truncations, infos = env.step(actions)
 
