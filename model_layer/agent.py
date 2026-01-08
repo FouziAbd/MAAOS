@@ -2,7 +2,7 @@ from model_layer.maintenance.model_manager import ModelManager
 from model_layer.maintenance.reward_manager import RewardManager
 from model_layer.storage.belief_state_manager import BeliefStateManager
 from model_layer.storage.history import History
-from planner.DsPy_planner import DSPyPlanner
+from model_layer.planner.DsPy_planner import DSPyPlanner
 from collections import deque
 import dspy
 
@@ -19,7 +19,7 @@ class Agent:
         self.goal_description = goal_description
         self.action_space = action_space
         self.n_action = len(action_space)
-        self.history = deque(maxlen=100)
+        self.history = list()
 
         dspy.configure(lm=LLM_model)
         self.reward_manager = RewardManager(scenario_description=scenario_description, LLM_model=LLM_model,
@@ -28,7 +28,7 @@ class Agent:
         self.belief_manager = BeliefStateManager(starting_belief_state="")
         self.history_manager = History()
         self.planner = DSPyPlanner(self.agent_id)
-        self.planner.configure_ollama(model_name='llama3')
+        self.planner.configure_ollama(self.LLM_model)
 
     def choose_random_action(self):
         return self.model_manager.skills.sample()
@@ -37,10 +37,11 @@ class Agent:
         belief = self.scenario_description
         action_str = '\n'.join(self.action_space)
         belief = belief + '\n' + action_str
-        history_str = "last 100 actions selected:\n".join(self.history) if self.history else "No history yet."
+        history_str = "last selected actions:"
+        history_str = history_str + "\n".join(self.history) if self.history else "No history yet."
         belief = belief + '\n' + history_str + '\n' + f"agent_id = {self.agent_id}"
         action =  self.planner.selec_action_index(belief, obs, self.goal_description, self.n_action)
-        action_summry = f"Saw: {obs} -> action {action}"
+        action_summry = f"action {action}"
         self.history.append(action_summry)
         return action
 
