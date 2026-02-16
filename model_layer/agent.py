@@ -5,6 +5,7 @@ from model_layer.storage.history import History
 from model_layer.planner.DsPy_planner import DSPyPlanner
 from collections import deque
 import dspy
+import numpy as np
 
 
 class Agent:
@@ -29,20 +30,28 @@ class Agent:
         self.history_manager = History()
         self.planner = DSPyPlanner(self.agent_id)
         self.planner.configure_ollama(self.LLM_model)
+        self.rng = np.random.default_rng()
 
     def choose_random_action(self):
-        return self.model_manager.skills.sample()
+        #return self.model_manager.skills.sample()
+        return self.rng.integers(0, 6)
     
     def choose_action(self, obs: str):
-        belief = self.scenario_description
-        action_str = '\n'.join(self.action_space)
-        belief = belief + '\n' + action_str
-        history_str = "last selected actions:"
-        history_str = history_str + "\n".join(self.history) if self.history else "No history yet."
-        belief = belief + '\n' + history_str + '\n' + f"agent_id = {self.agent_id}"
-        action =  self.planner.selec_action_index(belief, obs, self.goal_description, self.n_action)
-        action_summry = f"action {action}"
-        self.history.append(action_summry)
+
+        action_map = "\n".join(self.action_space)
+        history_str = "\n".join(self.history) if self.history else "none"
+        sc = self.scenario_description + "\naction index -> what the action do\n" + action_map
+
+        action =  self.planner.selec_action_index(
+            instructions=self.scenario_description,
+            obs_summary=obs,
+            #action_map=action_map,
+            objective=self.goal_description,
+            recent_actions=history_str,
+            n_actions=self.n_action,
+        )
+
+        self.history.append(f"action {action}")
         return action
 
 

@@ -1,5 +1,6 @@
 import time
-
+import numpy as np
+import math
 import dspy
 import pygame
 from pettingzoo.butterfly import knights_archers_zombies_v10
@@ -11,153 +12,214 @@ from model_layer.agent import Agent
 
 
 def get_scenario_description(agent_id):
-    # Determine the role based on the ID string (e.g., 'archer_0' -> 'Archer')
     role = "Archer" if "archer" in agent_id else "Knight"
-
-    # --- 1. Dynamic Scenario Description ---
-    # Includes details on Physics, Vision, and Map layout
-    base_scenario = (
-        "CONTEXT: You are an agent in a 2D top-down survival simulation called 'Knights Archers Zombies'. "
-        "The environment uses a physics engine with momentum and collision mechanics. "
-        "Zombies spawn continuously at the top of the screen and move downwards toward the bottom. "
-        "Your vision is NOT a camera image; it is a set of 'lidar' ray-casts that detect the distance "
-        "and type of objects (walls, zombies, allies) around you in a 360-degree radius. "
+    base = (
+        "You control ONE agent in a cooperative zombie survival game.\n"
+        "Choose exactly ONE action index from ACTION_MAP.\n"
+        "Hard rules:\n"
+        "- Output action must be an integer in [0, n_actions-1].\n"
+        "- If unsure, prioritize survival and preventing immediate loss.\n"
+        "- Do NOT invent actions outside ACTION_MAP.\n"
     )
-    base_scenario = """# Knights Archers Zombies ('KAZ')
 
-```{figure} butterfly_knights_archers_zombies.gif
-:width: 200px
-:name: knights_archers_zombies
-```
-
-This environment is part of the <a href='..'>butterfly environments</a>. Please read that page first for general information.
-
-| Import               | `from pettingzoo.butterfly import knights_archers_zombies_v10` |
-|----------------------|----------------------------------------------------------------|
-| Actions              | Discrete                                                       |
-| Parallel API         | Yes                                                            |
-| Manual Control       | Yes                                                            |
-| Agents               | `agents= ['archer_0', 'archer_1', 'knight_0', 'knight_1']`     |
-| Agents               | 4                                                              |
-| Action Shape         | (1,)                                                           |
-| Action Values        | [0, 5]                                                         |
-| Observation Shape    | (512, 512, 3)                                                  |
-| Observation Values   | (0, 255)                                                       |
-| State Shape          | (720, 1280, 3)                                                 |
-| State Values         | (0, 255)                                                       |
-
-
-Zombies walk from the top border of the screen down to the bottom border in unpredictable paths. The agents you control are knights and archers (default 2 knights and 2 archers) that are initially positioned at the bottom border of the screen. Each agent can rotate clockwise or counter-clockwise
-and move forward or backward. Each agent can also attack to kill zombies. When a knight attacks, it swings a mace in an arc in front of its current heading direction. When an archer attacks, it fires an arrow in a straight line in the direction of the archer's heading. The game ends when all
-agents die (collide with a zombie) or a zombie reaches the bottom screen border. A knight is rewarded 1 point when its mace hits and kills a zombie. An archer is rewarded 1 point when one of their arrows hits and kills a zombie.
-There are two possible observation types for this environment, vectorized and image-based.
-
-#### Vectorized (Default)
-Pass the argument `vector_state=True` to the environment.
-
-The observation is an (N+1)x5 array for each agent, where `N = num_archers + num_knights + num_swords + max_arrows + max_zombies`.
-> Note that `num_swords = num_knights`
-
-The ordering of the rows of the observation look something like this:
-```
-[
-[current agent],
-[archer 1],
-...,
-[archer N],
-[knight 1],
-...
-[knight M],
-[sword 1],
-...
-[sword M],
-[arrow 1],
-...
-[arrow max_arrows],
-[zombie 1],
-...
-[zombie max_zombies]
-]
-```
-
-In total, there will be N+1 rows. Rows with no entities will be all 0, but the ordering of the entities will not change.
-
-**Vector Breakdown**
-
-This breaks down what a row in the observation means. All distances are normalized to [0, 1].
-Note that for positions, [0, 0] is the top left corner of the image. Down is positive y, Left is positive x.
-
-For the vector for `current agent`:
-- The first value means nothing and will always be 0.
-- The next four values are the position and angle of the current agent.
-  - The first two values are position values, normalized to the width and height of the image respectively.
-  - The final two values are heading of the agent represented as a unit vector.
-
-For everything else:
-- Each row of the matrix (this is an 5 wide vector) has a breakdown that looks something like this:
-  - The first value is the absolute distance between an entity and the current agent.
-  - The next four values are relative position and absolute angles of each entity relative to the current agent.
-    - The first two values are position values relative to the current agent.
-    - The final two values are the angle of the entity represented as a directional unit vector relative to the world.
-
-**Typemasks**
-
-There is an option to prepend a typemask to each row vector. This can be enabled by passing `use_typemasks=True` as a kwarg.
-
-The typemask is a 6 wide vector, that looks something like this:
-```
-[0., 0., 0., 1., 0., 0.]
-```
-
-Each value corresponds to either
-```
-[zombie, archer, knight, sword, arrow, current agent]
-```
-
-If there is no entity there, the whole typemask (as well as the whole state vector) will be 0.
-
-As a result, setting `use_typemask=True` results in the observation being a (N+1)x11 vector.
-
-**Sequence Space** (Experimental)
-
-There is an option to also pass `sequence_space=True` as a kwarg to the environment. This just removes all non-existent entities from the observation and state vectors. Note that this is **still experimental** as the state and observation size are no longer constant. In particular, `N` is now a
-variable number."""
+    base = base + (
+        "observation description:\n"
+        "ach agent’s observation is a (N+1) × 5 array, where\n"
+        "   - N = num_archers + num_knights + num_swords + max_arrows + max_zombies\n"
+        "   - num_swords = num_knights\n"
+        "Row ordering\n"
+        "Rows appear in a fixed order:\n"
+        "   1. Current agent\n"
+        "   2. Archers (up to num_archers)\n"
+        "   3. Knights (up to num_knights)\n"
+        "   4. Swords (up to num_swords = num_knights)\n"
+        "   5. Arrows (up to max_arrows)\n"
+        "   6. Zombies (up to max_zombies)\n"
+        "So the observation looks like:\n"
+        "[\n"
+        "[current agent],\n"
+        "[archer 1], ... , [archer num_archers],\n"
+        "[knight 1], ... , [knight num_knights],\n"
+        "[sword 1],  ... , [sword num_swords],\n"
+        "[arrow 1],  ... , [arrow max_arrows],\n"
+        "[zombie 1], ... , [zombie max_zombies]\n"
+        "]\n"
+        "There are always N+1 rows. If an entity doesn’t exist in a slot (e.g., fewer zombies than max_zombies), that row is all zeros, but the slot order never changes.\n"
+        "Coordinate system and normalization\n"
+        "   - All distance/position values are normalized to [0, 1].\n"
+        "   - Image coordinates: (0, 0) is the top-left.\n"
+        "   - Down is positive y.\n"
+        "   - Left is positive x.\n"
+        "What the 5 values in each row mean\n"
+        "Row 0: current agent (5 values)\n"
+        "   [0, pos_x, pos_y, heading_x, heading_y]\n"
+        "   - Value 1: always 0 (unused)\n"
+        "   - Values 2–3: absolute position of the agent, normalized by image width/height\n"
+        "   - Values 4–5: agent heading as a unit vector (heading_x, heading_y)\n"
+        "All other rows: entities (5 values)\n"
+        "   [dist, rel_x, rel_y, dir_x, dir_y]\n"
+        "   - Value 1: absolute distance from the entity to the current agent\n"
+        "   - Values 2–3: entity position relative to the current agent (rel_x, rel_y)\n"
+        "   - Values 4–5: entity orientation/heading as a unit vector in world coordinates (dir_x, dir_y)\n"
+        )
 
     if role == "Archer":
-        scenario_description = base_scenario + (
-            f"your are {role} ROLE DETAILS: You are an Archer (Ranged Unit). You are equipped with a bow and arrows. "
-            "You move faster than Knights but have lower defense. "
-            "Your arrows travel in a straight line and can bounce off walls or kill friendly units if you miss."
+        return base + (
+            "Role tactics (ARCHER):\n"
+            "- Stay away from zombies; avoid close contact.\n"
+            "- Avoid friendly fire: if an ally is in front, don’t attack.\n"
+            "- Attack only when a zombie is aligned in front and reasonably close.\n"
+            "- Otherwise rotate/reposition to line up a safe shot.\n"
+            "Hard rules:\n"
+            "- If ally_block_attack=true, do NOT choose ATTACK.\n"
+            "Policy:\n"
+            "- If attack_ok=true, choose ATTACK.\n"
+            "- Else, choose ROTATE in direction of turn_hint.\n"
+            "- If no zombie exists, move forward or no-op.\n"
         )
-    else:  # Knight
-        scenario_description = base_scenario + (
-            f"your are {role} and your ROLE DETAILS: You are a Knight (Melee Unit). You are equipped with a sword. "
-            "You move slower than Archers but are more robust. "
-            "Your sword has a short swing radius. You act as the first line of defense against the zombie horde."
+    else:
+        return base + (
+            "Role tactics (KNIGHT):\n"
+            "- You are frontline: close distance to nearest threatening zombie.\n"
+            "- Attack when a zombie is in front and close.\n"
+            "- Otherwise rotate toward the nearest zombie and move forward.\n"
+            "Hard rules:\n"
+            "- If ally_block_attack=true, do NOT choose ATTACK.\n"
+            "Policy:\n"
+            "- If attack_ok=true, choose ATTACK.\n"
+            "- Else, choose ROTATE in direction of turn_hint.\n"
+            "- If no zombie exists, move forward or no-op.\n"
         )
-    return scenario_description
 
 
 def get_goal_description(agent_id):
     role = "Archer" if "archer" in agent_id else "Knight"
     if role == "Archer":
         goal_description = (
-            "OBJECTIVE: Eliminate zombies before they reach the bottom of the screen or kill your team. "
-            "TACTICS: 1) Maintain distance; do not let zombies touch you. "
-            "2) Aim carefully to avoid shooting your fellow Knights who are fighting in the front lines (Friendly Fire is ON). "
-            "3) Prioritize zombies that are closest to breaching the defense."
+            "killing zombies "
+            #"TEAM OBJECTIVE: Prevent any zombie from reaching the bottom border and keep at least one teammate alive. Score increases by killing zombies (+1 per kill)."
+            #"ARCHER ROLE:"
+            #"- If attack_ok=true, choose ATTACK.\n"
+            #"- Else, choose ROTATE in direction of turn_hint.\n"
+            #"- If no zombie exists, move forward or no-op.\n"
+            #"PRIORITIES: (1) stop bottom-threatening zombies, (2) survive, (3) attack if likely to hit, (4) reposition/rotate for a better shot."
+            #"SAFETY RULE: Avoid shooting/attacking blindly; if no clear target ahead, rotate/reposition instead."
         )
     else:  # Knight
         goal_description = (
-            "OBJECTIVE: Intercept and destroy zombies to protect the Archers behind you. "
-            "TACTICS: 1) Close the gap immediately; you must be near a zombie to hit it. "
-            "2) Body-block zombies to prevent them from reaching the Archers. "
-            "3) Swing your sword constantly when in range. "
-            "4) Avoid getting surrounded by multiple zombies at once."
+            "killing zombies "
+            #"TEAM OBJECTIVE: Prevent any zombie from reaching the bottom border and keep at least one teammate alive. Score increases by killing zombies (+1 per kill)."
+            #"KNIGHT ROLE:"
+            #"- If attack_ok=true, choose ATTACK.\n"
+            #"- Else, choose ROTATE in direction of turn_hint.\n"
+            #"- If no zombie exists, move forward or no-op.\n"
+            #"PRIORITIES: (1) stop bottom-threatening zombies, (2) survive (don’t get trapped/surrounded), (3) attack if likely to connect, (4) reposition/rotate toward nearest zombie."
         )
 
     return goal_description
 
+def _angle_deg_and_dot(u, v):
+    u = np.asarray(u, float)
+    v = np.asarray(v, float)
+    u = u / (np.linalg.norm(u) + 1e-9)
+    v = v / (np.linalg.norm(v) + 1e-9)
+    dot = float(np.clip(np.dot(u, v), -1.0, 1.0))
+    ang = math.degrees(math.acos(dot))
+    return ang, dot
+
+def _turn_hint(heading_xy, rel_xy):
+    h = np.asarray(heading_xy, float)
+    r = np.asarray(rel_xy, float)
+    cross = h[0] * r[1] - h[1] * r[0]  # z component of 2D cross
+    return "LEFT" if cross > 0 else "RIGHT"
+
+def summarize_kaz_obs(
+    obs, role: str,
+    num_archers: int, num_knights: int,
+    max_arrows: int, max_zombies: int,
+):
+    """
+    obs: (N+1,5) numpy array for vector_state=True
+    Produces an LLM-friendly summary + precomputed booleans.
+    """
+    obs = np.asarray(obs, dtype=float)
+    # row 0: [0, posx, posy, headingx, headingy]
+    sx, sy, hx, hy = obs[0, 1], obs[0, 2], obs[0, 3], obs[0, 4]
+    heading = np.array([hx, hy], dtype=float)
+
+    # KAZ row layout: [current], archers, knights, swords(num_knights), arrows(max_arrows), zombies(max_zombies)
+    zombie_start = 1 + num_archers + num_knights + num_knights + max_arrows
+    zombie_end = zombie_start + max_zombies
+
+    # --- nearest zombie ---
+    nearest_z = None  # (dist, relx, rely)
+    for r in range(zombie_start, zombie_end):
+        dist = float(obs[r, 0])
+        if dist <= 0:
+            continue
+        relx, rely = float(obs[r, 1]), float(obs[r, 2])
+        if nearest_z is None or dist < nearest_z[0]:
+            nearest_z = (dist, relx, rely)
+
+    # --- nearest ally (among agent rows only: archers+knights) ---
+    ally_start = 1
+    ally_end = 1 + num_archers + num_knights
+    nearest_a = None  # (dist, relx, rely)
+    for r in range(ally_start, ally_end):
+        dist = float(obs[r, 0])
+        if dist <= 0:
+            continue
+        relx, rely = float(obs[r, 1]), float(obs[r, 2])
+        if nearest_a is None or dist < nearest_a[0]:
+            nearest_a = (dist, relx, rely)
+
+    # thresholds (start values; tune later)
+    if role.lower() == "archer":
+        max_dist = 0.70
+        max_angle = 15.0
+        ally_block_dist = 0.20
+        ally_block_angle = 15.0
+    else:  # knight
+        max_dist = 0.25
+        max_angle = 60.0
+        ally_block_dist = 0.15
+        ally_block_angle = 25.0
+
+    # friendly-fire / “don’t attack if ally is in front and close”
+    ally_block_attack = False
+    ally_angle = None
+    if nearest_a is not None:
+        ad, ax, ay = nearest_a
+        ally_angle, ally_dot = _angle_deg_and_dot(heading, [ax, ay])
+        ally_block_attack = (ad <= ally_block_dist) and (ally_dot > 0) and (ally_angle <= ally_block_angle)
+
+    # compute attack_ok + turn hint
+    if nearest_z is None:
+        z_txt = "none"
+        attack_ok = False
+        turn = "NONE"
+        z_angle = None
+    else:
+        zd, zx, zy = nearest_z
+        z_angle, z_dot = _angle_deg_and_dot(heading, [zx, zy])
+        in_front = (z_dot > 0) and (z_angle <= max_angle)
+        close_enough = (zd <= max_dist)
+        attack_ok = bool(in_front and close_enough and (not ally_block_attack))
+        turn = _turn_hint(heading, [zx, zy])
+        z_txt = f"dist={zd:.2f} rel=({zx:.2f},{zy:.2f}) angle_deg={z_angle:.1f} in_front={in_front}"
+
+    a_txt = "none" if nearest_a is None else f"dist={nearest_a[0]:.2f} rel=({nearest_a[1]:.2f},{nearest_a[2]:.2f})"
+
+    # LLM-friendly summary
+    summary = (
+        f"self: pos=({sx:.2f},{sy:.2f}) heading=({hx:.2f},{hy:.2f})\n"
+        f"nearest_ally: {a_txt}\n"
+        f"nearest_zombie: {z_txt}\n"
+        f"ally_block_attack={ally_block_attack}\n"
+        f"attack_ok={attack_ok}\n"
+        f"turn_hint={turn}"
+    )
+    return summary
 
 if __name__ == "__main__":
     env = knights_archers_zombies_v10.parallel_env(
@@ -186,7 +248,14 @@ if __name__ == "__main__":
         api_key=''  # No API key needed for local Ollama
     )
 
-    actions_details = [ "0 -> move forward", "1 - > move brackward", "2 -> rotate left", "3 -> rotate right", "4 -> use weapon"]
+    actions_details = [
+        "0 -> move forward",
+        "1 -> move backward",
+        "2 -> rotate left",
+        "3 -> rotate right",
+        "4 -> attack / use weapon",
+        "5 -> no-op",
+    ]
     while env.agents:
         # Force the window to process clicks/movements so it doesn't freeze
         if env.render_mode == "human":
@@ -214,9 +283,22 @@ if __name__ == "__main__":
         for agent_id in env.agents:
             # Get the specific observation for this agent
             agent_obs = observations[agent_id]
+            role = "Archer" if "archer" in agent_id else "Knight"
+            if agent_id == "archer_0":
+                print(f"obs =\n {agent_obs} \n")
+            obs_summary = summarize_kaz_obs(
+                obs=agent_obs,
+                role=role,
+                num_archers=2,
+                num_knights=2,
+                max_arrows=10,
+                max_zombies=10,
+            )
+ 
 
             # Ask your custom class for the move
-            actions[agent_id] = my_controllers[agent_id].choose_action(agent_obs)
+            #actions[agent_id] = my_controllers[agent_id].choose_action(obs_summary)
+            actions[agent_id] = my_controllers[agent_id].choose_random_action()
 
         observations, rewards, terminations, truncations, infos = env.step(actions)
 
