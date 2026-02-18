@@ -1,3 +1,5 @@
+import sys
+import os
 import time
 import numpy as np
 import math
@@ -5,29 +7,53 @@ import dspy
 import pygame
 from pettingzoo.butterfly import knights_archers_zombies_v10
 
+# Add project root to path to support direct execution
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
 from model_layer.agent import Agent
+from middleware_layer.middleware_orchestrator import MiddlewareOrchestrator
+
+# Global log file handle
+log_file = None
+
+def setup_logging():
+    """Initialize logging to file with timestamp."""
+    global log_file
+    log_file = open('logs_run.txt', 'w', buffering=1)  # Line buffering for immediate write
+    log_message(f"{'='*80}")
+    log_message(f"EPISODE START - {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    log_message(f"{'='*80}\n")
+
+def log_message(msg):
+    """Write message to both console and file."""
+    global log_file
+    print(msg)
+    if log_file:
+        log_file.write(msg + '\n')
+        log_file.flush()
+
+def close_logging():
+    """Close log file."""
+    global log_file
+    if log_file:
+        log_file.close()
+        log_file = None
 
 
 # https://pettingzoo.farama.org/environments/butterfly/knights_archers_zombies/
 
 
-def get_scenario_description(agent_id):
-    role = "Archer" if "archer" in agent_id else "Knight"
-    base = (
-        "You control ONE agent in a cooperative zombie survival game.\n"
-        "Choose exactly ONE action index from ACTION_MAP.\n"
-        "Hard rules:\n"
-        "- Output action must be an integer in [0, n_actions-1].\n"
-        "- If unsure, prioritize survival and preventing immediate loss.\n"
-        "- Do NOT invent actions outside ACTION_MAP.\n"
-    )
-
-    base = base + (
+def get_observation_description():
+    """
+    Returns detailed observation structure description for KAZ environment.
+    This is used by the middleware to help the LLM understand raw observations.
+    """
+    return (
         "observation description:\n"
-        "ach agent’s observation is a (N+1) × 5 array, where\n"
+        "Each agent's observation is a (N+1) × 5 array, where\n"
         "   - N = num_archers + num_knights + num_swords + max_arrows + max_zombies\n"
         "   - num_swords = num_knights\n"
-        "Row ordering\n"
+        "Row ordering:\n"
         "Rows appear in a fixed order:\n"
         "   1. Current agent\n"
         "   2. Archers (up to num_archers)\n"
@@ -44,51 +70,71 @@ def get_scenario_description(agent_id):
         "[arrow 1],  ... , [arrow max_arrows],\n"
         "[zombie 1], ... , [zombie max_zombies]\n"
         "]\n"
-        "There are always N+1 rows. If an entity doesn’t exist in a slot (e.g., fewer zombies than max_zombies), that row is all zeros, but the slot order never changes.\n"
-        "Coordinate system and normalization\n"
+        "There are always N+1 rows. If an entity doesn't exist in a slot (e.g., fewer zombies than max_zombies), that row is all zeros, but the slot order never changes.\n"
+        "\n"
+        "Coordinate system and normalization:\n"
         "   - All distance/position values are normalized to [0, 1].\n"
         "   - Image coordinates: (0, 0) is the top-left.\n"
         "   - Down is positive y.\n"
-        "   - Left is positive x.\n"
-        "What the 5 values in each row mean\n"
+        "   - Right is positive x.\n"
+        "\n"
+        "What the 5 values in each row mean:\n"
         "Row 0: current agent (5 values)\n"
         "   [0, pos_x, pos_y, heading_x, heading_y]\n"
         "   - Value 1: always 0 (unused)\n"
-        "   - Values 2–3: absolute position of the agent, normalized by image width/height\n"
-        "   - Values 4–5: agent heading as a unit vector (heading_x, heading_y)\n"
+        "   - Values 2 and 3: absolute position of the agent, normalized by image width/height\n"
+        "   - Values 4 and 5: agent heading as a unit vector (heading_x, heading_y)\n"
+        "\n"
         "All other rows: entities (5 values)\n"
         "   [dist, rel_x, rel_y, dir_x, dir_y]\n"
         "   - Value 1: absolute distance from the entity to the current agent\n"
-        "   - Values 2–3: entity position relative to the current agent (rel_x, rel_y)\n"
-        "   - Values 4–5: entity orientation/heading as a unit vector in world coordinates (dir_x, dir_y)\n"
-        )
+        "   - Values 2 and 3: entity position relative to the current agent (rel_x, rel_y)\n"
+        "   - Values 4 and 5: entity orientation/heading as a unit vector in world coordinates (dir_x, dir_y)\n"
+    )
+
+
+def get_scenario_description(agent_id):
+    role = "Archer" if "archer" in agent_id else "Knight"
+    base = (
+        "You control ONE agent in a cooperative zombie survival game.\n"
+        "Choose exactly ONE action index from ACTION_MAP.\n"
+        "Hard rules:\n"
+        "- Output action must be an integer in [0, n_actions-1].\n"
+        "- If unsure, prioritize survival and preventing immediate loss.\n"
+        "- Do NOT invent actions outside ACTION_MAP.\n"
+        "- Rotation only turns 10 degrees per step. Multiple rotations may be needed to face a target.\n"
+    )
+
+    base = base + "\n" + get_observation_description() + "\n"
 
     if role == "Archer":
         return base + (
             "Role tactics (ARCHER):\n"
-            "- Stay away from zombies; avoid close contact.\n"
-            "- Avoid friendly fire: if an ally is in front, don’t attack.\n"
-            "- Attack only when a zombie is aligned in front and reasonably close.\n"
+            "- Stay away from zombies; avoid close contact distance > 0.70.\n"
+            "- Avoid friendly fire: if an ally is in front, don't attack.\n"
+            "- Attack only when perfectly aimed at zombie within range.\n"
             "- Otherwise rotate/reposition to line up a safe shot.\n"
-            "Hard rules:\n"
-            "- If ally_block_attack=true, do NOT choose ATTACK.\n"
-            "Policy:\n"
-            "- If attack_ok=true, choose ATTACK.\n"
-            "- Else, choose ROTATE in direction of turn_hint.\n"
-            "- If no zombie exists, move forward or no-op.\n"
+            "\n### CRITICAL RULES ###\n"
+            "If 'attack_ok=true' in the observation → CHOOSE ACTION 4 (ATTACK) immediately. No rotation.\n"
+            "If 'attack_ok=false' in the observation → DO NOT ATTACK. Instead:\n"
+            "  - If turn_hint=LEFT → Choose action 2 (rotate left)\n"
+            "  - If turn_hint=RIGHT → Choose action 3 (rotate right)\n"
+            "  - If no zombie → Choose action 0 (move forward) or action 5 (no-op)\n"
+            "If ally_block_attack=true → Do NOT choose action 4.\n"
         )
     else:
         return base + (
             "Role tactics (KNIGHT):\n"
-            "- You are frontline: close distance to nearest threatening zombie.\n"
-            "- Attack when a zombie is in front and close.\n"
-            "- Otherwise rotate toward the nearest zombie and move forward.\n"
-            "Hard rules:\n"
-            "- If ally_block_attack=true, do NOT choose ATTACK.\n"
-            "Policy:\n"
-            "- If attack_ok=true, choose ATTACK.\n"
-            "- Else, choose ROTATE in direction of turn_hint.\n"
-            "- If no zombie exists, move forward or no-op.\n"
+            "- You are frontline: close distance to nearest threatening zombie distance < 0.25.\n"
+            "- Attack when zombie is in front and close, angle < 60 degrees.\n"
+            "- Otherwise rotate toward nearest zombie and move forward.\n"
+            "\n### CRITICAL RULES ###\n"
+            "If 'attack_ok=true' in the observation → CHOOSE ACTION 4 (ATTACK) immediately. No rotation.\n"
+            "If 'attack_ok=false' in the observation → DO NOT ATTACK. Instead:\n"
+            "  - If turn_hint=LEFT → Choose action 2 (rotate left)\n"
+            "  - If turn_hint=RIGHT → Choose action 3 (rotate right)\n"
+            "  - If no zombie → Choose action 0 (move forward) or action 5 (no-op)\n"
+            "If ally_block_attack=true → Do NOT choose action 4.\n"
         )
 
 
@@ -97,26 +143,14 @@ def get_goal_description(agent_id):
     if role == "Archer":
         goal_description = (
             "killing zombies "
-            #"TEAM OBJECTIVE: Prevent any zombie from reaching the bottom border and keep at least one teammate alive. Score increases by killing zombies (+1 per kill)."
-            #"ARCHER ROLE:"
-            #"- If attack_ok=true, choose ATTACK.\n"
-            #"- Else, choose ROTATE in direction of turn_hint.\n"
-            #"- If no zombie exists, move forward or no-op.\n"
-            #"PRIORITIES: (1) stop bottom-threatening zombies, (2) survive, (3) attack if likely to hit, (4) reposition/rotate for a better shot."
-            #"SAFETY RULE: Avoid shooting/attacking blindly; if no clear target ahead, rotate/reposition instead."
         )
     else:  # Knight
         goal_description = (
             "killing zombies "
-            #"TEAM OBJECTIVE: Prevent any zombie from reaching the bottom border and keep at least one teammate alive. Score increases by killing zombies (+1 per kill)."
-            #"KNIGHT ROLE:"
-            #"- If attack_ok=true, choose ATTACK.\n"
-            #"- Else, choose ROTATE in direction of turn_hint.\n"
-            #"- If no zombie exists, move forward or no-op.\n"
-            #"PRIORITIES: (1) stop bottom-threatening zombies, (2) survive (don’t get trapped/surrounded), (3) attack if likely to connect, (4) reposition/rotate toward nearest zombie."
         )
 
     return goal_description
+
 
 def _angle_deg_and_dot(u, v):
     u = np.asarray(u, float)
@@ -127,11 +161,13 @@ def _angle_deg_and_dot(u, v):
     ang = math.degrees(math.acos(dot))
     return ang, dot
 
+
 def _turn_hint(heading_xy, rel_xy):
     h = np.asarray(heading_xy, float)
     r = np.asarray(rel_xy, float)
     cross = h[0] * r[1] - h[1] * r[0]  # z component of 2D cross
     return "LEFT" if cross > 0 else "RIGHT"
+
 
 def summarize_kaz_obs(
     obs, role: str,
@@ -185,7 +221,7 @@ def summarize_kaz_obs(
         ally_block_dist = 0.15
         ally_block_angle = 25.0
 
-    # friendly-fire / “don’t attack if ally is in front and close”
+    # friendly-fire / "don't attack if ally is in front and close"
     ally_block_attack = False
     ally_angle = None
     if nearest_a is not None:
@@ -221,85 +257,174 @@ def summarize_kaz_obs(
     )
     return summary
 
+
 if __name__ == "__main__":
-    env = knights_archers_zombies_v10.parallel_env(
-        render_mode="human",
-        spawn_rate=20,
-        num_archers=2,
-        num_knights=2,
-        max_zombies=10,
-        max_arrows=10,
-        killable_knights=True,
-        killable_archers=True,
-        pad_observation=True,
-        line_death=False,
-        max_cycles=900,
-        vector_state=True,
-        use_typemasks=False,
-        sequence_space=False,
+    setup_logging()
+    
+    try:
+        env = knights_archers_zombies_v10.parallel_env(
+            render_mode=None,
+            spawn_rate=20,
+            num_archers=2,
+            num_knights=2,
+            max_zombies=10,
+            max_arrows=10,
+            killable_knights=True,
+            killable_archers=True,
+            pad_observation=True,
+            line_death=False,
+            max_cycles=900,
+            vector_state=True,
+            use_typemasks=False,
+            sequence_space=False,
+        )
+        observations, infos = env.reset()
 
-    )
-    observations, infos = env.reset()
+        my_controllers = {}
+        lm = dspy.LM(
+            model='ollama_chat/llama3:latest',
+            api_base='http://localhost:11434',
+            api_key=''
+        )
 
-    my_controllers = {}
-    lm = dspy.LM(
-        model='ollama_chat/gemma:2b',  # The model name matches your Ollama tag
-        api_base='http://localhost:11434',  # Standard local Ollama port
-        api_key=''  # No API key needed for local Ollama
-    )
+        actions_details = [
+            "0 -> move forward",
+            "1 -> move backward",
+            "2 -> rotate left",
+            "3 -> rotate right",
+            "4 -> attack / use weapon",
+            "5 -> no-op",
+        ]
 
-    actions_details = [
-        "0 -> move forward",
-        "1 -> move backward",
-        "2 -> rotate left",
-        "3 -> rotate right",
-        "4 -> attack / use weapon",
-        "5 -> no-op",
-    ]
-    while env.agents:
-        # Force the window to process clicks/movements so it doesn't freeze
-        if env.render_mode == "human":
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    env.close()
-                    exit()
+        # Track kills per agent
+        kills = {agent_id: 0 for agent_id in env.agents}
+        step_count = 0
 
-        # --- 3. Dynamic Controller Management ---
-        # If an agent is in the game but we don't have a controller for it, create one
-        for agent_id in env.agents:
-            if agent_id not in my_controllers:
-                my_controllers[agent_id] = Agent(agent_id=agent_id,
-                                                 scenario_description=get_scenario_description(agent_id),
-                                                 goal_description=get_goal_description(agent_id),
-                                                 action_space=actions_details,
-                                                 LLM_model=lm)
+        while env.agents:
+            step_count += 1
+            log_message(f"\n{'='*80}")
+            log_message(f"STEP {step_count}")
+            log_message(f"{'='*80}")
+            
+            if env.render_mode == "human":
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        env.close()
+                        close_logging()
+                        exit()
 
-        # Optional: Clean up controllers for dead agents to save memory
-        # (Compare keys in my_controllers vs env.agents)
-        active_ids = set(env.agents)
-        my_controllers = {k: v for k, v in my_controllers.items() if k in active_ids}
+            # Dynamic Controller Management
+            for agent_id in env.agents:
+                if agent_id not in my_controllers:
+                    middleware = MiddlewareOrchestrator(
+                        env=env,
+                        agent_id=agent_id,
+                        LLM_model=lm,
+                        scenario_description=get_scenario_description(agent_id),
+                        goal_description=get_goal_description(agent_id),
+                        action_space=actions_details,
+                        environment_name="KAZ Zombie Survival",
+                        observation_spec=get_observation_description()
+                    )
 
-        actions = {}
-        for agent_id in env.agents:
-            # Get the specific observation for this agent
-            agent_obs = observations[agent_id]
-            role = "Archer" if "archer" in agent_id else "Knight"
-            if agent_id == "archer_0":
-                print(f"obs =\n {agent_obs} \n")
-            obs_summary = summarize_kaz_obs(
-                obs=agent_obs,
-                role=role,
-                num_archers=2,
-                num_knights=2,
-                max_arrows=10,
-                max_zombies=10,
-            )
- 
+                    my_controllers[agent_id] = Agent(
+                        agent_id=agent_id,
+                        scenario_description=get_scenario_description(agent_id),
+                        goal_description=get_goal_description(agent_id),
+                        action_space=actions_details,
+                        LLM_model=lm,
+                        middleware=middleware
+                    )
 
-            # Ask your custom class for the move
-            #actions[agent_id] = my_controllers[agent_id].choose_action(obs_summary)
-            actions[agent_id] = my_controllers[agent_id].choose_random_action()
+            actions = {}
+            
+            # Process only agents that are still active (not terminated/truncated)
+            for agent_id in env.agents:
+                agent_obs = observations[agent_id]
+                
+                # Compute tactical summary using the built-in function
+                role = "Archer" if "archer" in agent_id else "Knight"
+                tactical_summary = summarize_kaz_obs(
+                    obs=agent_obs,
+                    role=role,
+                    num_archers=2,
+                    num_knights=2,
+                    max_arrows=10,
+                    max_zombies=10
+                )
+                
+                log_message(f"\n[Agent: {agent_id}]")
+                log_message(f"  Tactical Summary:\n    {tactical_summary.replace(chr(10), chr(10) + '    ')}")
+                
+                # Pass raw observation + tactical summary to agent for LLM processing
+                actions[agent_id] = my_controllers[agent_id].choose_action_with_tactical_info(agent_obs, tactical_summary)
+                
+                log_message(f"  Action Chosen: {actions[agent_id]} ({actions_details[actions[agent_id]]})")
 
-        observations, rewards, terminations, truncations, infos = env.step(actions)
+            observations, rewards, terminations, truncations, infos = env.step(actions)
+            
+            # Clean up controllers and log terminations/truncations
+            terminated_agents = [a for a in terminations if terminations[a]]
+            truncated_agents = [a for a in truncations if truncations[a]]
+            
+            if terminated_agents:
+                log_message(f"\n[TERMINATED] Agents reached terminal state: {terminated_agents}")
+            if truncated_agents:
+                log_message(f"[TRUNCATED] Agents reached time limit: {truncated_agents}")
+            
+            # Remove controllers for agents that ended
+            active_ids = set(env.agents)
+            removed_agents = set(my_controllers.keys()) - active_ids
+            for agent_id in removed_agents:
+                reason = "TERMINATED" if agent_id in terminated_agents else "TRUNCATED" if agent_id in truncated_agents else "UNKNOWN"
+                log_message(f"[REMOVED] {agent_id} ({reason}) - Final kills: {kills[agent_id]}")
+            
+            my_controllers = {k: v for k, v in my_controllers.items() if k in active_ids}
 
-    env.close()
+            # Track kills and print current kill count
+            for agent_id, reward in rewards.items():
+                if reward > 0:
+                    kills[agent_id] += reward
+                    log_message(f"[REWARD] {agent_id} received {reward} reward(s) - Total kills: {kills[agent_id]}")
+            
+            log_message(f"\n[CUMULATIVE KILLS] {kills}")
+
+            # Count and print number of zombies from first agent's observation
+            if env.agents:
+                first_agent = list(env.agents)[0]
+                obs = observations[first_agent]
+                # Get environment parameters for zombie row indexing
+                num_archers = 2
+                num_knights = 2
+                max_arrows = 10
+                zombie_start = 1 + num_archers + num_knights + num_knights + max_arrows
+                zombie_end = zombie_start + 10
+                
+                # Count active zombies (non-zero distance)
+                zombie_count = 0
+                for r in range(zombie_start, zombie_end):
+                    if obs[r, 0] > 0:  # distance > 0 means zombie is active
+                        zombie_count += 1
+                
+                log_message(f"[ENVIRONMENT] Zombies alive: {zombie_count}")
+
+        # Print final kill count statistics
+        log_message(f"\n{'='*80}")
+        log_message("EPISODE FINISHED - FINAL STATISTICS")
+        log_message(f"{'='*80}")
+        total_kills = 0
+        for agent_id in sorted(kills.keys()):
+            agent_kills = kills[agent_id]
+            total_kills += agent_kills
+            log_message(f"{agent_id:15s}: {agent_kills:3d} zombies killed")
+        log_message(f"{'TOTAL':15s}: {total_kills:3d} zombies killed")
+        log_message(f"{'='*80}\n")
+
+        env.close()
+        
+    except KeyboardInterrupt:
+        log_message("\n[INTERRUPTED] Episode interrupted by user (Ctrl+C)")
+        log_message(f"Final kills so far: {kills}\n")
+        env.close()
+    finally:
+        close_logging()
