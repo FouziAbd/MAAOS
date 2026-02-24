@@ -127,34 +127,24 @@ def load_model_from_string(code_string, function_name="ai_generated_model"):
 # 4. The Master Evaluation Wrapper
 # ==========================================
 def evaluate_llm_response(llm_response_string, states, actions, next_states, rewards):
-    """Runs the full pipeline on an LLM string and returns (Success_Bool, Error_Payload)."""
-
-    # Step A: Extract
+    # Step A & B
     extracted_code = extract_python_code(llm_response_string)
-    if not extracted_code:
-        return False, "Formatting Error: Could not find ```python markdown tags."
-
-    # Step B: Load into Memory
+    if not extracted_code: return False, "Error: No markdown tags.", None
     model_to_test, compilation_error = load_model_from_string(extracted_code)
-    if not model_to_test:
-        return False, compilation_error
+    if not model_to_test: return False, compilation_error, None
 
-    # Step C: Validate (Tensor Math Check)
+    # Step C & D
     is_valid, val_error = validate_model(model_to_test, states, actions, next_states, rewards)
-    if not is_valid:
-        return False, val_error
-
-    # Step D: Fit (SVI Inference)
+    if not is_valid: return False, val_error, None
     fitted_guide, fit_error = fit_model(model_to_test, states, actions, next_states, rewards, iterations=1000)
-    if not fitted_guide:
-        return False, fit_error
+    if not fitted_guide: return False, fit_error, None
 
-    # Step E: Evaluate (MSE Thresholds)
-    eval_passed, eval_error = evaluate_model(model_to_test, fitted_guide, states, actions, next_states, rewards)
+    # Step E: Evaluate now catches the empirical evidence
+    eval_passed, eval_error, empirical_evidence = evaluate_model(model_to_test, fitted_guide, states, actions, next_states, rewards)
     if not eval_passed:
-        return False, eval_error
+        return False, eval_error, None
 
-    return True, "Success! Model passed all tests."
+    return True, "Success!", empirical_evidence
 
 
 # ==========================================

@@ -149,30 +149,46 @@ def evaluate_model(model_fn, guide, states, actions, real_next_states, real_rewa
 
         simulated_next_states = posterior_predictions["obs_next_state"].mean(dim=0)
         simulated_rewards = posterior_predictions["obs_reward"].mean(dim=0)
-
-        # FIX: Flatten real_next_states to match the simulated output dimensions (N, 135)
         real_next_states_flat = real_next_states.view(real_next_states.size(0), -1)
 
-        # Calculate Mean Squared Error (MSE) using the flattened tensor
-        mse_states = torch.nn.functional.mse_loss(simulated_next_states, real_next_states_flat).item()
+        # 1. Calculate errors per transition
+        sq_errors = torch.nn.functional.mse_loss(simulated_next_states, real_next_states_flat, reduction='none')
+        mse_per_transition = sq_errors.mean(dim=1)
+
+        # 2. Extract Empirical Evidence (Best vs Worst)
+        best_idx = torch.argmin(mse_per_transition).item()
+        worst_idx = torch.argmax(mse_per_transition).item()
+
+        # Find exactly which 5 features the model struggled with most in the worst transition
+        worst_features = torch.topk(sq_errors[worst_idx], 5).indices.tolist()
+
+
+
+        # 3. Overall validation threshold check
+        mse_states = mse_per_transition.mean().item()
         mse_rewards = torch.nn.functional.mse_loss(simulated_rewards, real_rewards).item()
 
-        print("Calculating MSE evaluation scores...")
+        empirical_evidence = {
+            "best_error": mse_per_transition[best_idx].item(),
+            "worst_error": mse_per_transition[worst_idx].item(),
+            "worst_features": worst_features,
+            "mse_states": mse_states,
+            "mse_rewards": mse_rewards
+        }
+
         print(f"  -> Next State MSE: {mse_states:.4f} (Threshold: 1.0)")
         print(f"  -> Reward MSE:     {mse_rewards:.4f} (Threshold: 1.0)")
 
         if mse_states < 1.0 and mse_rewards < 1.0:
-            print("Status: [PASS] Evaluation successful. Model fits the world dynamics well.")
-            return True, None
+            print("Status: [PASS] Evaluation successful.")
+            return True, None, empirical_evidence
         else:
-            fail_msg = f"Poor fit. State MSE: {mse_states:.4f}, Reward MSE: {mse_rewards:.4f}. Exceeds 1.0 threshold."
-            print(f"Status: [FAIL] Evaluation failed.\nReason: {fail_msg}")
-            return False, fail_msg
+            fail_msg = f"Poor fit. State MSE: {mse_states:.4f}"
+            print(f"Status: [FAIL] {fail_msg}")
+            return False, fail_msg, None
 
     except Exception as e:
-        error_msg = f"Evaluation execution failed: {str(e)}"
-        print(f"Status: [FAIL] Evaluation crashed.\nError details: {error_msg}")
-        return False, error_msg
+        return False, f"Evaluation crashed: {str(e)}", None
 
 
 # ==========================================
