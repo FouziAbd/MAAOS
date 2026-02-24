@@ -4,20 +4,30 @@ import os
 from dotenv import load_dotenv, find_dotenv
 import dspy
 
-# Automatically search up the directory tree to find the .env file
-load_dotenv(find_dotenv())
+import random
+import numpy as np
+import pyro
 
-# Get the token securely
+load_dotenv(find_dotenv())
 my_api_key = os.getenv('GITHUB_TOKEN')
+
+# 1. Lock PyTorch and Python Randomness
+SEED = 123
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+pyro.set_rng_seed(SEED)
 
 # ==========================================
 # 1. Setup Cloud LLM (GPT-4o via GitHub)
 # ==========================================
-print("Connecting to GPT-4o via GitHub Models...")
+
+# 2. Lock the LLM Randomness (Temperature = 0)
 lm = dspy.LM(
     model='openai/gpt-4o',
     api_base='https://models.inference.ai.azure.com',
-    api_key=my_api_key
+    api_key=my_api_key,
+    temperature=0.0  # <-- This stops the LLM from being creative
 )
 dspy.settings.configure(lm=lm)
 
