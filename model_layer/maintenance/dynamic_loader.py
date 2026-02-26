@@ -136,7 +136,7 @@ def evaluate_llm_response(llm_response_string, states, actions, next_states, rew
     # Step C & D
     is_valid, val_error = validate_model(model_to_test, states, actions, next_states, rewards)
     if not is_valid: return False, val_error, None
-    fitted_guide, fit_error = fit_model(model_to_test, states, actions, next_states, rewards, iterations=1000)
+    fitted_guide, fit_error = fit_model(model_to_test, states, actions, next_states, rewards)
     if not fitted_guide: return False, fit_error, None
 
     # Step E: Evaluate now catches the empirical evidence

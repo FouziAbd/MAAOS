@@ -5,6 +5,7 @@ import pyro.poutine as poutine
 from pyro.infer import SVI, Trace_ELBO, Predictive
 from pyro.infer.autoguide import AutoNormal
 from pyro.optim import Adam
+from pyro.optim import ReduceLROnPlateau
 
 
 # ==========================================
@@ -111,23 +112,74 @@ def validate_model(model_fn, states, actions, next_states, rewards):
 # 2. The Multi-Dimensional Inference Engine
 # ==========================================
 
-def fit_model(model_fn, states, actions, next_states, rewards, iterations=1000):
-    print("\n--- [STEP 2] Running Inference Engine (SVI) ---")
+def fit_model(model_fn, states, actions, next_states, rewards,
+              max_iterations=5000,
+              es_patience=100,  # Early stopping patience
+              lr_patience=30,  # LR scheduler patience (must be < es_patience)
+              rel_tol=1e-3,  # 0.1% relative tolerance
+              ema_alpha=0.1):
+    print("\n--- [STEP 2] Running Inference Engine (SVI with Scheduler & Early Stopping) ---")
     try:
         guide = AutoNormal(model_fn)
-        optimizer = Adam({"lr": 0.01})
+
+        optim_args = {
+            'optimizer': torch.optim.Adam,
+            'optim_args': {'lr': 0.01},
+            'patience': lr_patience,
+            'factor': 0.5
+        }
+        optimizer = ReduceLROnPlateau(optim_args)
+
         svi = SVI(model_fn, guide, optimizer, loss=Trace_ELBO())
 
         pyro.clear_param_store()
-        print(f"Starting training loop for {iterations} iterations...")
+        print(f"Starting training loop (Max {max_iterations} iterations)...")
 
-        for step in range(iterations):
+        # FIX: Initialize as None instead of infinity
+        best_loss = None
+        best_params = None
+        patience_counter = 0
+        smoothed_loss = None
+
+        for step in range(max_iterations):
             loss = svi.step(states, actions, next_states, rewards)
-            if step % 100 == 0:
-                print(f"  -> Step {step:^4} | Loss: {loss:.4f}")
 
-        final_loss = svi.step(states, actions, next_states, rewards)
-        print(f"  -> Step {iterations:^4} | Final Loss: {final_loss:.4f}")
+            if smoothed_loss is None:
+                smoothed_loss = loss
+            else:
+                smoothed_loss = (ema_alpha * loss) + ((1 - ema_alpha) * smoothed_loss)
+
+            optimizer.step(smoothed_loss)
+
+            if step % 100 == 0:
+                print(f"  -> Step {step:^4} | Raw Loss: {loss:.4f} | Smoothed: {smoothed_loss:.4f}")
+
+            # FIX: Handle the very first step to initialize best_loss properly
+            if best_loss is None:
+                best_loss = smoothed_loss
+                best_params = pyro.get_param_store().get_state()
+                continue
+
+            # Calculate relative improvement
+            required_improvement = rel_tol * abs(best_loss)
+
+            if smoothed_loss < best_loss - required_improvement:
+                best_loss = smoothed_loss
+                patience_counter = 0
+                # PRO-TIP: Snapshot the best parameters
+                best_params = pyro.get_param_store().get_state()
+            else:
+                patience_counter += 1
+
+            if patience_counter >= es_patience:
+                print(f"  -> Early stopping triggered at step {step}!")
+                print(f"     Smoothed loss hasn't improved by {rel_tol * 100}% in {es_patience} steps.")
+
+                # Restore the weights to their optimal state before the plateau
+                pyro.get_param_store().set_state(best_params)
+                break
+
+        print(f"  -> Final Best Smoothed Loss: {best_loss:.4f}")
         print("Status: [PASS] Model successfully fitted to multi-dimensional data.")
         return guide, None
 

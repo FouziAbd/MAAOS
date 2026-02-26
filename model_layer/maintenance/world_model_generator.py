@@ -55,43 +55,48 @@ def run_ai_coder_loop(states, actions, next_states, rewards, max_retries=3):
     _, action_dim = actions.view(actions.size(0), -1).shape
 
     base_instructions = f"""
-        You are an AI generating a Pyro Probabilistic Program for a Bayesian Linear Regression world model. 
-        You MUST use the following exact template. Do not change the function signature.
+            You are an AI generating a Pyro Probabilistic Program for a Bayesian Linear Regression world model. 
+            You MUST use the following exact template. Do not change the function signature.
 
-        The environment data dimensions:
-        - states flattened shape: (N, {state_dim})
-        - actions flattened shape: (N, {action_dim})
+            The environment data dimensions:
+            - states flattened shape: (N, {state_dim})
+            - actions flattened shape: (N, {action_dim})
 
-        ```python
-        import pyro
-        import pyro.distributions as dist
-        import torch
+            CRITICAL PYRO RULES:
+            1. Use `pyro.param("name", torch.randn(...))` to define your priors for weights and biases. Do NOT use `pyro.sample` for the weights.
+            2. Because `next_states` is a multi-dimensional array ({state_dim} features), you MUST append `.to_event(1)` to its distribution. Example: `dist.Normal(mean, 1.0).to_event(1)`
+            3. Do not overcomplicate the baseline. Keep the variance hardcoded to 1.0.
 
-        def ai_generated_model(states, actions, next_states=None, rewards=None):
-            # 1. Flatten the inputs
-            states_flat = states.view(states.size(0), -1)
-            actions_flat = actions.view(actions.size(0), -1)
-            N, state_dim = states_flat.shape
-            _, action_dim = actions_flat.shape
+            ```python
+            import pyro
+            import pyro.distributions as dist
+            import torch
 
-            # 2. Define Priors
-            # YOUR CODE HERE: Create weight_s, weight_a, weight_r_s, weight_r_a
+            def ai_generated_model(states, actions, next_states=None, rewards=None):
+                # 1. Flatten the inputs
+                states_flat = states.view(states.size(0), -1)
+                actions_flat = actions.view(actions.size(0), -1)
+                N, state_dim = states_flat.shape
+                _, action_dim = actions_flat.shape
 
-            # 3. Plate and Observations
-            with pyro.plate("data_plate", N):
-                # YOUR CODE HERE: Calculate mean_next_state and mean_reward using torch.matmul
+                # 2. Define Priors
+                # YOUR CODE HERE: Create weight_s, weight_a, bias_s, weight_r_s, weight_r_a, bias_r using pyro.param
 
-                # Flatten next_states for comparison
-                if next_states is not None:
-                    next_states = next_states.view(next_states.size(0), -1)
+                # 3. Plate and Observations
+                with pyro.plate("data_plate", N):
+                    # YOUR CODE HERE: Calculate mean_next_state and mean_reward using torch.matmul
 
-                # YOUR CODE HERE: Sample 'obs_next_state' (using obs=next_states) 
-                # YOUR CODE HERE: Sample 'obs_reward' (using obs=rewards)
-        ```
+                    # Flatten next_states for comparison
+                    if next_states is not None:
+                        next_states = next_states.view(next_states.size(0), -1)
 
-        Fill in the "YOUR CODE HERE" sections. Ensure matrix dimensions align for torch.matmul.
-        Output the complete, runnable python code.
-        """
+                    # YOUR CODE HERE: Sample 'obs_next_state' (using obs=next_states). REMEMBER .to_event(1)!
+                    # YOUR CODE HERE: Sample 'obs_reward' (using obs=rewards)
+            ```
+
+            Fill in the "YOUR CODE HERE" sections. Ensure matrix dimensions align for torch.matmul.
+            Output the complete, runnable python code.
+            """
 
     current_feedback = "None. This is your first attempt."
     generator = dspy.Predict(GeneratePyroModel)
@@ -222,7 +227,7 @@ if __name__ == "__main__":
     print("=" * 60)
 
     # 1. Get the initial baseline
-    success, current_code, current_evidence = run_ai_coder_loop(states, actions, next_states, rewards, max_retries=3)
+    success, current_code, current_evidence = run_ai_coder_loop(states, actions, next_states, rewards, max_retries=5)
 
     if success:
         results.append({
