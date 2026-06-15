@@ -25,8 +25,7 @@ class DSPyPlanner:
             objective: str = dspy.InputField(desc="Goal for this episode/agent.")
             n_actions: int = dspy.InputField(desc="Number of discrete actions available.")
 
-            action: int = dspy.OutputField(desc="Return ONLY an integer in [0, n_actions-1]. CRITICAL: If observation says 'attack_ok=true', you MUST output 4. If 'attack_ok=false', you MUST NOT output 4. Your choice must match the attack_ok flag.")
-            rationale: str = dspy.OutputField(desc="Why you chose this action (max 20 words). MUST reference 'attack_ok' value and explain alignment with that flag.")
+            action: int = dspy.OutputField(desc="Return ONLY an integer in [0, n_actions-1]. Choose the action that best achieves the objective given the observation. Follow any SUGGESTED_ACTION or CRITICAL RULES stated in task_instructions or obs_summary.")
         
         self._predict = dspy.ChainOfThought(NextActionSig)
         #self._predict = dspy.Predict(NextActionSig)
@@ -36,22 +35,22 @@ class DSPyPlanner:
         if self._predict is None:
             raise RuntimeError(f"DSPy planner for {self.agent} not configured. Call configure_ollama().")
         
-        out = self._predict(
-            task_instructions=instructions,
-            action_descriptions=action_descriptions,
-            obs_summary=obs_summary,
-            objective=objective,
-            recent_actions=recent_actions,
-            n_actions=n_actions,
-        )
-
         try:
+            out = self._predict(
+                task_instructions=instructions,
+                action_descriptions=action_descriptions,
+                obs_summary=obs_summary,
+                objective=objective,
+                recent_actions=recent_actions,
+                n_actions=n_actions,
+            )
             idx = int(out.action)
-        except Exception:
-            idx = n_actions - 1  # fallback to last action (often NOOP)
-        
-        # Log with agent ID to both console and file
-        log_msg = f"    [Planner {self.agent}] Action: {idx} | Rationale: {out.rationale}"
+            reasoning = getattr(out, "reasoning", "")
+        except Exception as e:
+            idx = 3
+            reasoning = f"[parse-error fallback] {type(e).__name__}"
+
+        log_msg = f"    [Planner {self.agent}] Action: {idx} | Reasoning: {reasoning[:120]}"
         print(log_msg)
         
         # Import and use the log_message function from KAZ if available

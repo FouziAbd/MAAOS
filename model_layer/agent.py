@@ -1,6 +1,5 @@
 from model_layer.maintenance.model_manager import ModelManager
 from model_layer.maintenance.reward_manager import RewardManager
-from model_layer.storage.belief_state_manager import BeliefStateManager
 from model_layer.storage.history import History
 from model_layer.planner.DsPy_planner import DSPyPlanner
 from collections import deque
@@ -44,7 +43,8 @@ class Agent:
             goals=goal_description,
             constraints=""
         )
-        self.belief_manager = BeliefStateManager(starting_belief_state="")
+        # belief_manager is wired via middleware when entity_schema is provided
+        self.belief_manager = None
         self.history_manager = History()
         self.planner = DSPyPlanner(self.agent_id)
         self.planner.configure_ollama(self.LLM_model)
@@ -85,9 +85,17 @@ class Agent:
         """
         # Use middleware if available, otherwise fall back to raw inputs
         if self.middleware is not None:
+            # Belief context (POMDP history + estimated state) — prepend when available
+            belief_ctx = self.middleware.get_belief_context()
+
             # Simplify observation via middleware (with optional tactical info)
             obs_summary = self.middleware.process_observation(obs, tactical_summary=tactical_summary)
-            
+
+            # Tactical summary first (SUGGESTED_ACTION must be visible immediately),
+            # then belief context (history + current state) as supporting context.
+            if belief_ctx:
+                obs_summary = obs_summary + "\n\n" + belief_ctx
+
             # Get simplified scenario, goal, and actions from middleware
             scenario = self.middleware.get_simplified_scenario()
             goal = self.middleware.get_simplified_goal()
@@ -102,6 +110,10 @@ class Agent:
 
         # Format history
         history_str = "\n".join(self.history) if self.history else "none"
+
+        # Cap obs_summary to avoid LLM truncating required output fields
+        if len(obs_summary) > 2000:
+            obs_summary = obs_summary[:2000] + "\n...[truncated]"
 
         action = self.planner.selec_action_index(
             instructions=scenario,

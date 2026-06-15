@@ -1,3 +1,5 @@
+from typing import Callable, Dict, Optional
+
 import dspy
 from middleware_layer.observation_simplifier import ObservationSimplifier
 from middleware_layer.action_descriptor import ActionDescriptor
@@ -23,6 +25,13 @@ class MiddlewareOrchestrator:
         environment_name: str = "generic",
         observation_spec: str = "",
         use_observation_cache: bool = True,
+        # ── belief system (optional) ──────────────────────────────────────────
+        entity_schema=None,
+        initial_entities: Optional[Dict] = None,
+        obs_parser_fn: Optional[Callable] = None,
+        prior_knowledge: str = "",
+        history_window: int = 6,
+        belief_updater_kwargs: Optional[Dict] = None,
     ):
         """
         Initialize middleware orchestrator.
@@ -36,8 +45,18 @@ class MiddlewareOrchestrator:
             goal_description: Goal statement
             action_space: List of action descriptions (e.g., ["0 -> move forward", ...])
             environment_name: Name/type of environment (for caching and context)
-            observation_spec: Detailed description of observation structure (helps LLM understand raw observations)
+            observation_spec: Detailed description of observation structure
             use_observation_cache: Whether to cache observation simplifications
+            entity_schema: EntitySchema instance; if provided the belief system is enabled.
+            initial_entities: Prior-knowledge entity dict forwarded to BeliefUpdaterFactory.
+            obs_parser_fn: Callable(obs, agent_id) -> entity_snapshot.
+                           Required when entity_schema is provided.
+            prior_knowledge: Static natural-language facts prepended to every
+                             belief context (grid layout, object positions, rules).
+            history_window: Rolling history length for BeliefStateManager.
+            belief_updater_kwargs: Extra kwargs forwarded to the concrete updater
+                                   (e.g. grid_width/height for DeterministicGridUpdater,
+                                   agent_role for ParticleFilterUpdater).
         """
         self.env = env
         self.agent_id = agent_id
@@ -51,6 +70,24 @@ class MiddlewareOrchestrator:
         self.action_descriptor = ActionDescriptor(LLM_model)
         self.scenario_simplifier = ScenarioSimplifier(LLM_model)
         self.action_executor = ActionExecutor(env, agent_id)
+
+        # ── Belief system (wired only when entity_schema is supplied) ─────────
+        self.belief_manager = None
+        self._obs_parser_fn = obs_parser_fn
+        if entity_schema is not None:
+            from middleware_layer.belief_updaters.factory import BeliefUpdaterFactory
+            from model_layer.storage.belief_state_manager import BeliefStateManager
+            updater = BeliefUpdaterFactory.create(
+                schema=entity_schema,
+                initial_entities=initial_entities or {},
+                **(belief_updater_kwargs or {}),
+            )
+            self.belief_manager = BeliefStateManager(
+                updater=updater,
+                history_window=history_window,
+                prior_knowledge=prior_knowledge,
+                action_names=entity_schema.action_names,
+            )
 
         # Perform one-time simplifications
         print(f"[Middleware] Initializing for agent {agent_id}...")
@@ -90,15 +127,9 @@ class MiddlewareOrchestrator:
         Returns:
             Simplified observation summary as string
         """
-        # If tactical summary is provided, use it directly with context
+        # If tactical summary is provided, return it directly (no duplication)
         if tactical_summary:
-            context = f"Environment: {self.environment_name}\n"
-            if self.observation_spec:
-                context = f"{context}\n{self.observation_spec}\n"
-            context = f"{context}\nTactical Assessment:\n{tactical_summary}\n"
-            context = f"{context}\nNote: Rotation only turns 10 degrees per step. You may need multiple rotation actions to face a target."
-            
-            return context + tactical_summary
+            return tactical_summary
         
         # Otherwise, compute simplification from raw observation
         context = f"Environment: {self.environment_name}"
@@ -169,6 +200,35 @@ class MiddlewareOrchestrator:
             Tuple of (min_action, max_action)
         """
         return self.action_executor.get_valid_action_range()
+
+    def update_belief(self, action: int, reward: float, obs) -> None:
+        """
+        Parse *obs* with obs_parser_fn then forward to BeliefStateManager.
+        No-op if the belief system was not configured.
+        """
+        if self.belief_manager is None:
+            return
+        if self._obs_parser_fn is None:
+            raise RuntimeError(
+                "[Middleware] entity_schema provided but obs_parser_fn is None. "
+                "Pass obs_parser_fn= to MiddlewareOrchestrator.__init__."
+            )
+        snapshot = self._obs_parser_fn(obs, self.agent_id)
+        self.belief_manager.update(action, reward, snapshot)
+
+    def get_belief_context(self) -> str:
+        """
+        Return the formatted belief context string for the LLM.
+        Returns an empty string if the belief system was not configured.
+        """
+        if self.belief_manager is None:
+            return ""
+        return self.belief_manager.get_belief_context()
+
+    def reset_belief(self, seed=None) -> None:
+        """Reset belief history and updater to prior-knowledge defaults."""
+        if self.belief_manager is not None:
+            self.belief_manager.reset(seed=seed)
 
     def clear_caches(self):
         """Clear all middleware caches (observation simplifications)."""
