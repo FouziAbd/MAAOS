@@ -13,6 +13,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 from model_layer.agent import Agent
 from middleware_layer.middleware_orchestrator import MiddlewareOrchestrator
 from utils.logging_utils import setup_logging, log_message, close_logging
+from functional_layer.envs.entity_schema import KAZ_ENTITY_SCHEMA
+from functional_layer.envs.obs_parser import parse_kaz_obs
 
 
 # https://pettingzoo.farama.org/environments/butterfly/knights_archers_zombies/
@@ -83,33 +85,46 @@ def get_scenario_description(agent_id):
     base = base + "\n" + get_observation_description() + "\n"
 
     if role == "Archer":
+        patrol = "x=0.15–0.50, y=0.20–0.80" if "0" in agent_id else "x=0.50–0.85, y=0.20–0.80"
         return base + (
             "Role tactics (ARCHER):\n"
-            "- Stay away from zombies; avoid close contact distance > 0.70.\n"
+            "- Stay away from zombies; keep distance > 0.70.\n"
             "- Avoid friendly fire: if an ally is in front, don't attack.\n"
-            "- Attack only when perfectly aimed at zombie within range.\n"
-            "- Otherwise rotate/reposition to line up a safe shot.\n"
+            f"- Patrol zone (when no zombie visible): {patrol}. Move toward your zone if outside it.\n"
+            "- If movement_blocked=True, you hit a wall. Rotate (action 2 or 3) to turn away.\n"
+            "- Each rotation changes your heading by exactly 10 degrees.\n"
+            "- rotations_needed is informational only: approximate rotations left before you can fire.\n"
             "\n### CRITICAL RULES ###\n"
-            "If 'attack_ok=true' in the observation → CHOOSE ACTION 4 (ATTACK) immediately. No rotation.\n"
-            "If 'attack_ok=false' in the observation → DO NOT ATTACK. Instead:\n"
+            "If 'attack_ok=True' → CHOOSE ACTION 4 (ATTACK) immediately.\n"
+            "If 'attack_ok=False' AND zombie is visible:\n"
+            "  - DO NOT move forward. You must align first.\n"
             "  - If turn_hint=LEFT → Choose action 2 (rotate left)\n"
             "  - If turn_hint=RIGHT → Choose action 3 (rotate right)\n"
-            "  - If no zombie → Choose action 0 (move forward) or action 5 (no-op)\n"
-            "If ally_block_attack=true → Do NOT choose action 4.\n"
+            "  - Keep rotating the same direction until attack_ok=True.\n"
+            "If 'attack_ok=False' AND no zombie:\n"
+            "  - If movement_blocked=True → Choose action 2 or 3 to turn away from wall.\n"
+            "  - Otherwise → Choose action 0 (move forward) toward your patrol zone.\n"
+            "If ally_block_attack=True → Do NOT choose action 4.\n"
         )
     else:
         return base + (
             "Role tactics (KNIGHT):\n"
-            "- You are frontline: close distance to nearest threatening zombie distance < 0.25.\n"
-            "- Attack when zombie is in front and close, angle < 60 degrees.\n"
-            "- Otherwise rotate toward nearest zombie and move forward.\n"
+            "- You are melee: close distance to zombie below 0.25 AND roughly face it to hit.\n"
+            "- Each rotation changes your heading by exactly 10 degrees.\n"
+            "- rotations_needed is informational only: approximate rotations left before you can fire.\n"
+            "- If movement_blocked=True, you hit a wall. Rotate to find a clear path to zombie.\n"
+            "- Advance toward zombies — do not patrol, close the gap.\n"
             "\n### CRITICAL RULES ###\n"
-            "If 'attack_ok=true' in the observation → CHOOSE ACTION 4 (ATTACK) immediately. No rotation.\n"
-            "If 'attack_ok=false' in the observation → DO NOT ATTACK. Instead:\n"
+            "If 'attack_ok=True' → CHOOSE ACTION 4 (ATTACK) immediately.\n"
+            "If 'attack_ok=False' AND zombie is visible:\n"
+            "  - If distance_status=TOO_FAR → rotate per turn_hint to face zombie, then move forward.\n"
+            "  - If distance_status=IN_RANGE → rotate per turn_hint until attack_ok=True.\n"
             "  - If turn_hint=LEFT → Choose action 2 (rotate left)\n"
             "  - If turn_hint=RIGHT → Choose action 3 (rotate right)\n"
-            "  - If no zombie → Choose action 0 (move forward) or action 5 (no-op)\n"
-            "If ally_block_attack=true → Do NOT choose action 4.\n"
+            "If 'attack_ok=False' AND no zombie:\n"
+            "  - If movement_blocked=True → Choose action 2 or 3 to change direction.\n"
+            "  - Otherwise → Choose action 0 (move forward) to find zombies.\n"
+            "If ally_block_attack=True → Do NOT choose action 4.\n"
         )
 
 
@@ -141,13 +156,18 @@ def _turn_hint(heading_xy, rel_xy):
     h = np.asarray(heading_xy, float)
     r = np.asarray(rel_xy, float)
     cross = h[0] * r[1] - h[1] * r[0]  # z component of 2D cross
-    return "LEFT" if cross > 0 else "RIGHT"
+    # KAZ uses image coords (y increases downward) — handedness is flipped vs standard math
+    return "RIGHT" if cross > 0 else "LEFT"
+
+
+_prev_positions: dict = {}  # agent_id -> (sx, sy) from last step
 
 
 def summarize_kaz_obs(
     obs, role: str,
     num_archers: int, num_knights: int,
     max_arrows: int, max_zombies: int,
+    agent_id: str = "",
 ):
     """
     obs: (N+1,5) numpy array for vector_state=True
@@ -184,15 +204,15 @@ def summarize_kaz_obs(
         if nearest_a is None or dist < nearest_a[0]:
             nearest_a = (dist, relx, rely)
 
-    # thresholds (start values; tune later)
+    # thresholds
     if role.lower() == "archer":
         max_dist = 0.85
         max_angle = 20.0
         ally_block_dist = 0.20
         ally_block_angle = 15.0
-    else:  # knight
-        max_dist = 0.60
-        max_angle = 100.0
+    else:  # knight — melee: must be close, angle is wider than archer
+        max_dist = 0.25
+        max_angle = 70.0
         ally_block_dist = 0.15
         ally_block_angle = 25.0
 
@@ -221,6 +241,24 @@ def summarize_kaz_obs(
 
     a_txt = "none" if nearest_a is None else f"dist={nearest_a[0]:.2f} rel=({nearest_a[1]:.2f},{nearest_a[2]:.2f})"
 
+    # Fix 1: movement_blocked — compare to previous position
+    movement_blocked = False
+    if agent_id:
+        prev = _prev_positions.get(agent_id)
+        if prev is not None:
+            movement_blocked = (abs(sx - prev[0]) < 0.005 and abs(sy - prev[1]) < 0.005)
+        _prev_positions[agent_id] = (sx, sy)
+
+    # Fix 3: distance_status + rotations_needed
+    distance_status = ""
+    rotations_needed = 0
+    if nearest_z is not None:
+        if role.lower() == "knight":
+            distance_status = "IN_RANGE" if nearest_z[0] <= 0.25 else "TOO_FAR"
+        if z_angle is not None and not attack_ok:
+            import math as _math
+            rotations_needed = max(0, _math.ceil((z_angle - max_angle) / 10.0))
+
     # LLM-friendly summary
     summary = (
         f"self: pos=({sx:.2f},{sy:.2f}) heading=({hx:.2f},{hy:.2f})\n"
@@ -228,8 +266,13 @@ def summarize_kaz_obs(
         f"nearest_zombie: {z_txt}\n"
         f"ally_block_attack={ally_block_attack}\n"
         f"attack_ok={attack_ok}\n"
-        f"turn_hint={turn}"
+        f"turn_hint={turn}\n"
+        f"movement_blocked={movement_blocked}"
     )
+    if distance_status:
+        summary += f"\ndistance_status={distance_status}"
+    if rotations_needed > 0:
+        summary += f"\nrotations_needed={rotations_needed}"
     return summary
 
 
@@ -257,9 +300,10 @@ if __name__ == "__main__":
 
         my_controllers = {}
         lm = dspy.LM(
-            model='ollama_chat/llama3:latest',
+            model='ollama_chat/gemma4:e4b',
             api_base='http://localhost:11434',
-            api_key=''
+            api_key='',
+            cache=False,
         )
 
         actions_details = [
@@ -291,6 +335,13 @@ if __name__ == "__main__":
             # Dynamic Controller Management
             for agent_id in env.agents:
                 if agent_id not in my_controllers:
+                    from functools import partial
+                    kaz_parser = partial(
+                        parse_kaz_obs,
+                        num_archers=2, num_knights=2,
+                        max_arrows=10, max_zombies=10,
+                    )
+                    agent_role = "archer" if "archer" in agent_id else "knight"
                     middleware = MiddlewareOrchestrator(
                         env=env,
                         agent_id=agent_id,
@@ -299,7 +350,13 @@ if __name__ == "__main__":
                         goal_description=get_goal_description(agent_id),
                         action_space=actions_details,
                         environment_name="KAZ Zombie Survival",
-                        observation_spec=get_observation_description()
+                        observation_spec=get_observation_description(),
+                        # ── belief system ──────────────────────────────────
+                        entity_schema=KAZ_ENTITY_SCHEMA,
+                        initial_entities={"self": {}},
+                        obs_parser_fn=kaz_parser,
+                        history_window=6,
+                        belief_updater_kwargs={"agent_role": agent_role},
                     )
 
                     my_controllers[agent_id] = Agent(
@@ -325,19 +382,28 @@ if __name__ == "__main__":
                     num_archers=2,
                     num_knights=2,
                     max_arrows=10,
-                    max_zombies=10
+                    max_zombies=10,
+                    agent_id=agent_id,
                 )
                 
                 log_message(f"\n[Agent: {agent_id}]")
                 log_message(f"  Tactical Summary:\n    {tactical_summary.replace(chr(10), chr(10) + '    ')}")
                 
-                # Pass raw observation + tactical summary to agent for LLM processing
                 actions[agent_id] = my_controllers[agent_id].choose_action_with_tactical_info(agent_obs, tactical_summary)
-                
+
                 log_message(f"  Action Chosen: {actions[agent_id]} ({actions_details[actions[agent_id]]})")
 
             observations, rewards, terminations, truncations, infos = env.step(actions)
-            
+
+            # Update belief state from step outcomes
+            for agent_id, action in actions.items():
+                if agent_id in my_controllers:
+                    my_controllers[agent_id].middleware.update_belief(
+                        action,
+                        rewards.get(agent_id, 0.0),
+                        observations.get(agent_id),
+                    )
+
             # Clean up controllers and log terminations/truncations
             terminated_agents = [a for a in terminations if terminations[a]]
             truncated_agents = [a for a in truncations if truncations[a]]
