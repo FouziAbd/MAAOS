@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**ma_aos** is a multi-agent LLM-driven system where LLMs drive agent decision-making inside PettingZoo parallel environments. The current working environment is **KAZ** (Knights, Archers, Zombies). A custom POMDP grid environment (**CooperativeSearchTransport**) is under active development.
+**ma_aos** is a multi-agent LLM-driven system where LLMs drive agent decision-making inside PettingZoo parallel environments. The original working environment is **KAZ** (Knights, Archers, Zombies). Two custom POMDP grid environments are under active development: **CooperativeSearchTransport** (CST — joint *carry*) and **BoxPush** (joint *push*, the newest env).
 
 ## Running the Code
 
@@ -28,6 +28,12 @@ cd functional_layer/custom_env/cooperative_search_transport/env
 python demo_cooperative_solution.py   # hardcoded 2-agent cooperative carry
 python demo_hardcoded_solution.py
 python demo.py
+python cst_centralized.py             # single centralized LLM, granular skills
+
+# Box-Push (run from env/ directory)
+cd functional_layer/custom_env/box_push/env
+python box_push_centralized.py        # centralized LLM picks skills, skills run to completion
+python box_push_per_step.py           # centralized LLM decides every primitive (1 call/step — slow)
 
 # Toy rescue env
 cd functional_layer/custom_env/toy_rescuce_env
@@ -76,9 +82,19 @@ env.step() → raw obs
 
 `Agent` is the main class. Key method: `choose_action_with_tactical_info(obs, tactical_summary)`.
 
-- `DSPyPlanner` uses DSPy `ChainOfThought` with signature `NextActionSig`. Output field `action` is the integer index.
-- `RewardManager` and `BeliefStateManager` are **stubs** — not used in active experiments.
+- `DSPyPlanner` (`model_layer/planner/DsPy_planner.py`) — per-agent, decentralized. DSPy `ChainOfThought`, signature `NextActionSig`. Output field `action` is the integer index. Used by KAZ.
+- `CentralizedDSPyPlanner` (`model_layer/planner/centralized_dspy_planner.py`) — one LLM call sees ALL agents and returns one decision per agent. Used by the CST/BoxPush `*_centralized.py` and `*_per_step.py` runners. **The signature `TeamActionSig` is generic and never rewritten per environment** — all task specificity (rules, decision menu, situation, agent ids) is passed as input *values* via `decide(...)`, and a caller-supplied `parser(agent_id, raw)` maps each `'agent_id: DECISION'` line to a typed action/skill. On any LLM/parse error it returns `("[error]…", {})` so callers default every agent safely.
+- `RewardManager` is a **stub**. The belief system (`BeliefStateManager` + `middleware_layer/belief_updaters/`) is **active** in CST/BoxPush — only KAZ leaves it unwired.
 - `History` logs to SQLite (`agent_history.db`).
+
+### Centralized + skill + belief stack (CST and BoxPush)
+
+The custom grid envs do **not** use the KAZ per-agent flow. Instead:
+
+1. **Belief** — each agent has a `DeterministicGridUpdater` (`middleware_layer/belief_updaters/`) maintaining an N×M belief grid (`unknown`/`empty`/`wall`/`delivery_zone`/`target_N`/`decoy_N`/`agent`). Self-position is **dead-reckoned from action + reward** (`reward > -0.06` ⇒ MOVE_FORWARD succeeded). The grid is initialized from prior knowledge and swept from each step's partial local view. Wired through `MiddlewareOrchestrator(entity_schema=..., obs_parser_fn=parse_cst_obs, belief_updater_kwargs=...)`.
+2. **Shared map (centralized only)** — the `*_centralized.py` runners point every agent's `updater._grid` at one shared list so both agents read/write a single belief map (true centralized POMDP).
+3. **Skills** — `CentralizedDSPyPlanner` picks a *skill* per agent (`explore`, `goto_push_pose`, `push`, `cooperate_push`, `wait`); a `BaseSkill` subclass then runs to completion over many primitive steps, re-checking belief each step and returning a *label* (e.g. `delivered`, `too_heavy`, `blocked`) fed back to the planner next cycle. `box_push_per_step.py` skips the skill layer — the LLM emits a primitive per agent every step.
+4. **Shared skill scaffolding** — env-agnostic pieces (`BaseSkill`, `ExploreSkill`, `WaitSkill`, cell decoding `_cell_desc`, and BFS/frontier nav helpers) live in `functional_layer/custom_env/shared_skills.py`. Both CST's `skill_executor.py` and box_push's `skill_executor_push.py` import from there, so **no env depends on another**. Each env keeps its own task-specific skills and `make_skill` factory: CST has `goto_target/goto_delivery/pick/drop/cooperate_move` (carry); box_push has `goto_push_pose/push/cooperate_push` (push). `skill_executor.py` re-exports the shared names, so older `from skill_executor import _cell_desc, …` callers (e.g. the package-level `cst_centralized.py`) still resolve.
 
 ### CooperativeSearchTransport environment
 
@@ -101,6 +117,18 @@ Key files:
 5. Agents in a joint hold are **blocked from individual MOVE_FORWARD** (checked via `_is_agent_in_joint_hold`)
 
 **Direction arithmetic:** `TURN_LEFT = (dir-1) % 4`, `TURN_RIGHT = (dir+1) % 4`. `RIGHT=0 DOWN=1 LEFT=2 UP=3`. MOVE_FORWARD with UP moves to `(x, y-1)`.
+
+### BoxPush environment
+
+Lives in `functional_layer/custom_env/box_push/env/`. **Reuses CST's `objects.py`, `state.py`, `constants.py`, `obs_parser.py` (the shared definitions, kept in the CST `env/` dir) and the env-agnostic skill scaffolding in `shared_skills.py` via `sys.path` insertion** — the run scripts add the CST `env/` dir, `functional_layer/custom_env/` (for `shared_skills`), the box_push `env/` dir, and the repo root to `sys.path` at import time. Box-push does **not** import CST's `skill_executor.py` (only `shared_skills.py`). Do not "fix" these path hacks into package imports; the whole repo relies on bare imports run from each script's directory.
+
+Key contrast with CST — the interaction model is **PUSH, not carry**:
+- **Open 12×12 arena**, outer wall only (a walled maze makes box-pushing Sokoban-hard). Goal zone = left column `x=1, y=1..10`. Box-0 = HEAVY (`required_agents=2`) at (6,6); Box-1 = LIGHT (`required_agents=1`) at (8,4). Agents start on the right facing LEFT.
+- **Action space is `Discrete(4)`**: `TURN_LEFT=0, TURN_RIGHT=1, MOVE_FORWARD=2, STAY=3`. **There is no PICK/DROP/COOPERATE action** — cooperation is *emergent* from MOVE_FORWARD.
+- **Light push:** one agent MOVE_FORWARD into the box slides it one cell if the cell beyond is free; the pusher follows.
+- **Heavy push = TANDEM:** the box moves only when two agents line up *in-line* behind it (A1 at B−D, A2 at B−2D, both facing D) and **both** MOVE_FORWARD the same step. A lone push of a heavy box is blocked — this is the "discover it's heavy" signal (`too_heavy`).
+- **Delivery is by position:** a target box whose cell lands in the goal zone is delivered. Resolution order each step (`MultiAgentBoxPushEnv.step`): turns → `_resolve_pushes` (Phase A heavy tandems, Phase B individual moves/light pushes) → `_check_delivery` → termination.
+- **Skill-layer caveats** (`skill_executor_push.py`): navigation treats boxes as obstacles (`_bfs_avoid_boxes`) so repositioning agents don't bulldoze boxes; the shared map records agents as `empty`, so skills add no-progress/stuck backstops to avoid silently freezing against a stationary partner. Heavy is "sticky" — once `push` returns `too_heavy`, only ever `cooperate_push` that box.
 
 ## KAZ-Specific Implementation Details
 
@@ -156,4 +184,6 @@ An alternative KAZ runner using `vector_state=False` (512×512 RGB image per age
 
 ## Branch Notes
 
-Current branch: `middleware_layer`. The `main` branch is the stable baseline. The cooperative transport env and its joint-carry mechanic exist only on this branch.
+Current branch: `middleware_layer`. The `main` branch is the stable baseline. The CST joint-carry env, the BoxPush joint-push env, the centralized/skill/belief stack, and the centralized planner all exist only on this branch.
+
+Run artifacts (e.g. `box_push_centralized_log.txt`, `box_push_per_step_log.txt`, `logs_run.txt`, `logs_vision_run.txt`, `agent_history.db`) are written next to the scripts and should not be committed — consider adding them to `.gitignore`.

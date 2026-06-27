@@ -13,10 +13,11 @@ the CST skill_executor (identical logic — no need to duplicate).
 import sys
 import os
 
-_THIS_DIR  = os.path.dirname(os.path.abspath(__file__))
-_CST_ENV   = os.path.abspath(os.path.join(_THIS_DIR, "../../cooperative_search_transport/env"))
-_REPO_ROOT = os.path.abspath(os.path.join(_THIS_DIR, "../../../.."))
-for _p in (_REPO_ROOT, _CST_ENV, _THIS_DIR):
+_THIS_DIR    = os.path.dirname(os.path.abspath(__file__))
+_CUSTOM_ENV  = os.path.abspath(os.path.join(_THIS_DIR, "../.."))  # functional_layer/custom_env
+_CST_ENV     = os.path.join(_CUSTOM_ENV, "cooperative_search_transport", "env")
+_REPO_ROOT   = os.path.abspath(os.path.join(_THIS_DIR, "../../../.."))
+for _p in (_REPO_ROOT, _CUSTOM_ENV, _CST_ENV, _THIS_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -24,8 +25,8 @@ from typing import Optional, List, Tuple
 from collections import deque
 from constants import Actions, Directions, DIRECTION_VECTORS
 
-# Reuse CST scaffolding verbatim.
-from skill_executor import (
+# Reuse env-agnostic scaffolding from the shared module (no CST dependency).
+from shared_skills import (
     BaseSkill, ExploreSkill, WaitSkill,
     _bfs_next_action, _frontier_explore, _nearest_target_cell,
     _get_front_cell, _manhattan, _dir_to_action,

@@ -19,10 +19,11 @@ import re
 import time
 from typing import Dict, List, Optional, Tuple
 
-_THIS_DIR  = os.path.dirname(os.path.abspath(__file__))
-_CST_ENV   = os.path.abspath(os.path.join(_THIS_DIR, "../../cooperative_search_transport/env"))
-_REPO_ROOT = os.path.abspath(os.path.join(_THIS_DIR, "../../../.."))
-for _p in (_REPO_ROOT, _CST_ENV, _THIS_DIR):
+_THIS_DIR    = os.path.dirname(os.path.abspath(__file__))
+_CUSTOM_ENV  = os.path.abspath(os.path.join(_THIS_DIR, "../.."))  # functional_layer/custom_env
+_CST_ENV     = os.path.join(_CUSTOM_ENV, "cooperative_search_transport", "env")
+_REPO_ROOT   = os.path.abspath(os.path.join(_THIS_DIR, "../../../.."))
+for _p in (_REPO_ROOT, _CUSTOM_ENV, _CST_ENV, _THIS_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -30,7 +31,7 @@ import dspy
 from constants import Actions, Directions, DIRECTION_NAMES, ACTION_NAMES
 from state import EnvConfig
 from obs_parser import parse_cst_obs
-from skill_executor import _cell_desc  # reused view formatter
+from shared_skills import _cell_desc  # reused view formatter (env-agnostic)
 from multi_agent_box_push_env import MultiAgentBoxPushEnv
 from box_push_env import GOAL_ZONE
 from box_push_schema import BOX_PUSH_ENTITY_SCHEMA
