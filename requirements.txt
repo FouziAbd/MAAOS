@@ -3,3 +3,6 @@ gymnasium
 pygame
 numpy
 dspy-ai
+minigrid
+Pillow
+requests

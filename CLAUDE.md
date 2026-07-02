@@ -46,6 +46,8 @@ python toy_rescue_env_v0.py
 - A model loaded: `ollama pull llama3`
 - For vision experiments: a multimodal model e.g. `ollama pull gemma4:e4b` or `ollama pull qwen3.6`
 
+**Testing / verification:** there is **no automated test suite** (no pytest/tox, no `test_*.py`). Changes are validated by running the relevant demo/runner script and inspecting its `*_log.txt` output (e.g. `box_push_centralized_log.txt`, `logs_run.txt`) and the pygame render window. When editing a shared module (`shared_skills.py`, middleware, planner), sanity-check that the affected runners still import — e.g. `cd <script dir> && python -c "import <module>"`.
+
 ## Architecture
 
 Four layers, each independently importable:
