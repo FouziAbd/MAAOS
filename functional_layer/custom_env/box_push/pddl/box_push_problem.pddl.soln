@@ -1,0 +1,9 @@
+;; SUPERSEDED — plan for the pre-Decision-5 problem file; contains `explore` steps.
+;; The V1 symbolic action set is goto_push_pose / push / cooperate_push only.
+(explore a1 box1)
+(explore a1 box0)
+(goto_push_pose a1 box1)
+(goto_push_pose a1 box0)
+(goto_push_pose a2 box0)
+(push a1 box1)
+(cooperate_push a1 a2 box0)
