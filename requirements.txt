@@ -6,3 +6,7 @@ dspy-ai
 minigrid
 Pillow
 requests
+
+# Formal-model validation for box_push (PDDL/RDDL skill-level models)
+pyperplan>=2.1
+pyRDDLGym>=2.7
