@@ -858,8 +858,14 @@ These are scheduled engineering tasks, not open decisions.
    `dspy.configure`, and the runner hardcodes the model. That legacy path is unchanged and
    superseded.
 4. ~~**P2 — static no-backend-import guard**~~ — **done in P0.** `tests/test_no_backend_imports.py` discovers guarded packages instead of hardcoding them, and the symbolic side is derived (`discovered_guarded_packages() - RUNTIME_PACKAGES`) so a future `symbolic/` package is covered the day it is created, not the day someone remembers.
-5. **P1 — guards and counters:** `world`↔`grid` consistency assertion, reset-before-use,
-   post-terminal refusal, per-attempt `env.step()` counter, belief-sharing reset test.
+5. ~~**P1 — guards and counters.**~~ — **done in P1** (recorded belatedly; the P1 roadmap row
+   carried the evidence all along): reset-before-use and post-terminal refusal via
+   `InfrastructureFaultError` (D8), per-attempt `env.step()` counter cross-checked against the
+   joint `step_count` (D2), world↔grid consistency behaviourally pinned by the grid-vandalism
+   and cache-desync tests, belief-sharing reset test — all in `tests/test_p1_adapter.py`
+   against `box_push_v1_adapter.py::BoxPushV1Adapter`. Original: `world`↔`grid` consistency
+   assertion, reset-before-use, post-terminal refusal, per-attempt `env.step()` counter,
+   belief-sharing reset test.
 6. ~~**P2 — implement the world-effect predictor**~~ — **done in P2 (2026-08-21).**
    `symbolic/predictor.py` grounds `predicted_world_effects` on bounded inputs;
    `symbolic/monitor.py` compares both bases; the clause-9 guard is
@@ -873,9 +879,16 @@ These are scheduled engineering tasks, not open decisions.
    `delivered`/`required_agents` and the zone. Not implemented in P0 by design: P0 freezes *what
    may be predicted*, P2 grounds it. Until it exists, `GotoPushPose` failure is detected through
    the authoritative typed outcome only.
-7. **P1 — exhaustive adapter dispatch** on `backend_dispatch_key` with no fallback arm
-   (Decision 14), including the `Wait` route the backend factory lacks.
-8. **P1/P4 — prove the executor is policy-independent.** `.claude/rules/testing.md` requires
+7. ~~**P1 — exhaustive adapter dispatch.**~~ — **done in P1** (recorded belatedly): dispatch
+   on `backend_dispatch_key` with no fallback arm, `make_skill` never called, the `Wait` route
+   included (D14/D16) — `box_push_v1_adapter.py` dispatch block, coverage of all registry keys
+   pinned in `tests/test_p1_adapter.py`, mutation-backed by the P1 harness. Original:
+   exhaustive dispatch on `backend_dispatch_key` with no fallback arm (Decision 14), including
+   the `Wait` route the backend factory lacks.
+8. ~~**P1/P4 — prove the executor is policy-independent.**~~ — **done in P4 (2026-08-21).**
+   `runtime/executor.py`'s signature admits no policy input; the common-prefix acceptance test
+   proves byte-identical execution under both policies until decisions diverge; the policy
+   split is mutation-pinned (O3). Original: `.claude/rules/testing.md` requires
    "orchestration policy changes decisions, not executor semantics". This is **not testable at
    P0** and is not claimed as covered: no executor and no orchestrator exist, and
    `OrchestrationPolicy` is a config enum only. Recorded here so it is not mistaken for a

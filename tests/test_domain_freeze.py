@@ -432,5 +432,25 @@ class TestLegacyRunnerCitationDiscipline(unittest.TestCase):
         self.assertEqual(offenders, [])
 
 
+class TestHandoffCountsAreMechanical(unittest.TestCase):
+    """Consistency rounds kept catching stale test counts in section18.md (three FAILs across
+    P3/P4). Same cure as the citation guard: make the property mechanical. The current-truth
+    suite-count row must equal what unittest discovery actually collects."""
+
+    def test_the_documented_suite_count_equals_discovery(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        text = (repo / "docs" / "handoff" / "section18.md").read_text(encoding="utf-8")
+        matches = re.findall(r"(\d+) tests, deterministic and offline", text)
+        self.assertEqual(
+            len(matches), 1,
+            "the suite-count phrase must appear exactly once — a second occurrence would let "
+            "the pin silently re-target a stale number",
+        )
+        documented = int(matches[0])
+        loader = unittest.TestLoader()
+        collected = loader.discover(str(repo / "tests"), top_level_dir=str(repo))
+        self.assertEqual(documented, collected.countTestCases())
+
+
 if __name__ == "__main__":
     unittest.main()

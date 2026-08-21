@@ -59,7 +59,10 @@ def discovered_guarded_packages(root: pathlib.Path = REPO_ROOT):
             continue
         if entry.name in LEGACY_PACKAGES:
             continue
-        if (entry / "__init__.py").exists():
+        # ANY directory containing Python is guarded — requiring __init__.py let a
+        # NAMESPACE package (PEP 420) or a plain code directory bypass every guard
+        # (consistency-all finding; probe below demonstrates the closed hole)
+        if any(entry.rglob("*.py")):
             packages.append(entry.name)
     return packages
 
@@ -222,6 +225,29 @@ class TestSymbolicSideCannotReachRuntimeState(unittest.TestCase):
                     f"a {leaked} import in a newly discovered package went unnoticed",
                 )
 
+    def test_an_init_less_namespace_package_cannot_bypass_the_guard(self):
+        """PEP 420 namespace packages import fine WITHOUT __init__.py — before this round,
+        discovery required the marker file, so `oracle/feasibility.py` at repo root would
+        have been invisible to every guard. Probe tree, never the real repo."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            probe = root / "oracle"
+            probe.mkdir()
+            (probe / "feasibility.py").write_text(
+                "import functional_layer\n", encoding="utf-8"
+            )
+            discovered = discovered_guarded_packages(root)
+            self.assertIn("oracle", discovered)
+            violations = forbidden_import_violations(discovered, FORBIDDEN_PREFIXES, root)
+            self.assertTrue(violations)
+
+    def test_no_unguarded_bare_module_sits_at_repo_root(self):
+        """A top-level single .py file is importable but belongs to no guarded package.
+        Fail-closed: the repo root must contain no bare Python modules at all."""
+        bare = [p.name for p in REPO_ROOT.glob("*.py")]
+        self.assertEqual(bare, [])
+
     def test_the_probes_never_write_into_the_repository(self):
         import contextlib
         before = {p.name for p in REPO_ROOT.iterdir()}
@@ -238,15 +264,25 @@ class TestSymbolicSideCannotReachRuntimeState(unittest.TestCase):
         self.assertNotIn("runtime", {m.split(".")[0] for p in python_files("shared")
                                      for m, _ in imported_modules(p)})
 
+    #: The stdlib modules domain/ actually uses; a WHITELIST, so `domain -> nl` or
+    #: `domain -> symbolic` fails here (the old body only excluded backend+runtime,
+    #: quietly under-enforcing the test's own name — consistency-all finding).
+    DOMAIN_STDLIB_WHITELIST = frozenset({
+        "dataclasses", "enum", "json", "hashlib", "typing", "functools", "itertools",
+        "collections", "abc", "math", "re", "__future__",
+    })
+
     def test_domain_imports_only_shared_and_stdlib(self):
         for path in python_files("domain"):
             for module, lineno in imported_modules(path):
                 root = module.split(".")[0]
-                if root in ("shared", "domain"):
-                    continue
                 with self.subTest(file=path.name, module=module):
-                    self.assertNotIn(root, FORBIDDEN_PREFIXES)
-                    self.assertNotIn(root, RUNTIME_PACKAGES)
+                    self.assertIn(
+                        root,
+                        self.DOMAIN_STDLIB_WHITELIST | {"shared", "domain"},
+                        f"{path.name}:{lineno} imports {module!r} — outside the declared "
+                        f"shared+stdlib surface",
+                    )
 
 
 if __name__ == "__main__":

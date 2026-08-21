@@ -83,7 +83,7 @@ sub-audits + one independent `architecture-reviewer` contract check.
 | Install instructions | PARTIAL | `requirements.txt` | `pettingzoo>=1.24`, `gymnasium`, `minigrid`, `dspy-ai`, `pyperplan>=2.1`, `pyRDDLGym>=2.7`; deps unpinned except two | Pin exact versions for deterministic V1 (P3 requires it) |
 | Python/OS constraints | PARTIAL | venv `/home/fouzi/PettingZooEnv`, Python 3.12.3, Linux/WSL2 | Established by environment, not declared in repo | Declare in a manifest at P0 |
 | Run command | SATISFIED | `box_push_centralized.py::main` | `cd functional_layer/custom_env/box_push/env && python box_push_centralized.py`; requires a live Ollama at `LLM_BASE` (the `dspy.LM` setup in `::main`) | Add an offline V1 entry point that does not need an LM |
-| Automated test command | SATISFIED (P0) | `python3 -m unittest discover -s tests -t .` — 580 tests, deterministic and offline (1 skip: the MAAOS_LIVE_LM-marked live-LM integration test), no LM required (the P1 module steps the real backend headlessly; P0 modules step nothing) | P0 contract freeze + P1 live-backend integration (tests/test_p1_adapter.py) | — |
+| Automated test command | SATISFIED (P0) | `python3 -m unittest discover -s tests -t .` — 629 tests, deterministic and offline (1 skip: the MAAOS_LIVE_LM-marked live-LM integration test), no LM required (the P1 module steps the real backend headlessly; P0 modules step nothing) | P0 contract freeze + P1 live-backend integration (tests/test_p1_adapter.py) | — |
 | Target OS/CI | PARTIAL | — | No CI config in repo | OS/Python frozen by **Decision 10**; CI is a project-management question, not V1 semantics (decisions §18 item 10) |
 
 ---
@@ -626,7 +626,7 @@ P1/P2 against the real wrapper, not hand-written now.
 | **P1** | — | **COMPLETE.** `functional_layer/custom_env/box_push/env/box_push_v1_adapter.py::BoxPushV1Adapter` implements the frozen `V1Environment` protocol over the real backend: `world → StateSnapshot` normalization (D4, world-only — behaviourally pinned by grid-vandalism and cache-desync tests); authoritative typed outcome derived from world with the headline-0 `too_heavy`-vs-`blocked` re-derivation in `detail` (D3); explicit typed TIMEOUT from the backend budget (D3); per-attempt `env.step()` counter cross-checked against the joint `step_count` (D2); exhaustive dispatch on `backend_dispatch_key`, no fallback, `make_skill` never called (D14/D16); identity-only pre-flight + per-skill post-flight substitution faults with the result attached (D16); reset-before-use and post-terminal refusal via `InfrastructureFaultError` (D8); `CooperativePush` as ONE executive invocation owning both instances (D1). 47 integration tests in `tests/test_p1_adapter.py`; 30/30 targeted adapter mutations killed (`docs/implementation/p1_mutation_harness.py`) | The runner-faithful drive loop submits a finishing skill's terminal STAY, so a backend-rejected attempt costs 1 primitive step; belief/middleware machinery untouched and unused (AST-pinned) |
 | **P2** | — | **COMPLETE.** `symbolic/` (7 modules): declarative applicability + the ONE deterministic successor (`applicability.py` — literal membership only, geometry cannot reach it); exact-state belief with Decision 13.8 outcome maintenance incl. the consuming-skill retention rule (`belief.py`); deterministic BFS planner returning the 3-way `PlannerResult` with typed budget exhaustion → `PlannerFailure(timed_out=True)` and `except Exception` → `PlannerFailure` (`planner.py`); world-effect predictor grounding `SkillIR.predicted_world_effects` on clause-9 bounded inputs, partial by design on ray miss (`predictor.py`); monitor over BOTH comparison bases with clause-7 outcome-only failure reports (`monitor.py`); deterministic PDDL re-issue from `DOMAIN_IR` byte-pinned to the checked-in `_v1` artifacts + `.soln` from the deterministic planner with `pyperplan` validity cross-check (`pddl_gen.py`, decisions §18 item 1 CLOSED); synthetic `NoPlan` instance (`synthetic.py`, Decision 12). Guards: four import escape routes + predictor input bound (`tests/test_p2_symbolic.py::TestSymbolicSideGuards`). 69 tests (53 unit/guard + 9 PDDL + 7 live acceptance incl. the flagship plan→execute→monitor→replan story with the designed `ExecutionDiscrepancy` and the demonstrated consuming-skill livelock + recovery); 50/50 targeted mutations killed (`docs/implementation/p2_mutation_harness.py`, incl. the VA/L series added by the V1-acceptance and consistency rounds). The `/acceptance-test` deliverable sits on top: `tests/test_v1_acceptance.py` (10 tests — six supervisor cases as `TraceEntry`-recorded live cycles) + `docs/implementation/acceptance_traces.md` (human-readable traces, regenerated live and byte-pinned by `TestTraceDocumentPinned`) | Decisions §19.1 records the P4-binding discoveries (livelock, `CallValidation` gating, belief-not-reprojection monitor wiring, monitor `ValueError`→fault wrap, ghost-identity routing order) |
 | **P3** | — | **COMPLETE.** `nl/` (12 modules): offline LM seam with typed recorded fixtures and typed fixture-miss error (`seam.py`, decisions §18 item 3 CLOSED); pinned temperature-0/cache-on runtime (`runtime_config.py`) with the live DSPy binding on the legacy side only (`model_layer/planner/v1_nl_live.py`, consumed solely by the MAAOS_LIVE_LM=1-marked `tests/test_p3_live_lm.py`); strict typed parser on the frozen call rendering — `MalformedCall`, never substitution (`parser.py`, §18 item 9 CLOSED via replacement+pinned banner); TaskInterpreter with a verb+object+no-negation coverage classifier and explicit residuals (`task_interpreter.py`); ObservationInterpreter with backend-pinned direction words, provenance-blind (`observation_interpreter.py`); exact-rederived bounded semantic belief (`semantic_belief.py`); SkillSelector + one-attempt RepairSkillCall through the seam with request CONTENT golden-pinned (`skill_selector.py`, `repair.py`); Translator deriving the symbolic action set from the frozen registry, residual for Explore/Wait (`translator.py`); RecoveryProposer answering the §19.1 livelock with re-establishment, never inventing skills (`recovery.py`); stub `NLTrack` peer with the exactly-one-of `NLProposal` and observe-before-propose precondition (`track.py`). Guards: `nl/` auto-covered by the fail-closed import guard (no backend/dspy/runtime), bidirectional nl↔symbolic isolation, AST provenance ban incl. `primitive_steps` + getattr/string evasions, closure-based no-dspy scan over default test modules. 51 offline tests; 37/37 targeted mutations killed (`docs/implementation/p3_mutation_harness.py`); `requirements.txt` pinned exactly (§18 item 2 CLOSED) | Both P3 adversarial reviews addressed to 0 outstanding: architecture 0 FAIL / 5 WARN (all five fixed), test review 5 FAIL / 7 WARN / 5 NOTE (all FAIL/WARN fixed, Q-series mutation-pinned) |
-| **P4** | Runner loop shape as reference only | Track comparator, three typed report channels, symbolic-primary + advisory policies, executive loop manager, `NoPlan` vs `PlannerFailure` routing, policy-independent executor, `InfrastructureFault` short-circuit, repeated-failure bookkeeping, executive step budget, trace/history; **case-(c) budget charging**: `TraceEntry`/`ExecutiveHistory` accessors report RECORDED accounting only (lower bounds), so the loop must charge mid-execution-fault attempts (one executive step + the `primitive_steps_before_failure` from fault detail) from fault provenance on top of the sums; and DECIDE whether case-(c) attempts feed repeated-failure counts (currently they do not — faults escalate via `faults_since`, failures via `failure_count`; make that a recorded decision, not an accident) | current runner has no typed results, no retry/failure bookkeeping, and no exception handling (`box_push_centralized.py` has no `try/except`) |
+| **P4** | Runner loop shape as reference only | — | **COMPLETE.** `runtime/` (4 new modules over the P0 `executive_history.py`): policy-independent executor whose SIGNATURE is the guarantee — env + call only, gates nothing (`executor.py`); track comparator emitting all five `TrackDivergence` kinds from typed NL evidence, the only component that raises that channel (`comparator.py`); pure orchestrator — `NoPlan`→HALT (semantic, :128), inapplicable-head→REPLAN, and the policy split at the repeated-failure threshold: SYMBOLIC_PRIMARY halts with the discrepancy history, ADVISORY_TWO_TRACK→REQUEST_PROPOSAL→NL re-establishment (`orchestrator.py`, decisions §19.1 item 1 enacted); executive loop manager (`loop.py`) enacting every §19.1 item — `CallValidation` gating in the loop (item 2), monitor on the belief with the identifier-level wiring pin since re-projection is extensionally equivalent (item 3), monitor `ValueError`→`EXECUTOR_MONITOR_PROTOCOL_FAILURE` wrap (item 4), grounding-before-applicability so ghost calls route as `MISSING_GROUNDING` faults (item 5, DECIDED) — plus `PlannerFailure`→fault conversion (:156), :163 short-circuiting with configurable episode halt, per-cycle rejection guard, **case-(c) budget charging from fault provenance on top of recorded sums** (mutation-pinned L6/L13), the RECORDED decision that case-(c) attempts do NOT feed repeated-failure counts (one attempt never escalates through both channels), REQUEST_PROPOSAL as a recorded trace entry + typed `nl_proposal` recovery provenance, both Decision-13.6 prediction bases recorded per executed entry, and a **cross-cycle liveness guard** (found by the harness hang: budgets bound only charged steps, so zero-charge cycles — repeated inapplicable heads, continue-mode faults — needed their own unconditional bound). 40+4 loop-driven tests (`tests/test_p4_runtime.py`, `tests/test_v1_acceptance.py::TestCase7ExecutiveLoop` — both policies live: SYMBOLIC_PRIMARY halts at the livelock, ADVISORY_TWO_TRACK escapes via recovery and reaches the goal, byte-identical executor semantics on the common prefix); 40/40 targeted mutations killed (`docs/implementation/p4_mutation_harness.py`, hang⇒kill semantics) | The environment arrives by INJECTION — the guard forbids `runtime/` from importing the backend, so the loop is structurally environment-agnostic |
 
 ### Ordered implementation dependencies
 
@@ -829,6 +829,100 @@ actually satisfied by the duplicate-dispatch-key guard.
   box ends the episode in the same joint `env.step`, before the skills' evaluation iteration —
   so the raw label is the non-terminal marker while the authoritative outcome is SUCCESS
   (`test_cooperative_push_is_one_executive_invocation` pins it). D3 is what makes this benign.
+
+### Revision 2026-08-21m — /consistency-check all closed (0 FAIL / 0 WARN)
+
+The full-system capstone audit (independent cross-phase seam pass + live conservation and
+alien-zone probes) returned 0 FAIL / 4 WARN — the project's first zero-FAIL first pass — and
+all four WARNs are closed here. (1) P3 EVIDENCE PRESERVED: every executed entry now records
+the advisory `nl_proposal` (recovery provenance keeping priority) plus `coverage` and
+`confidence` — an AGREEING proposal can no longer vanish just because the comparator has
+nothing to raise; evidence-only, no new control channel, symbolic-primary untouched (pinned
+by the agreeing-head test; mutants W1a/W1b). (2) Decisions §18 items 5 and 7 struck through
+as belated P1 closures with evidence; coverage row for the `MalformedCall→fault` boundary
+closed (defense-in-depth + structural unreachability); stale "No P3 parser exists yet"
+docstring corrected. (3) GUARD DISCOVERY HARDENED: any directory containing Python is
+guarded — the `__init__.py` requirement let a PEP-420 namespace package bypass every guard,
+demonstrated and closed by a probe (`oracle/feasibility.py`, no `__init__`, backend import →
+discovered and caught); repo root asserted free of bare modules; the domain-import test
+tightened to a genuine shared+stdlib whitelist. (4) EXPORT DISCIPLINE: post-execution
+belief/NL updates reuse the result's authoritative `post_state` (same-instant by construction;
+one export per cycle, count-pinned; mutant W4a) — the explicit re-export survives only on the
+case-(c) path where `result=None`. The mechanical count pin now also asserts phrase
+uniqueness. The final verification pass returned 0 FAIL / 1 WARN — the WARN (three consumers
+still reading the generalized `nl_proposal` column as recovery-only) closed with
+wording/predicate changes only: the case-7 renderer and the acceptance recovery test now
+identify recovery by ADJACENCY to its REQUEST_PROPOSAL entry, and this file's trace row names
+the column's dual role. Suite 629; P4 harness 43/43. Harness-anchor breakage recurred (L2/A8/A9 after the
+W1/W4 edits) and was caught in-round by the ANCHOR?? report — the verbatim-anchor design's
+loud-failure property working as intended.
+
+### Revision 2026-08-21l — P4 consistency check closed
+
+The independent pass on the P4 fix delta returned 1 FAIL / 5 WARN, all closed here. FAIL:
+test counts were off by one in three sites (the true tree held 622, `test_p4_runtime.py` 38)
+— the third count-drift FAIL across P3/P4, so the property is now MECHANICAL like the
+citation guard: `tests/test_domain_freeze.py::TestHandoffCountsAreMechanical` asserts this
+file's suite-count row equals live unittest discovery (it caught its own introduction: 621≠625
+until this revision). WARNs, all on the case-(a) branch and its evidence: the case-(a) entry
+is now FIRST-CLASS (decision, both prediction bases, recovery provenance — mutant A8) with
+Decision-13.8 belief maintenance + NL observation running exactly as on the normal path
+(mutant A9; the continue-mode episode now completes in the normal 9 steps where the skip cost
+a redundant 10th, pinned); the one-attempt-one-channel decision is reconciled IN CODE — a
+fault-carrying executed entry escalates through the fault channel only and accrues no
+repeated-failure count (`runtime/executive_history.py::append`, mutant H3, behaviorally
+pinned with a failing case-(a) attempt); the liveness guard's next-step-index/last-snapshot
+convention and the standing-advice-after-fault semantics are documented in place; the vacuous
+stub assertion was replaced with a real propose-call counter. Suite 625; P4 harness 40/40.
+
+### Revision 2026-08-21k — P4 review round closed
+
+Both P4 adversarial reviews returned and every finding is fixed and mutation-pinned
+(architecture 1 FAIL / 5 WARN; test review 2 FAIL / 5 WARN / 8 NOTE; harness now 37/37).
+The one product-semantics defect was the architecture FAIL: the loop dropped a case-(a)
+`InfrastructureFaultError.result`, under-charging Decision-2 accounting to 0/0 and erasing
+the post-failure state for exactly the fault class the frozen three-case rule preserves —
+now the attached result IS the record (recorded accounting charges the step; `_CaseAEnv`
+test + A1 mutant). Test-review FAILs: the primitive budget was shipped dead (now
+behaviourally exercised, X2) and the no-recovery-advice HALT branch hid an in-cycle
+REQUEST_PROPOSAL livelock no guard bounded (now public-path tested via a failing-goto env,
+X4). Also closed: liveness guard records its own typed fault entry and its reset branch is
+pinned with genuinely interleaved zero-charge cycles (X1 — the first attempt tested nothing:
+inner replans absorbed the zero-charge, caught when the mutant survived); NL-track failures
+became typed standing-malformed proposals that the comparator (sole divergence constructor)
+turns into COVERAGE_GAP evidence, with the observe-first fix so a real NLTrack no longer
+loses every episode's first proposal (proven live with an empty RecordedLM); standing
+recovery routed through decide() so every EXECUTE is orchestrator-issued (A7 — behaviorally
+equivalent bypass, statically pinned like the L9 wiring pin); goal-vs-budget tie DECIDED
+goal-wins and pinned; executor signature pinned structurally (E2); divergences pinned to the
+cycle's selected call (X3); confidence boundary exact (X8); `faults_since` docstrings made
+honest (accessor currently unconsumed); asserts replaced with typed raises (-O-safe);
+`__main__` guard on the harness.
+
+### Revision 2026-08-21j — P4 orchestrator + executive loop
+
+P4 implemented: `runtime/` gains executor, comparator, orchestrator and the executive loop
+manager over the frozen P0 `executive_history.py`. All five decisions §19.1 P4-binding items
+enacted (gating on `CallValidation`; belief-wired monitor with an identifier-level pin — the
+re-projection mutant is extensionally equivalent on this domain, exactly as item 3 recorded;
+`ValueError`→fault wrap; grounding-before-applicability DECIDED and implemented; the livelock
+escape as the policy split). The flagship acceptance story now runs autonomously under both
+policies: SYMBOLIC_PRIMARY halts at the threshold with the discrepancy history, never
+strengthening the model; ADVISORY_TWO_TRACK escapes through the NL RecoveryProposer — with
+the REQUEST_PROPOSAL decision and `nl_proposal` recovery provenance materialized in the trace
+after the acceptance test-review (1 FAIL / 6 WARN / 4 NOTE, all closed) demanded the recovery
+column be assertable, not prose.
+
+Two discoveries this phase, both from the mutation harness: (1) the first harness run HUNG —
+mutants disabling termination checks created unbounded zero-charge cycles, exposing a REAL
+liveness gap (budgets bound only charged steps); the loop gained an unconditional cross-cycle
+liveness guard (pinned by L14 + a continue-mode planner-failure test that hangs without it),
+and the harness gained hang⇒kill semantics (timeout=120s). (2) The killed first run left
+mutant O4 applied in the untracked `runtime/orchestrator.py` — restored by inspection;
+recorded here as the reason P4 baselines commit PROMPTLY. Case-(c) budget charging and the
+case-(c)/failure-count channel decision are implemented as the P4 row records. 42 new tests
+(38 runtime + 4 loop acceptance) at that round's close, suite 622; the P4 consistency round
+then grew these to 40 runtime tests / suite 625 / 40 mutants — see revision 21l.
 
 ### Revision 2026-08-21i — P3 consistency check round 3 closed
 
@@ -1078,16 +1172,16 @@ type/contract level**. They are listed here so P1-P4 do not inherit them as "alr
 | Aligned argument types across registry/model/backend | **Registry↔IR fully covered** — they share the signature OBJECT and grounded calls reject raw types. Backend side: dispatch arms and skill arithmetic are source-pinned, and the three constructor signatures Decision 16 translates into are pinned by `test_backend_freeze_drift.py` | — |
 | Canonical `StateSnapshot` normalization + structural equality | **Fully covered** — order independence (agents AND boxes), field-level key sensitivity, cross-process digest | — |
 | The three report channels stay separate | **Fully covered** | — |
-| `PlanFound`/`NoPlan`/`PlannerFailure` distinct; `PlannerFailure → InfrastructureFault` | **Planner half behavioural (P2):** all three results exercised (`tests/test_p2_symbolic.py::TestPlanner` — solvable → 5-step `PlanFound`, synthetic single-agent instance → `NoPlan`, node budget → `PlannerFailure(timed_out=True)`, raised exception → `PlannerFailure`); conflation mutation-pinned both directions. The `PlannerFailure → InfrastructureFault` conversion is the runtime path and remains P4 | P4 |
+| `PlanFound`/`NoPlan`/`PlannerFailure` distinct; `PlannerFailure → InfrastructureFault` | **Planner half behavioural (P2):** all three results exercised (`tests/test_p2_symbolic.py::TestPlanner` — solvable → 5-step `PlanFound`, synthetic single-agent instance → `NoPlan`, node budget → `PlannerFailure(timed_out=True)`, raised exception → `PlannerFailure`); conflation mutation-pinned both directions. The `PlannerFailure → InfrastructureFault` conversion is now behavioural (P4): `runtime/loop.py` converts and short-circuits, `tests/test_p4_runtime.py::test_planner_failure_becomes_a_typed_fault_and_short_circuits` | — |
 | Successful execution matches the symbolic predicted normalized `StateSnapshot` | **Behavioural (P2):** live goto/push/coop successes match BOTH bases (`tests/test_p2_acceptance.py::TestSuccessfulTransitionsMatchPredictions`); coop verified by world-key MEMBERSHIP over the declared two-candidate slot set | — |
 | Backend rejection of an optimistic-but-applicable skill records the right failure + `ExecutionDiscrepancy` | **Fully behavioural (P2):** the flagship acceptance test plans optimistically, executes against the real backend, and the applicable-but-infeasible `Push` produces `EXECUTION_FAILURE_OF_APPLICABLE_SKILL` carrying raw label, failure class and detail (`tests/test_p2_acceptance.py::TestOptimisticPlanFailsInBackend`); message content and key-pair orientation mutation-pinned (X1/X2/X8) | — |
-| Malformed/invalid NL calls rejected or repaired before executor invocation | **Behavioural (P3):** `nl/parser.py` returns typed `MalformedCall` (raw preserved), `nl/repair.py` makes exactly ONE typed repair attempt (counting-seam-pinned), the standing rejection carries both reasons, and substitution is mutation-pinned impossible (N1/N2/K1 in `docs/implementation/p3_mutation_harness.py`). The `MalformedCall → InfrastructureFault` invocation at the cycle boundary is P4's loop | P4 |
-| A new current-cycle `InfrastructureFault` short-circuits execution | Type level only — `short_circuits_cycle`, `arises_before_execution` and the `TraceEntry` refusal are covered; no loop exists | P4 |
-| Orchestration policy changes decisions, not executor semantics | **Not testable at P0** — `OrchestrationPolicy` has no consumer | P4 |
-| Representative tasks terminate as expected | **Partial (P2):** the flagship story reaches `all_targets_delivered` under scripted replanning; the autonomous loop is P4 | P4 |
+| Malformed/invalid NL calls rejected or repaired before executor invocation | **Behavioural (P3):** `nl/parser.py` returns typed `MalformedCall` (raw preserved), `nl/repair.py` makes exactly ONE typed repair attempt (counting-seam-pinned), the standing rejection carries both reasons, and substitution is mutation-pinned impossible (N1/N2/K1 in `docs/implementation/p3_mutation_harness.py`). The `MalformedCall → InfrastructureFault` invocation at the cycle boundary exists as defense-in-depth in the P4 loop (`runtime/loop.py` converts an adapter-returned `MalformedCall`/`UngroundedCall` via `to_infrastructure_fault`, loop-driven ungrounded test in `tests/test_p4_runtime.py`); a loop-level `MalformedCall` is otherwise structurally unreachable — typed construction precedes the loop | — |
+| A new current-cycle `InfrastructureFault` short-circuits execution | **Behavioural (P4):** planner-failure, ghost-identity, rejection-guard and case-(c) faults all short-circuit the cycle in the live loop, with both `halt_on_infrastructure_fault` settings exercised (continue mode completes the task with the fault in the record) | — |
+| Orchestration policy changes decisions, not executor semantics | **Behavioural (P4):** the executor's signature admits no policy input (`runtime/executor.py`); both policies execute byte-identical call/outcome/world-key sequences until the decisions diverge at the repeated-failure threshold (`tests/test_v1_acceptance.py::test_policies_share_one_executor_semantics_on_the_common_prefix`); the policy split itself is pinned (`tests/test_p4_runtime.py::test_threshold_split_is_the_policy_difference`, mutation O3) | — |
+| Representative tasks terminate as expected | **Behavioural (P4):** autonomous episodes terminate under BOTH policies (halt-with-history / goal-reached), plus NoPlan, fault, budget and liveness-guard terminations — every `EpisodeOutcome` is exercised (`tests/test_p4_runtime.py`, `tests/test_v1_acceptance.py::TestCase7ExecutiveLoop`) | — |
 | NL default tests use stubs | **Behavioural (P3):** every LM interaction in the default battery goes through `RecordedLM` fixtures with a typed miss error; request CONTENT is golden-pinned (test-review FAIL-1/2 closed); `dspy` is absent from the default import closure, enforced by a closure-based AST scan over all default test modules; live coverage only behind MAAOS_LIVE_LM=1 | — |
 | No hidden backend feasibility oracle is introduced | **Fully guarded (P2):** import-level fail-closed guards, projection-level geometry blindness (`project(near) == project(far)` key equality), and the clause-9 predictor guard closing four import escape routes + the AST input bound (`tests/test_p2_symbolic.py::TestSymbolicSideGuards`); guard escapes themselves mutation-pinned (L1/L2) | — |
-| Traces include task, snapshots, proposals, decision, prediction, execution, channels, provenance, model version | **Behavioural for recorded cycles:** `tests/test_v1_acceptance.py::RecordingHarness` produces a frozen `TraceEntry` per executive cycle against the live backend, rendered into the byte-pinned `docs/implementation/acceptance_traces.md`. The producing LOOP is still scripted test scaffolding — the autonomous P4 loop does not exist | P4 |
+| Traces include task, snapshots, proposals, decision, prediction, execution, channels, provenance, model version | **Fully behavioural (P4):** the autonomous loop produces a `TraceEntry` per cycle carrying decision (REQUEST_PROPOSAL included), the advisory/recovery NL proposal column (`nl_proposal` — recovery keeps priority) plus `coverage`/`confidence` evidence, both prediction bases, per-entry discrepancies/divergences/faults — asserted field-by-field (`tests/test_v1_acceptance.py::test_every_loop_cycle_is_a_complete_trace_entry`, mutations L1-L4/L8) and rendered in the byte-pinned case-7 traces | — |
 
 ---
 

@@ -31,7 +31,11 @@ class ExecutiveHistory:
         self._entries.append(entry)
         ex = entry.execution
         if ex is not None:
-            if ex.outcome is not ExecutionOutcome.SUCCESS:
+            # ONE attempt, ONE escalation channel (P4 decision, reconciled in the P4
+            # consistency round): a fault-carrying executed entry — case (a), or a monitor
+            # fault on a completed attempt — escalates through the FAULT channel and must not
+            # also accrue repeated-failure counts. Faultless failures accrue here.
+            if ex.outcome is not ExecutionOutcome.SUCCESS and not entry.faults:
                 key = self.failure_key(entry.pre_state, ex.call)
                 self._failure_counts[key] = self._failure_counts.get(key, 0) + 1
 
@@ -68,7 +72,9 @@ class ExecutiveHistory:
         """Faults raised at or after `executive_step`.
 
         :163 exposes *recent* fault history to the FOLLOWING cycle. Callers must pass the cycle
-        boundary: this is the ONLY accessor cycle logic may use. `all_faults()` exists alongside it
+        boundary: this is the ONLY accessor cycle logic MAY use — the V1 loop currently
+        escalates through `halt_on_infrastructure_fault` and does not consume it (:163 is
+        permissive; recorded in the P4 review). `all_faults()` exists alongside it
         for traces and post-hoc analysis; driving a cycle from that would silently re-surface stale
         faults forever.
         """
