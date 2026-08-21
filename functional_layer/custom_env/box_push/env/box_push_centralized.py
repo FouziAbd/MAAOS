@@ -302,7 +302,12 @@ _VALID_SKILLS = {"explore", "goto_push_pose", "push", "cooperate_push", "wait"}
 
 def _skill_parser(agent_id: str, raw: str) -> Tuple[str, Optional[Tuple[int, int]]]:
     """One agent's decision text (e.g. 'goto_push_pose [8,4]') → (skill_name, (x,y)|None).
-    Passed to CentralizedDSPyPlanner.decide(); unknown/garbage → ('explore', None)."""
+    Passed to CentralizedDSPyPlanner.decide(); unknown/garbage → ('explore', None).
+
+    SUPERSEDED FOR V1 (Decision 7 / decisions §18 item 9): this silent explore fallback is
+    exactly what the V1 contract forbids. The V1 NL track parses through `nl/parser.py`
+    (typed `MalformedCall`, one typed repair attempt, typed rejection — never substitution)
+    and never routes through this function. Kept unchanged as legacy-runner behavior only."""
     m = re.match(r'\s*([a-zA-Z_]+)(.*)', raw or "")
     if m and m.group(1) in _VALID_SKILLS:
         arg = None

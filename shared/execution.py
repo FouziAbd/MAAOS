@@ -55,7 +55,7 @@ class RawLabel(StrEnum):
 
 
 #: NOT a RawLabel, deliberately. The runner substitutes this string when a skill is STILL RUNNING
-#: at episode end (`box_push_centralized.py:468`: `sk.label or "in_progress"`). It denotes the
+#: at episode end (`box_push_centralized.py::main`: `sk.label or "in_progress"`). It denotes the
 #: ABSENCE of a terminal label, so admitting it to `RawLabel` would let a non-terminal progress
 #: state masquerade as a terminal backend outcome — and it belonged to none of the declared
 #: buckets below, which is how it went unnoticed.

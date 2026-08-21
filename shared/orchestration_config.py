@@ -37,7 +37,8 @@ class OrchestrationConfig:
     `executive_step_budget` is the primary episode bound (Decision 2). A primitive budget alone
     provably cannot bound the loop: a `wait`/`wait` cycle performs zero `env.step()` calls, so
     `step_count` never advances and truncation never fires
-    (box_push_centralized.py:423-424 vs multi_agent_box_push_env.py:141, :170).
+    (the wait/wait zero-`env.step` barrier in box_push_centralized.py::main vs
+    multi_agent_box_push_env.py:141, :170).
 
     `max_rejections_per_cycle` is the loop-manager guard required by Decision 2: pre-executor
     rejections are free, so a policy that repeatedly proposes inapplicable calls would otherwise
@@ -46,7 +47,7 @@ class OrchestrationConfig:
     """
     policy: OrchestrationPolicy = OrchestrationPolicy.SYMBOLIC_PRIMARY
     executive_step_budget: int = 50
-    primitive_step_budget: int = 600          # matches the current runner (box_push_centralized.py:328)
+    primitive_step_budget: int = 600          # matches the runner's EnvConfig(max_steps=600) in box_push_centralized.py::main
     max_rejections_per_cycle: int = 5
     repeated_failure_threshold: int = 3       # per (pre-state world key, grounded call) — :118
     halt_on_infrastructure_fault: bool = True  # :163

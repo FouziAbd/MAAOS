@@ -10,7 +10,7 @@ current-cycle reasoning proposal.
 `short_circuits_cycle` is True by construction so the loop manager cannot accidentally treat a
 fault as advisory. The current runner violates this: an LLM/API exception is caught and converted
 into `explore`, which is then executed against the authoritative environment
-(centralized_dspy_planner.py:106-108 → box_push_centralized.py:404).
+(centralized_dspy_planner.py:106-108 → the `decided.get(aid, ("explore", None))` default in box_push_centralized.py::main).
 """
 from __future__ import annotations
 

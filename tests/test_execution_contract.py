@@ -283,7 +283,7 @@ class TestRawLabelMembershipIsEnforced(unittest.TestCase):
 
 class TestProgressIsNotATerminalLabel(unittest.TestCase):
     """`in_progress` is the runner's substitute for a skill that is STILL RUNNING at episode end
-    (`box_push_centralized.py:468`). It denotes the ABSENCE of a terminal label, and it used to sit
+    (`box_push_centralized.py::main`). It denotes the ABSENCE of a terminal label, and it used to sit
     inside `RawLabel` belonging to none of the declared buckets."""
 
     def test_in_progress_is_not_a_raw_label(self):

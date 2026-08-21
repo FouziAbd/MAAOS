@@ -52,8 +52,9 @@ sub-audits + one independent `architecture-reviewer` contract check.
    navigation steps. **§C's table is keyed by skill+label and is therefore structurally incapable of
    expressing the real semantics** — V1 must record the classification per attempt at runtime
    (pre-state, post-state, primitive count), not look it up in a static table.
-3. **Malformed NL output is silently rewritten to `explore`** (`box_push_centralized.py:313-314`,
-   `:404`, `centralized_dspy_planner.py:106-108`) — and there are three further silent paths
+3. **Malformed NL output is silently rewritten to `explore`** (`box_push_centralized.py::_skill_parser`,
+   the `decided.get(aid, ("explore", None))` default in `::main`,
+   `centralized_dspy_planner.py:106-108`) — and there are three further silent paths
    (§B-consistency-7/8/9): dropped arguments, silent re-grounding onto a *different box*, and a
    second inconsistent `WaitSkill` fallback. The DSPy exception path is the worst: an API failure is
    an `InfrastructureFault` by contract, which must abort the cycle before any further skill command
@@ -81,8 +82,8 @@ sub-audits + one independent `architecture-reviewer` contract check.
 | Repository/branch/commit frozen | PARTIAL | branch `middleware_layer`, commit `9cb39cd` | Working branch, uncommitted `.claude/` + docs present | Freeze a V1 branch/commit before P0 |
 | Install instructions | PARTIAL | `requirements.txt` | `pettingzoo>=1.24`, `gymnasium`, `minigrid`, `dspy-ai`, `pyperplan>=2.1`, `pyRDDLGym>=2.7`; deps unpinned except two | Pin exact versions for deterministic V1 (P3 requires it) |
 | Python/OS constraints | PARTIAL | venv `/home/fouzi/PettingZooEnv`, Python 3.12.3, Linux/WSL2 | Established by environment, not declared in repo | Declare in a manifest at P0 |
-| Run command | SATISFIED | `box_push_centralized.py:319 main()` | `cd functional_layer/custom_env/box_push/env && python box_push_centralized.py`; requires a live Ollama at `LLM_BASE` (`:323-325`) | Add an offline V1 entry point that does not need an LM |
-| Automated test command | SATISFIED (P0) | `python3 -m unittest discover -s tests -t .` — 526 tests, deterministic and offline, no LM required (the P1 module steps the real backend headlessly; P0 modules step nothing) | P0 contract freeze + P1 live-backend integration (tests/test_p1_adapter.py) | — |
+| Run command | SATISFIED | `box_push_centralized.py::main` | `cd functional_layer/custom_env/box_push/env && python box_push_centralized.py`; requires a live Ollama at `LLM_BASE` (the `dspy.LM` setup in `::main`) | Add an offline V1 entry point that does not need an LM |
+| Automated test command | SATISFIED (P0) | `python3 -m unittest discover -s tests -t .` — 580 tests, deterministic and offline (1 skip: the MAAOS_LIVE_LM-marked live-LM integration test), no LM required (the P1 module steps the real backend headlessly; P0 modules step nothing) | P0 contract freeze + P1 live-backend integration (tests/test_p1_adapter.py) | — |
 | Target OS/CI | PARTIAL | — | No CI config in repo | OS/Python frozen by **Decision 10**; CI is a project-management question, not V1 semantics (decisions §18 item 10) |
 
 ---
@@ -123,13 +124,13 @@ wait}`. All five are **composed multi-primitive skills**; none is a single backe
    `skill_executor_push.py:172`, `:228`, `:330`). Consequence: **budget exhaustion is reported as
    `pushed` (a success label) by `PushSkill`** (`:228`) and as `blocked`/`waiting_partner` elsewhere.
    Success-on-timeout is indistinguishable from real success at the executive interface.
-5. **`in_progress`** (`box_push_centralized.py:468`) is a runner-level substitute when a skill is still
+5. **`in_progress`** (`box_push_centralized.py::main`) is a runner-level substitute when a skill is still
    running at episode end — it is not a backend label.
 6. Argument semantics are **positionally overloaded**: the same `(x,y)` means *box cell* for
    `goto_push_pose`/`cooperate_push` and *destination cell* for `push` (`skill_executor_push.py:376-377`).
    V1 typed arguments must disambiguate these.
 7. **Silent argument dropping.** `_skill_parser`'s skill-name regex succeeds independently of the
-   coordinate regex (`box_push_centralized.py:306-312`), so `push [foo,bar]` yields `("push", None)`
+   coordinate regex (`box_push_centralized.py::_skill_parser`), so `push [foo,bar]` yields `("push", None)`
    → `PushSkill(dest=None)`, which per `:187-188` pushes straight ahead until the box stops. A
    malformed argument silently becomes **different skill semantics**.
 8. **Silent re-grounding onto a different object — worst of the silent paths.**
@@ -141,7 +142,7 @@ wait}`. All five are **composed multi-primitive skills**; none is a single backe
    to model optimism rather than to a grounding fault. In V1 this must raise
    `InfrastructureFault(missing grounding)`.
 9. **Two different silent fallbacks for the same error class:** `_skill_parser` defaults to `explore`
-   (`box_push_centralized.py:314`) while `make_skill` defaults to `WaitSkill`
+   (`box_push_centralized.py::_skill_parser`) while `make_skill` defaults to `WaitSkill`
    (`skill_executor_push.py:386`).
 
 ### Symbolic ↔ backend signature misalignment (RESOLVED — Decisions 11 / 14)
@@ -187,7 +188,7 @@ The `box_push_domain.pddl` column above describes the LEGACY file, which is now 
 **Verified: every *reachable* failure mode is enumerated below, and none of them is a guaranteed
 no-op at the world-state level** — even a rejection still submits `STAY` to `env.step()`
 (`_finish` returns `Actions.STAY`, `shared_skills.py:237-240`; submitted at
-`box_push_centralized.py:443`), which increments `step_count` and writes `last_action`.
+`box_push_centralized.py::main`), which increments `step_count` and writes `last_action`.
 
 > **Reading the "Executive step consumed?" column.** The *backend* has no executive-step concept at
 > all (see §C "Executive step" below), so every cell reads "n/a in backend". It is **not** an open
@@ -207,7 +208,7 @@ no-op at the world-state level** — even a rejection still submits `STAY` to `e
 | `cooperate_push` | `blocked` (dest/runway) | **Rejected** on first `step()`, else **Partial** | possible repositioning | 0..150 | n/a in backend → 1 (Decision 2) | `:299-300`, `:305-308` |
 | `cooperate_push` | `waiting_partner` | **Partial** | agent navigated to its slot and turned | up to 150 | n/a in backend → 1 (Decision 2) | `:328-331`, `:344-350` |
 | `cooperate_push` | `none_known` | **Rejected** | none | 0 | n/a in backend → 1 (Decision 2) | `:292-294` |
-| malformed call | *(never reaches the executor)* | **Silently rewritten to `explore`** | full `explore` execution occurs | up to 30 | 0 in V1 | `box_push_centralized.py:313-314` — **→ V1: forbidden.** A malformed call is a typed `MalformedCall` → `InfrastructureFault`, never a substituted skill (**Decision 7**) |
+| malformed call | *(never reaches the executor)* | **Silently rewritten to `explore`** | full `explore` execution occurs | up to 30 | 0 in V1 | `box_push_centralized.py::_skill_parser` — **→ V1: forbidden.** A malformed call is a typed `MalformedCall` → `InfrastructureFault`, never a substituted skill (**Decision 7**) |
 
 ### Environment-level failure facts (authoritative)
 
@@ -231,9 +232,9 @@ no-op at the world-state level** — even a rejection still submits `STAY` to `e
 - **Primitive step:** one `MultiAgentBoxPushEnv.step(actions)` joint transition.
   Counter: `world.episode.step_count`, incremented at `multi_agent_box_push_env.py:141`.
   It is a **joint** counter (one increment per call regardless of agent count), and the episode
-  budget is `config.max_steps` (600 in the runner, `box_push_centralized.py:328`), enforced at `:170-172`.
+  budget is `config.max_steps` (600 in the runner, `box_push_centralized.py::main`), enforced at `:170-172`.
 - **Executive step:** **MISSING from the backend — no such concept exists in code** (→ V1: defined by **Decision 2**; the wrapper owns the counter). The runner's `skill_cycle`
-  (`box_push_centralized.py:376,379`) counts *planner calls*, is used only for logging, and is never
+  (the `skill_cycle` counter in `box_push_centralized.py::main`) counts *planner calls*, is used only for logging, and is never
   compared against any budget. One executive cycle consumes a variable, effectively unbounded number
   of primitive steps (`cooperate_push` alone may consume ~150).
 - **Failed executive call consumption rule:** absent from the code; **now frozen** by
@@ -242,7 +243,7 @@ no-op at the world-state level** — even a rejection still submits `STAY` to `e
   zero. Primitive steps are counted separately by the wrapper (never from `BaseSkill._steps`).
 
 **Note 4 — livelock:** if the planner assigns `wait` to both agents, `WaitSkill` is `done` at
-construction, the inner loop breaks before any `env.step` (`box_push_centralized.py:424-425`),
+construction, the inner loop breaks before any `env.step` (`box_push_centralized.py::main`),
 `step_count` never advances, truncation can never fire, and the outer loop issues planner calls
 forever. The only current guard is prompt text (`:293`). A V1 executive-step budget fixes this
 structurally.
@@ -367,7 +368,7 @@ backend; enforced statically by `tests/test_no_backend_imports.py`.
 ## E. Agents and V1 sequential rule
 
 - **Number of agents:** 2 (`EnvConfig.num_agents` default 2, minimum 2 enforced, `state.py:42-48`;
-  runner uses 2 at `box_push_centralized.py:327`).
+  runner uses 2 at `box_push_centralized.py::main`).
 - **Backend action semantics:** PettingZoo `ParallelEnv` — `step()` takes a **joint dict** for all
   agents simultaneously (`multi_agent_box_push_env.py:140`); missing agents default to `STAY` (`:147`).
 - **Resolution order within a joint step is NOT simultaneous:** turns for all agents (`:150-156`),
@@ -376,7 +377,7 @@ backend; enforced statically by `tests/test_no_backend_imports.py`.
   order-dependent — e.g. `agent_1` can move into a cell `agent_0` just vacated, but not vice versa.
 - **V1 executive sequential rule:** **MISSING from the backend — → V1: frozen by Decision 1.** One executive step issues exactly one grounded skill invocation; `CooperativePush` is a single sequential executive skill that internally coordinates both agents. Original audit finding follows. The current runner is
   *concurrent*: one planner call assigns a skill to both agents, and both skills advance on every
-  primitive step (`box_push_centralized.py:423-463`). A strictly sequential executive rule would be a
+  primitive step (`box_push_centralized.py::main`). A strictly sequential executive rule would be a
   behavior change; a "joint executive decision" reading matches the code as it stands.
 - **Joint skill treatment:** `cooperate_push` is emergent, not an explicit joint action. Both agents'
   skills independently return `MOVE_FORWARD` and the env's tandem rule matches them
@@ -397,7 +398,7 @@ backend; enforced statically by `tests/test_no_backend_imports.py`.
 
 | Information | Backend produces? | Public execution result? | Symbolic track visibility (V1) | NL track visibility | Debug/eval only? | Evidence |
 |---|---|---|---|---|---|---|
-| terminal skill label | yes (skill layer) | yes — the only executive feedback | should be typed execution result | currently injected as prose | no | `box_push_centralized.py:465-468` |
+| terminal skill label | yes (skill layer) | yes — the only executive feedback | should be typed execution result | currently injected as prose | no | `box_push_centralized.py::main` |
 | local observation | yes — **3×3 egocentric, occluded** | raw MiniGrid dict `{image, direction, mission}` | **not used in V1** | current belief input | no | `multi_agent_box_push_env.py:357-364`; `agent_view_size=3` (`:328`) |
 | exact full state | yes, **attributes only** | no | **yes in V1 after normalization** | policy-defined typed view | — | `world` (§D); no export method |
 | primitive-step detail | partially (rewards) | no | optional trace | optional summary | debug | `infos` always empty (`:145`) |
@@ -426,7 +427,7 @@ position that did not move. `_check_delivery` compounds this with `for aid in (p
 (`:245-248`), paying +20 to everyone when no agent is adjacent. This is the hard evidence that V1
 must not derive state from rewards.
 
-**Belief-sharing fragility:** `box_push_centralized.py:357-363` aliases one `shared_grid` object into
+**Belief-sharing fragility:** `box_push_centralized.py::main` aliases one `shared_grid` object into
 both agents' updaters, but `DeterministicGridUpdater.reset()` (`:153-159`) rebuilds `_grid` from
 `_initial` — so calling `reset_belief()` silently un-shares the team map. P1 must pin this with a
 reset test.
@@ -492,7 +493,7 @@ All five are expressed against the **frozen fixed layout**: 12×12, outer wall o
    through different channels. A second, purely backend-level instance: `push` with no box in front
    → `blocked` on the first `step()` (`skill_executor_push.py:224-225`).
 5. **Malformed call** — planner emits `"I think we should push the box"`; `_skill_parser` fails the
-   `re.match` skill-token test and returns `("explore", None)` (`box_push_centralized.py:306-314`).
+   `re.match` skill-token test and returns `("explore", None)` (`box_push_centralized.py::_skill_parser`).
    **→ V1: this is forbidden.** A malformed call becomes a typed `MalformedCall` rejection
    (**Decision 7**), never a silently substituted skill. Frozen in
    `shared/skills.py::MalformedCall`; the P3 removal of the runner's `explore` fallback is a
@@ -624,7 +625,7 @@ P1/P2 against the real wrapper, not hand-written now.
 | **P0** | — | **COMPLETE.** Frozen typed contracts in `shared/` + `domain/box_push_v1.py`; executive runtime state in `runtime/`; 400 offline tests | `shared/{state_snapshot,symbolic_state,comparison_keys,skills,skill_ir,execution,planner_result,discrepancy,divergence,faults,reports,task,observation,trace_schema,orchestration_config,versioning,backend_contract}.py`; `domain/box_push_v1.py`; `runtime/executive_history.py`; `tests/` (14 modules, 400 tests) |
 | **P1** | — | **COMPLETE.** `functional_layer/custom_env/box_push/env/box_push_v1_adapter.py::BoxPushV1Adapter` implements the frozen `V1Environment` protocol over the real backend: `world → StateSnapshot` normalization (D4, world-only — behaviourally pinned by grid-vandalism and cache-desync tests); authoritative typed outcome derived from world with the headline-0 `too_heavy`-vs-`blocked` re-derivation in `detail` (D3); explicit typed TIMEOUT from the backend budget (D3); per-attempt `env.step()` counter cross-checked against the joint `step_count` (D2); exhaustive dispatch on `backend_dispatch_key`, no fallback, `make_skill` never called (D14/D16); identity-only pre-flight + per-skill post-flight substitution faults with the result attached (D16); reset-before-use and post-terminal refusal via `InfrastructureFaultError` (D8); `CooperativePush` as ONE executive invocation owning both instances (D1). 47 integration tests in `tests/test_p1_adapter.py`; 30/30 targeted adapter mutations killed (`docs/implementation/p1_mutation_harness.py`) | The runner-faithful drive loop submits a finishing skill's terminal STAY, so a backend-rejected attempt costs 1 primitive step; belief/middleware machinery untouched and unused (AST-pinned) |
 | **P2** | — | **COMPLETE.** `symbolic/` (7 modules): declarative applicability + the ONE deterministic successor (`applicability.py` — literal membership only, geometry cannot reach it); exact-state belief with Decision 13.8 outcome maintenance incl. the consuming-skill retention rule (`belief.py`); deterministic BFS planner returning the 3-way `PlannerResult` with typed budget exhaustion → `PlannerFailure(timed_out=True)` and `except Exception` → `PlannerFailure` (`planner.py`); world-effect predictor grounding `SkillIR.predicted_world_effects` on clause-9 bounded inputs, partial by design on ray miss (`predictor.py`); monitor over BOTH comparison bases with clause-7 outcome-only failure reports (`monitor.py`); deterministic PDDL re-issue from `DOMAIN_IR` byte-pinned to the checked-in `_v1` artifacts + `.soln` from the deterministic planner with `pyperplan` validity cross-check (`pddl_gen.py`, decisions §18 item 1 CLOSED); synthetic `NoPlan` instance (`synthetic.py`, Decision 12). Guards: four import escape routes + predictor input bound (`tests/test_p2_symbolic.py::TestSymbolicSideGuards`). 69 tests (53 unit/guard + 9 PDDL + 7 live acceptance incl. the flagship plan→execute→monitor→replan story with the designed `ExecutionDiscrepancy` and the demonstrated consuming-skill livelock + recovery); 50/50 targeted mutations killed (`docs/implementation/p2_mutation_harness.py`, incl. the VA/L series added by the V1-acceptance and consistency rounds). The `/acceptance-test` deliverable sits on top: `tests/test_v1_acceptance.py` (10 tests — six supervisor cases as `TraceEntry`-recorded live cycles) + `docs/implementation/acceptance_traces.md` (human-readable traces, regenerated live and byte-pinned by `TestTraceDocumentPinned`) | Decisions §19.1 records the P4-binding discoveries (livelock, `CallValidation` gating, belief-not-reprojection monitor wiring, monitor `ValueError`→fault wrap, ghost-identity routing order) |
-| **P3** | Existing DSPy planner and prompts as *reference* | Typed modules (TaskInterpreter/SkillSelector/RepairSkillCall/Translator+residual/…); **removal of the silent `explore` fallback**; offline fixtures; pinned versions; temperature-0 baseline | `centralized_dspy_planner.py` is one monolithic `ChainOfThought` (`:96-103`) |
+| **P3** | — | **COMPLETE.** `nl/` (12 modules): offline LM seam with typed recorded fixtures and typed fixture-miss error (`seam.py`, decisions §18 item 3 CLOSED); pinned temperature-0/cache-on runtime (`runtime_config.py`) with the live DSPy binding on the legacy side only (`model_layer/planner/v1_nl_live.py`, consumed solely by the MAAOS_LIVE_LM=1-marked `tests/test_p3_live_lm.py`); strict typed parser on the frozen call rendering — `MalformedCall`, never substitution (`parser.py`, §18 item 9 CLOSED via replacement+pinned banner); TaskInterpreter with a verb+object+no-negation coverage classifier and explicit residuals (`task_interpreter.py`); ObservationInterpreter with backend-pinned direction words, provenance-blind (`observation_interpreter.py`); exact-rederived bounded semantic belief (`semantic_belief.py`); SkillSelector + one-attempt RepairSkillCall through the seam with request CONTENT golden-pinned (`skill_selector.py`, `repair.py`); Translator deriving the symbolic action set from the frozen registry, residual for Explore/Wait (`translator.py`); RecoveryProposer answering the §19.1 livelock with re-establishment, never inventing skills (`recovery.py`); stub `NLTrack` peer with the exactly-one-of `NLProposal` and observe-before-propose precondition (`track.py`). Guards: `nl/` auto-covered by the fail-closed import guard (no backend/dspy/runtime), bidirectional nl↔symbolic isolation, AST provenance ban incl. `primitive_steps` + getattr/string evasions, closure-based no-dspy scan over default test modules. 51 offline tests; 37/37 targeted mutations killed (`docs/implementation/p3_mutation_harness.py`); `requirements.txt` pinned exactly (§18 item 2 CLOSED) | Both P3 adversarial reviews addressed to 0 outstanding: architecture 0 FAIL / 5 WARN (all five fixed), test review 5 FAIL / 7 WARN / 5 NOTE (all FAIL/WARN fixed, Q-series mutation-pinned) |
 | **P4** | Runner loop shape as reference only | Track comparator, three typed report channels, symbolic-primary + advisory policies, executive loop manager, `NoPlan` vs `PlannerFailure` routing, policy-independent executor, `InfrastructureFault` short-circuit, repeated-failure bookkeeping, executive step budget, trace/history; **case-(c) budget charging**: `TraceEntry`/`ExecutiveHistory` accessors report RECORDED accounting only (lower bounds), so the loop must charge mid-execution-fault attempts (one executive step + the `primitive_steps_before_failure` from fault detail) from fault provenance on top of the sums; and DECIDE whether case-(c) attempts feed repeated-failure counts (currently they do not — faults escalate via `faults_since`, failures via `failure_count`; make that a recorded decision, not an accident) | current runner has no typed results, no retry/failure bookkeeping, and no exception handling (`box_push_centralized.py` has no `try/except`) |
 
 ### Ordered implementation dependencies
@@ -637,7 +638,7 @@ P1/P2 against the real wrapper, not hand-written now.
 with deterministic serialization/hash; the symbolic projection; `PlannerResult`; the three report
 channels; trace schema; model version/provenance; the `V1Environment` interface. 400 offline tests.
 
-**Tier 2 — P1 wrapper.** Must include, in this order of importance:
+**Tier 2 — P1 wrapper** — **COMPLETE (see the P1 roadmap row)**. Original scope, in this order of importance:
    1. **the headline-0 fix** — derive `too_heavy` vs `blocked` from `world` (`required_agents` plus
       actual post-transition state), never from `entities["grid"]`;
    2. `world`-only snapshot plus a `world`↔`grid` consistency assertion (§L-7);
@@ -646,25 +647,24 @@ channels; trace schema; model version/provenance; the `V1Environment` interface.
    5. typed rejection of malformed/ungrounded calls; delete the `_resolve_box` silent fallbacks;
    6. round-trip serialization and deterministic transition tests — **the first tests in the repo.**
 
-**Tier 3 — P2 symbolic track** on `DOMAIN_IR` (re-issuing the PDDL from it), with `PlannerResult`
+**Tier 3 — P2 symbolic track** — **COMPLETE (see the P2 roadmap row)** on `DOMAIN_IR` (re-issuing the PDDL from it), with `PlannerResult`
 routing and the world-effect predictor. The **static no-backend-import guard (§J-4) already exists**
 (`tests/test_no_backend_imports.py`, package-discovering and fail-closed). Scenario #2 must be
 `goto_push_pose → blocked` and/or the non-exclusive `in-pose` case, **not** the lone heavy push:
 under Decision 5 the lone heavy push is symbolically *inapplicable* (the `(light ?b)` guard), which
 makes it scenario #4, not #2.
 
-**Tier 4 — P3 NL track**, parallelizable with P2 once Tier 1 exists. **Blocked on an offline seam
-that does not exist yet:** `CentralizedDSPyPlanner.configure_ollama`
-(`centralized_dspy_planner.py:35-68`) hardwires `dspy.configure`, and the runner hardcodes the model
-at `box_push_centralized.py:46`. No P3 test can be written until that seam is introduced.
+**Tier 4 — P3 NL track** — **DONE.** The offline seam that blocked this tier exists
+(`nl/seam.py`; live binding at `model_layer/planner/v1_nl_live.py`); the legacy
+`CentralizedDSPyPlanner.configure_ollama` path is unchanged and superseded for V1.
 
 **Tier 5 — P4 orchestrator/executive loop** — requires P1+P2+P3 interfaces. Owns the **executive**
 budget; §C note 4 proves a primitive budget cannot bound the loop.
 
-**Critical path (remaining):** `headline-0 label fix → P1 wrapper → P2 → P3 → P4`. Everything to
-the left of the wrapper is done. The single highest-leverage remaining action is the **headline-0
-label fix**: until execution labels are authoritative, every downstream `ExecutionDiscrepancy` is
-uninterpretable.
+**Critical path (remaining): `P4` only.** Tiers 0-4 are DONE (see the roadmap rows above):
+the headline-0 label fix landed in P1 (authoritative typed outcomes with raw labels demoted to
+provenance), P2 delivered the symbolic track, and P3 the NL track. What remains is the
+orchestrator/executive loop and its report-channel consumers.
 
 ### "Do not change" list — reusable backend behavior
 
@@ -829,6 +829,88 @@ actually satisfied by the duplicate-dispatch-key guard.
   box ends the episode in the same joint `env.step`, before the skills' evaluation iteration —
   so the raw label is the non-terminal marker while the authoritative outcome is SUCCESS
   (`test_cooperative_push_is_one_executive_invocation` pins it). D3 is what makes this benign.
+
+### Revision 2026-08-21i — P3 consistency check round 3 closed
+
+Round 3 audited round 2's fix delta: 1 FAIL / 3 WARN, all closed here. The FAIL was a
+RECURSION of round 2's own FAIL class: 21h corrected 21g's "sweep complete" overclaim and then
+made the identical overclaim itself — five +5-drifted post-306 citations survived in `shared/`
+(`faults.py`, `execution.py`, `orchestration_config.py` ×2) and `tests/test_execution_contract.py`,
+several load-bearing. All five are now semantic anchors, 21h's claim is scoped honestly in
+place, and — the durable fix — the property is now MECHANICAL:
+`tests/test_domain_freeze.py::TestLegacyRunnerCitationDiscipline` greps the contract packages
+and every non-legacy docs tree
+for any `box_push_centralized.py:<n≥306>` citation and fails on the first hit (mutation Q15
+pins the guard itself). WARNs: "cannot"/"no" added to the negation tokens with a five-form
+residual pin (`tests/test_p3_nl.py::test_every_negation_form_reaches_the_residual`, mutation
+Q16); revision 21f's counts restored to as-of-close values with a growth annotation (the
+retro-sync had made the history self-contradictory); 21h's mailbox-pin attribution corrected
+to the companion test. Known accepted residue: the legacy reference doc
+`functional_layer/custom_env/box_push/BoxPush_Centralized_POMDP.md` retains drifted numbers —
+legacy package, outside the guard's scope by design. Harness 37/37; P3 module 51 tests; suite 580.
+
+### Revision 2026-08-21h — P3 consistency check round 2 closed
+
+Round 2 audited round 1's WARN-fix delta: 1 FAIL / 3 WARN, all closed here. (1) FAIL — the
+citation sweep had stopped at round 1's six enumerated sites and revision 21g recorded it as
+complete while five in-family stale citations survived, all off by +5 after the banner
+insertion: 18 numeric citations plus 4 bare shorthands across this file and the decisions doc
+were converted to `::_skill_parser`/`::main` semantic anchors, and 21g's claim was corrected in
+place. (Round 3 then found THIS sweep also scope-incomplete — five more in `shared/` and
+`tests/` — and replaced manual sweeping with a mechanical guard; see 21i.) (2) The requirement rule
+over-covered (live-demonstrated: `"two" in "network"` classified "The network needs repair" as
+covered): the classifier is now TOKEN-based (stems against word prefixes), bare counts are not
+requirement objects, the precision boundary is pinned both ways
+(`tests/test_p3_nl.py::test_requirement_rule_precision_boundary`; the mailbox
+interior-substring pin is its companion
+`test_object_stems_match_token_prefixes_not_interior_substrings`) with "The agents need a break" recorded as the accepted imprecision
+ceiling; mutants Q11/Q13 re-anchored + Q14 substring-regression added — Q14 SURVIVED on first
+run (no test separated prefix from substring matching) and was killed by the mailbox pin;
+35/35. (3) Tiers 2/3 now carry COMPLETE markers matching the roadmap rows.
+
+### Revision 2026-08-21g — P3 consistency check closed
+
+`/consistency-check P3` on the post-review fix delta: 0 FAIL / 4 WARN, all four closed in this
+revision. (1) The tightened task classifier under-covered the frozen `TASK_DELIVER_HEAVY`
+("It needs both agents" — expressible via `heavy(box)`/`required_agents` and the
+`CooperativePush` arity): a requirement-clause rule was added and ALL frozen representative
+tasks now pin fully-covered (`tests/test_p3_nl.py::test_every_frozen_representative_task_classifies_fully_covered`,
+mutation Q13). (2) Harness mutants V1/X1 were crash-kills (NameError/TypeError) overstating
+their evidence — reworked to behavioral mutants (local import; empty-residual), 34/34 killed.
+(3) The six `:313-314`-family sites enumerated by the check were swept to the
+`::_skill_parser` semantic form and the stale "Critical path (remaining)" paragraph now reads
+P4-only — round 2 then found the sweep INCOMPLETE (five in-family survivors and a systemic +5
+drift across every post-306 citation into the legacy runner); the full-family sweep landed in
+revision 2026-08-21h. (4) The `runtime`-ban
+claim on `nl/` was enforced nowhere on the real tree — `runtime_violations()` ran only on probe
+trees; a real-tree assertion now backs it
+(`tests/test_no_backend_imports.py::test_the_real_tree_has_no_runtime_imports_on_the_symbolic_side`).
+
+### Revision 2026-08-21f — P3 NL baseline
+
+P3 implemented: `nl/` package (seam, runtime config, parser, task/observation interpreters,
+semantic belief, skill selector, repair, translator, recovery, stub track) + the legacy-side
+live DSPy binding + 47 offline tests + 33-mutant harness, all green/killed at this
+revision's close (grown by later rounds to 51/37/580 — see 21g-21i). Suite total 574
+(1 skip = the MAAOS_LIVE_LM-marked live test). Decisions §18 items 2, 3 and 9 closed (item 9
+via replacement + pinned SUPERSEDED banner, reading recorded).
+
+Review round: architecture 0 FAIL / 5 WARN (translator action set now DERIVED from
+`REGISTRY.symbolic_action_set()`; direction words backend-pinned; coverage classifier
+tightened to verb+object+no-negation with the over-claim cases pinned; runtime-config
+truthfulness fixed with explicit api_key and consumed seed; stale citations swept to
+function-name form and the banner pinned). Test review 5 FAIL / 7 WARN / 5 NOTE — the
+systemic finding: recorded-seam fixtures were fail-closed on request determinism but blind to
+request CONTENT, so the whole information channel to the model (belief, menu, format, raw text
+under repair, observation facts) could be emptied or inverted with every test green. Closed
+with golden request-content assertions, direct ObservationInterpreter units (incl. truthful
+delivered-status and all four direction words), track outcome-plumbing and lifecycle pins,
+`primitive_steps` + getattr/string-evasion guard tightening, a closure-based no-dspy scan, and
+the Q-series mutants (Q1-Q12) — all killed.
+
+Recorded residuals: parser box/zone prefix-dispatch tolerance (documented + pinned);
+transitive deps (litellm/openai) unpinned; `pygame`/`pygame_ce` side-by-side (pre-existing);
+NLRequest str-coercion/dedup semantics (NOTE-level, untested by choice).
 
 ### Revision 2026-08-21e — V1 acceptance round + P2 consistency check
 
@@ -999,11 +1081,11 @@ type/contract level**. They are listed here so P1-P4 do not inherit them as "alr
 | `PlanFound`/`NoPlan`/`PlannerFailure` distinct; `PlannerFailure → InfrastructureFault` | **Planner half behavioural (P2):** all three results exercised (`tests/test_p2_symbolic.py::TestPlanner` — solvable → 5-step `PlanFound`, synthetic single-agent instance → `NoPlan`, node budget → `PlannerFailure(timed_out=True)`, raised exception → `PlannerFailure`); conflation mutation-pinned both directions. The `PlannerFailure → InfrastructureFault` conversion is the runtime path and remains P4 | P4 |
 | Successful execution matches the symbolic predicted normalized `StateSnapshot` | **Behavioural (P2):** live goto/push/coop successes match BOTH bases (`tests/test_p2_acceptance.py::TestSuccessfulTransitionsMatchPredictions`); coop verified by world-key MEMBERSHIP over the declared two-candidate slot set | — |
 | Backend rejection of an optimistic-but-applicable skill records the right failure + `ExecutionDiscrepancy` | **Fully behavioural (P2):** the flagship acceptance test plans optimistically, executes against the real backend, and the applicable-but-infeasible `Push` produces `EXECUTION_FAILURE_OF_APPLICABLE_SKILL` carrying raw label, failure class and detail (`tests/test_p2_acceptance.py::TestOptimisticPlanFailsInBackend`); message content and key-pair orientation mutation-pinned (X1/X2/X8) | — |
-| Malformed/invalid NL calls rejected or repaired before executor invocation | Type level only — no parser exists | P3 |
+| Malformed/invalid NL calls rejected or repaired before executor invocation | **Behavioural (P3):** `nl/parser.py` returns typed `MalformedCall` (raw preserved), `nl/repair.py` makes exactly ONE typed repair attempt (counting-seam-pinned), the standing rejection carries both reasons, and substitution is mutation-pinned impossible (N1/N2/K1 in `docs/implementation/p3_mutation_harness.py`). The `MalformedCall → InfrastructureFault` invocation at the cycle boundary is P4's loop | P4 |
 | A new current-cycle `InfrastructureFault` short-circuits execution | Type level only — `short_circuits_cycle`, `arises_before_execution` and the `TraceEntry` refusal are covered; no loop exists | P4 |
 | Orchestration policy changes decisions, not executor semantics | **Not testable at P0** — `OrchestrationPolicy` has no consumer | P4 |
 | Representative tasks terminate as expected | **Partial (P2):** the flagship story reaches `all_targets_delivered` under scripted replanning; the autonomous loop is P4 | P4 |
-| NL default tests use stubs | **Vacuous at P0** — there are no NL tests because there is no NL track | P3 |
+| NL default tests use stubs | **Behavioural (P3):** every LM interaction in the default battery goes through `RecordedLM` fixtures with a typed miss error; request CONTENT is golden-pinned (test-review FAIL-1/2 closed); `dspy` is absent from the default import closure, enforced by a closure-based AST scan over all default test modules; live coverage only behind MAAOS_LIVE_LM=1 | — |
 | No hidden backend feasibility oracle is introduced | **Fully guarded (P2):** import-level fail-closed guards, projection-level geometry blindness (`project(near) == project(far)` key equality), and the clause-9 predictor guard closing four import escape routes + the AST input bound (`tests/test_p2_symbolic.py::TestSymbolicSideGuards`); guard escapes themselves mutation-pinned (L1/L2) | — |
 | Traces include task, snapshots, proposals, decision, prediction, execution, channels, provenance, model version | **Behavioural for recorded cycles:** `tests/test_v1_acceptance.py::RecordingHarness` produces a frozen `TraceEntry` per executive cycle against the live backend, rendered into the byte-pinned `docs/implementation/acceptance_traces.md`. The producing LOOP is still scripted test scaffolding — the autonomous P4 loop does not exist | P4 |
 

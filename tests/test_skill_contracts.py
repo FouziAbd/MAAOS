@@ -205,8 +205,8 @@ class TestRejectionTypes(unittest.TestCase):
 
     def test_registry_refuses_an_unknown_skill_name(self):
         """The registry has no default arm. The backend has two —
-        `_skill_parser` falls back to `explore` (box_push_centralized.py:313-314) and `make_skill`
-        to `WaitSkill` (skill_executor_push.py:386) — and neither may be reproduced here.
+        `_skill_parser` falls back to `explore` (box_push_centralized.py::_skill_parser) and
+        `make_skill` to `WaitSkill` (skill_executor_push.py:386) — and neither may be reproduced here.
 
         NOTE: P0 ships no parser, so this pins the registry's behaviour only; the rejection of
         malformed INPUT becomes testable when the P1 wrapper adds a validator."""

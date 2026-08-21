@@ -403,5 +403,34 @@ class TestLegacyPddlIsMarkedSuperseded(unittest.TestCase):
                 self.assertIn("DOMAIN_IR", path.read_text(encoding="utf-8"))
 
 
+class TestLegacyRunnerCitationDiscipline(unittest.TestCase):
+    """Consistency-check P3 rounds 2-3: the SUPERSEDED banner shifted every
+    box_push_centralized.py line >= 306 by +5, and TWO successive manual sweeps each claimed
+    completeness while a wider grep falsified them. This test makes the property MECHANICAL:
+    no contract-side file may cite that region by line number — semantic `::function` anchors
+    are immune to drift. (Pre-306 numeric citations are unshifted and remain legal; the legacy
+    package itself and docs/implementation harness payloads are out of scope.)"""
+
+    SCOPE = ("shared", "domain", "symbolic", "nl", "runtime", "tests",
+             "docs/handoff", "docs/decisions", "docs/supervisor",
+             "docs/implementation", "docs/claude", "docs/prompts")
+    # built from parts so this file never matches its own pattern
+    _PATTERN = re.compile("box_push_centralized" + r"\.py:(\d+)")
+
+    def test_no_post_banner_line_citations_anywhere_on_the_contract_side(self):
+        repo = pathlib.Path(__file__).resolve().parents[1]
+        offenders = []
+        for scope in self.SCOPE:
+            for path in sorted((repo / scope).rglob("*")):
+                if path.suffix not in (".py", ".md") or "__pycache__" in path.parts:
+                    continue
+                text = path.read_text(encoding="utf-8", errors="replace")
+                for match in self._PATTERN.finditer(text):
+                    if int(match.group(1)) >= 306:
+                        line = text[:match.start()].count("\n") + 1
+                        offenders.append(f"{path.relative_to(repo)}:{line} ({match.group(0)})")
+        self.assertEqual(offenders, [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -377,8 +377,9 @@ class ValidatedCall(CallValidation):
 class MalformedCall(CallValidation):
     """Unparseable / wrong arity / wrong types / unknown skill name.
 
-    Never silently rewritten to another skill. The current backend does exactly that
-    (box_push_centralized.py:313-314 → `explore`; skill_executor_push.py:386 → `WaitSkill`).
+    Never silently rewritten to another skill. The legacy backend does exactly that
+    (box_push_centralized.py::_skill_parser → `explore`, banner-marked SUPERSEDED FOR V1;
+    skill_executor_push.py:386 → `WaitSkill`).
     """
     reason: str
     raw: str = ""

@@ -59,7 +59,7 @@ movements/actions internally."
 **Code evidence.** The heavy box physically requires simultaneity: `_find_tandem`
 (`multi_agent_box_push_env.py:312-328`) matches only when two agents stand at `B−D` and `B−2D`, both
 facing `D`, and **both** submit `MOVE_FORWARD` in the same joint `step()`. The current runner
-instantiates `CooperativePushSkill` **per agent** (`box_push_centralized.py:411-415`;
+instantiates `CooperativePushSkill` **per agent** (`box_push_centralized.py::main`;
 `skill_executor_push.py:252-256`) and relies on the planner assigning it to both — nothing enforces
 this (`box_push_centralized.py:271-278` is prompt text only).
 
@@ -71,7 +71,7 @@ specification and the backend's physics.
 - The V1 wrapper owns *both* per-agent `CooperativePushSkill` instances behind one executive call.
   `partner_id` plumbing and the `_assign_slots` tie-break (`skill_executor_push.py:272-283`) are
   wrapper-internal and must not appear in the executive signature.
-- Idle agents are padded with `STAY`, as the runner already does (`box_push_centralized.py:429-430`).
+- Idle agents are padded with `STAY`, as the runner already does (`box_push_centralized.py::main`).
   Idle padding consumes **primitive** steps only (Decision 2).
 - The wrapper latches the **pair ordering** (canonical `AgentId` order) at invocation. It does
   **NOT** latch the front/rear tandem roles: `_assign_slots` re-derives those every `step()` from
@@ -99,7 +99,7 @@ executive-step consumption."
 **Code evidence.** No executive-step concept exists today. The only counter is
 `world.episode.step_count`, incremented unconditionally on the first line of `step()`
 (`multi_agent_box_push_env.py:141`); the only budget check is `:170`. `skill_cycle`
-(`box_push_centralized.py:376,379`) counts planner calls, is log-only, and is never bounded.
+(the `skill_cycle` counter in `box_push_centralized.py::main`) counts planner calls, is log-only, and is never bounded.
 `BaseSkill._steps` is **not** a primitive-step counter — `GotoPushPoseSkill` increments it only after
 its early returns (`skill_executor_push.py:170`) and `PushSkill` only when *issuing* a push (`:226`),
 never on the evaluation iteration.
@@ -112,7 +112,7 @@ prescribe the answer.
   **not** be populated from `BaseSkill._steps`.
 - **This structurally fixes the livelock** recorded in `section18.md` §C note 4: a `wait`/`wait` cycle
   performs zero `env.step()` calls, so `step_count` never advances and truncation can never fire
-  (`box_push_centralized.py:423-424`). An executive-step budget bounds the loop where a primitive
+  (`box_push_centralized.py::main`). An executive-step budget bounds the loop where a primitive
   budget provably cannot.
 - Repeated-failure bookkeeping keys on `(canonical StateSnapshot, grounded skill)` per `:118`, which
   requires the deterministic call serialization frozen in Decision 11.
@@ -192,7 +192,7 @@ equality/hashing/replay/trace keys. Raw backend serialization is not the equalit
 the code evidence only establishes which of the three candidate sources can satisfy it.
 
 **Implementation consequences.** P1 adds a `world`↔`grid` consistency assertion and must **not** call
-`DeterministicGridUpdater` on the V1 path. Note `box_push_centralized.py:357-363` aliases one
+`DeterministicGridUpdater` on the V1 path. Note `box_push_centralized.py::main` aliases one
 `shared_grid` into both agents' updaters while `DeterministicGridUpdater.reset()` (`:153-159`) rebuilds
 `_grid` — so `reset_belief()` silently un-shares the team map. V1 sidesteps this entirely; P3 must not
 reintroduce it.
@@ -307,8 +307,8 @@ required." Project NL rule: malformed NL skill calls must be typed validation/re
 and must never be silently converted into an unrelated valid skill such as `explore`.
 
 **Code evidence — four silent paths, all verified.**
-1. `box_push_centralized.py:313-314` — any unparseable decision → `("explore", None)`.
-2. `:404` — a missing agent line → `("explore", None)`.
+1. `box_push_centralized.py::_skill_parser` — any unparseable decision → `("explore", None)`.
+2. the `decided.get(aid, ("explore", None))` default in `::main` — a missing agent line → `("explore", None)`.
 3. `centralized_dspy_planner.py:106-108` — a bare `except Exception` returns `{}`, reaching the same
    default. **An LLM/API failure is an `InfrastructureFault` by `:161`, which `:163` requires to abort
    the cycle; instead it is executed against the authoritative environment for up to 30 primitive
@@ -348,7 +348,7 @@ runtime cycle and episode step budget; `:160` makes an "executor/monitor protoco
 (`multi_agent_box_push_env.py:55`) and `reset` (`:119`) — so `step()` remains callable after
 `terminated` and keeps incrementing `step_count` (`:141`). This violates the PettingZoo convention and
 makes the runner's outer guard `while env.agents and not episode_done`
-(`box_push_centralized.py:378`) effectively `while not episode_done`. Separately, `reset()` changes the
+(`box_push_centralized.py::main`) effectively `while not episode_done`. Separately, `reset()` changes the
 *type* of `world.agents` from list to dict (`multi_agent_box_push_env.py:78-79` vs
 `box_push_env.py:119-125`), so `step()` before `reset()` raises `TypeError` at `:151`.
 
@@ -653,7 +653,7 @@ unrecognized token is a `MalformedCall`; it is never resolved to a default skill
 (`explore`, `goto_push_pose`, `push`, `cooperate_push`) and returns `WaitSkill(agent_id)` for
 everything else. There is **no `wait` arm**: `"wait"`, `"Push"`, `""` and arbitrary garbage are
 observationally identical, which is the same silent-substitution class as `_resolve_box`
-(Decision 7) and `box_push_centralized.py:313-314`'s rewrite to `explore`.
+(Decision 7) and `box_push_centralized.py::_skill_parser`'s rewrite to `explore`.
 
 **Classification.** **V1 DESIGN DECISION.** `:104` requires a backend mapping per skill; it does
 not dictate the token. Freezing the token in the signature is what makes the mapping mechanically
@@ -840,11 +840,23 @@ These are scheduled engineering tasks, not open decisions.
    - *Identifiers:* objects are `a1 a2 box0 box1`, but the frozen contract uses
      `agent_0 agent_1 box_0 box_1` and **`BoxId.parse("box0")` raises `ValueError`**. This is not
      cosmetic: a P2 planner wired to the current files fails on every un-lift.
-2. **P3 — pin dependency versions.** `:236` requires pinned DSPy/runtime versions for the offline
-   baseline. Decision 10 fixes only Python/OS.
-3. **P3 — introduce the offline LM seam.** `CentralizedDSPyPlanner.configure_ollama`
-   (`centralized_dspy_planner.py:35-68`) hardwires `dspy.configure`, and the runner hardcodes the model
-   (`box_push_centralized.py:46`). No offline P3 test can exist until this seam is added.
+2. ~~**P3 — pin dependency versions.**~~ — **done in P3 (2026-08-21).** `requirements.txt` pins
+   all ten top-level dependencies exactly (verified byte-exact against the installed
+   environment by the P3 architecture review). Recorded residual: transitive
+   determinism-relevant deps (litellm, openai) are unpinned — ":234" read as top-level pins;
+   and both `pygame` and `pygame_ce` are installed side by side (pre-existing environment
+   condition, latent shadowing hazard, not introduced by P3). Original: `:236` requires pinned
+   DSPy/runtime versions for the offline baseline. Decision 10 fixes only Python/OS.
+3. ~~**P3 — introduce the offline LM seam.**~~ — **done in P3 (2026-08-21).** `nl/seam.py`
+   (`NLRequest`/`LMSeam`/`RecordedLM` with the typed `UnrecordedRequestError`); every NL module
+   takes the seam by injection; the ONLY dspy binding is `model_layer/planner/v1_nl_live.py`
+   (legacy side — the auto-discovered import guard forbids `nl/` from importing dspy at all),
+   consuming the pinned `nl/runtime_config.py::PINNED_V1_NL_RUNTIME` (temperature 0, cache ON —
+   a deliberate departure from the legacy runner's `cache=False`, required by :236). Default
+   tests are fully offline; live coverage only in `tests/test_p3_live_lm.py` behind
+   MAAOS_LIVE_LM=1. Original: `CentralizedDSPyPlanner.configure_ollama` hardwires
+   `dspy.configure`, and the runner hardcodes the model. That legacy path is unchanged and
+   superseded.
 4. ~~**P2 — static no-backend-import guard**~~ — **done in P0.** `tests/test_no_backend_imports.py` discovers guarded packages instead of hardcoding them, and the symbolic side is derived (`discovered_guarded_packages() - RUNTIME_PACKAGES`) so a future `symbolic/` package is covered the day it is created, not the day someone remembers.
 5. **P1 — guards and counters:** `world`↔`grid` consistency assertion, reset-before-use,
    post-terminal refusal, per-attempt `env.step()` counter, belief-sharing reset test.
@@ -868,11 +880,17 @@ These are scheduled engineering tasks, not open decisions.
    P0** and is not claimed as covered: no executor and no orchestrator exist, and
    `OrchestrationPolicy` is a config enum only. Recorded here so it is not mistaken for a
    satisfied property.
-9. **P3 — remove the runner's silent `explore` fallback.** `_skill_parser` returns
-   `("explore", None)` for any unparseable planner output (`box_push_centralized.py:306-314`) and
-   the DSPy exception path feeds the same substitution (`:404`). Decision 7 forbids it; the typed
-   `MalformedCall` replaces it. Listed separately from item 3 (the offline LM seam), which does not
-   cover the parser.
+9. ~~**P3 — remove the runner's silent `explore` fallback.**~~ — **closed in P3 (2026-08-21),
+   with an explicit reading:** the item says "remove"; the implemented resolution is
+   REPLACEMENT + SUPERSESSION, per the change policy (prefer wrapper/adapter; preserve legacy
+   behavior). The V1 NL track parses exclusively through `nl/parser.py` (typed `MalformedCall`
+   → one typed repair attempt (`nl/repair.py`) → standing typed rejection; substitution is
+   mutation-pinned impossible — N1/N2/K1) and never routes through the legacy runner. The
+   legacy `_skill_parser` keeps its behavior unchanged and now carries a PINNED
+   `SUPERSEDED FOR V1` banner (`tests/test_p3_nl.py::test_the_legacy_fallback_carries_its_superseded_banner`).
+   Original: `_skill_parser` returns `("explore", None)` for any unparseable planner output
+   (`box_push_centralized.py::_skill_parser`) and the DSPy exception path feeds the same
+   substitution. Decision 7 forbids it; the typed `MalformedCall` replaces it.
 10. **CI** — no CI configuration exists in the repository. Whether V1 requires CI is a project-management
    question, not a V1 semantics decision.
 

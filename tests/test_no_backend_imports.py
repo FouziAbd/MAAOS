@@ -168,6 +168,14 @@ class TestSymbolicSideCannotReachRuntimeState(unittest.TestCase):
         self.assertIn("domain", side)
         self.assertNotIn("runtime", side)
 
+    def test_the_real_tree_has_no_runtime_imports_on_the_symbolic_side(self):
+        """Consistency-check P3 WARN 16: `runtime_violations` previously ran ONLY on throwaway
+        probe trees, so the :118 ban ("no package may key on repeated-failure bookkeeping") was
+        enforced nowhere on the real tree — `nl/` importing `runtime.executive_history` would
+        have passed every test while its docstring claimed otherwise. This is the real-tree
+        assertion that claim rests on."""
+        self.assertEqual(runtime_violations(self.symbolic_side()), [])
+
     @staticmethod
     def _probe_tree(stack, *, package="symbolic_probe", leak=None):
         """Build a throwaway repo-shaped tree in a temp dir. Never touches the working tree."""
