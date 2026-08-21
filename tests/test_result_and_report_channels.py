@@ -92,6 +92,9 @@ class TestPlannerResultTrio(unittest.TestCase):
             self.assertEqual(plan.length, 2)
             self.assertEqual(plan.cost, 6)
             self.assertNotEqual(plan.cost, plan.length)
+            # ...and the SERIALIZED cost too: `"cost": len(self.plan)` was an extensionally
+            # equivalent mirror under the unit-cost registry, one line past the property test.
+            self.assertEqual(plan.canonical()["cost"], 6)
         # and the substitution is undone
         self.assertEqual(REGISTRY.get(SkillName.PUSH).cost, 1)
 

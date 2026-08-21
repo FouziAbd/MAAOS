@@ -766,7 +766,7 @@ cell is not a known undelivered target *in the belief grid*. So the adapter must
    |---|---|
    | `CooperativePush` | the box whose position changed (or became `delivered`) must be the grounded `BoxId`. If a *different* box moved → protocol failure (it passes a box argument, so `_resolve_box` can substitute). |
    | `Push` | **No identity check applies.** `PushSkill` takes no box argument and never calls `_resolve_box` (Decision 16 passes `dest=None`), so backend re-grounding is structurally impossible. A different box moving means the agent was physically behind another box — the designed non-exclusive-`in_pose` case of obligation 2 — and is an `ExecutionDiscrepancy`, **never** `EXECUTOR_MONITOR_PROTOCOL_FAILURE`. Classifying it as a fault would be the same signal suppression obligation 2 exists to prevent. |
-   | `GotoPushPose` | **no object moves at all**, so movement cannot be the criterion. Compare the terminal agent cell against the pose cell of the grounded box, derived from the snapshot (`box - direction_vector(push_dir(box, zone))`). Landing on another box's pose cell is a substitution. |
+   | `GotoPushPose` | **no object moves at all**, so movement cannot be the criterion. When the skill CLAIMS success (raw `in_position`), compare the terminal agent cell against the pose cell of the grounded box, derived from the snapshot (`box - direction_vector(push_dir(box, zone))`); landing on another box's pose cell is a substitution. A blocked/truncated stop makes no identity claim and is not checked — an unconditional cell comparison would raise false substitution faults for ordinary failures. |
 
    This is post-hoc interpretation of what happened, which Decision 13 clause 5 explicitly requires
    the wrapper to compute; it is not a feasibility query and must never gate the attempt.
@@ -776,16 +776,22 @@ cell is not a known undelivered target *in the belief grid*. So the adapter must
    pre-flight cannot close it. The adapter therefore feeds the backend skills the `entities`/grid
    view it constructs, and that view is authoritative-`world`-derived — never the reward-derived
    belief grid, whose defects Decision 9 defers and whose target-cell labelling is exactly what
-   `_resolve_box` consults. **UNRESOLVED for P1 to settle and record:** whether that view is the
-   full exact grid (simplest, and consistent with Decision 4's full observability) or a restricted
-   projection; the constraint frozen here is only that it must not be the belief grid.
+   `_resolve_box` consults. **RESOLVED (P1, 2026-08-20):** the adapter supplies the **full exact grid**, rebuilt from
+   `core_env.world` on every primitive step (`box_push_v1_adapter.py::_entities_for`): walls,
+   `delivery_zone`, undelivered boxes as `target_object`, OTHER agents as `agent`; a DELIVERED
+   box's cell shows the underlying `delivery_zone`, because delivered boxes are non-colliding
+   ghosts in the backend and labelling them as boxes would wrongly block navigation and re-offer
+   them as targets. Never the belief grid. Consequences accepted and recorded: the belief-only
+   defects (agents as `empty` — headline 0's root; `_resolve_box`'s belief-conditioned fallback
+   trigger) do not arise on this path, and `_bfs_avoid_boxes` navigates on exact occupancy INSIDE
+   execution — legal, since Decision 6 governs applicability, not execution.
 
-   The choice has a consequence P1 must weigh rather than discover: `section18.md` §J-4 names
-   `_bfs_avoid_boxes` as "the most likely accidental violation" precisely because feeding it the
-   exact grid turns it into an exact reachability oracle *inside execution*. That is not an
-   applicability violation — BFS stays behind the executor, and Decision 6 governs applicability —
-   but it would materially reduce `goto_push_pose → blocked`, which §J-3 names as the primary
-   acceptance scenario #2. **P2 must re-validate scenario #2 after this is settled.**
+   The recorded consequence stands: exact-grid navigation reduces the `goto_push_pose → blocked`
+   rate (§J-3's primary acceptance scenario #2). The case remains REACHABLE — a physically
+   occupied pose cell still yields no path, a spin, the no-progress bail and `blocked`
+   (`tests/test_p1_adapter.py::test_goto_blocked_by_partner_on_the_pose_cell` demonstrates it
+   live) — but **P2 must re-validate scenario #2 against the adapter, not against belief-era
+   frequencies.**
 
 5. **Never** pass a caller-supplied or NL-supplied coordinate tuple through to the backend. Executive
    arguments are identities (Decision 11); cells are derived inside the adapter, from the snapshot.

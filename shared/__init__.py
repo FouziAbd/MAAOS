@@ -76,7 +76,12 @@ from shared.task import Task
 from shared.planner_result import PlannerResult, PlanFound, NoPlan, PlannerFailure
 from shared.discrepancy import ExecutionDiscrepancy, DiscrepancyKind, ComparisonBasis
 from shared.divergence import TrackDivergence, DivergenceKind
-from shared.faults import InfrastructureFault, FaultKind, PRE_EXECUTION_FAULT_KINDS
+from shared.faults import (
+    InfrastructureFault,
+    InfrastructureFaultError,
+    FaultKind,
+    PRE_EXECUTION_FAULT_KINDS,
+)
 from shared.reports import CoverageReport, ConfidenceReport
 from shared.trace_schema import TraceEntry
 from shared.orchestration_config import (
@@ -105,7 +110,7 @@ __all__ = [
     "PlannerResult", "PlanFound", "NoPlan", "PlannerFailure",
     "ExecutionDiscrepancy", "DiscrepancyKind", "ComparisonBasis",
     "TrackDivergence", "DivergenceKind",
-    "InfrastructureFault", "FaultKind", "PRE_EXECUTION_FAULT_KINDS",
+    "InfrastructureFault", "InfrastructureFaultError", "FaultKind", "PRE_EXECUTION_FAULT_KINDS",
     "CoverageReport", "ConfidenceReport",
     "TraceEntry",
     "OrchestrationConfig", "OrchestrationPolicy", "ExecutiveDecision",

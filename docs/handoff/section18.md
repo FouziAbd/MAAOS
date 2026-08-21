@@ -82,7 +82,7 @@ sub-audits + one independent `architecture-reviewer` contract check.
 | Install instructions | PARTIAL | `requirements.txt` | `pettingzoo>=1.24`, `gymnasium`, `minigrid`, `dspy-ai`, `pyperplan>=2.1`, `pyRDDLGym>=2.7`; deps unpinned except two | Pin exact versions for deterministic V1 (P3 requires it) |
 | Python/OS constraints | PARTIAL | venv `/home/fouzi/PettingZooEnv`, Python 3.12.3, Linux/WSL2 | Established by environment, not declared in repo | Declare in a manifest at P0 |
 | Run command | SATISFIED | `box_push_centralized.py:319 main()` | `cd functional_layer/custom_env/box_push/env && python box_push_centralized.py`; requires a live Ollama at `LLM_BASE` (`:323-325`) | Add an offline V1 entry point that does not need an LM |
-| Automated test command | SATISFIED (P0) | `python3 -m unittest discover -s tests -t .` — 400 tests, deterministic and offline, no LM and no env stepping | Covers the P0 contract freeze only; backend behavior is still unexercised | P1 adds transition/round-trip tests against the real wrapper |
+| Automated test command | SATISFIED (P0) | `python3 -m unittest discover -s tests -t .` — 447 tests, deterministic and offline, no LM required (the P1 module steps the real backend headlessly; P0 modules step nothing) | P0 contract freeze + P1 live-backend integration (tests/test_p1_adapter.py) | — |
 | Target OS/CI | PARTIAL | — | No CI config in repo | OS/Python frozen by **Decision 10**; CI is a project-management question, not V1 semantics (decisions §18 item 10) |
 
 ---
@@ -585,7 +585,7 @@ P1/P2 against the real wrapper, not hand-written now.
    | `_tandem_feasible` | `:330-346` | Exact precondition for the joint heavy push; removes the only nontrivial cooperative discrepancy. |
    | `_find_tandem` | `:312-328` | Exact formation checker; turns `cooperate_push` applicability into backend simulation. |
    | `_is_free_for_agent` | `:272-286` | Exact occupancy oracle; makes `goto_push_pose` position-aware and deletes its `blocked` discrepancy. |
-   | `_bfs_avoid_boxes` | `skill_executor_push.py:63-88` | Harmless today (belief input) — **becomes an exact reachability oracle the moment P1 adds `export_full_state()` and someone passes the exact grid instead of `entities["grid"]["cells"]`. The call signature does not change.** Most likely accidental violation. |
+   | `_bfs_avoid_boxes` | `skill_executor_push.py:63-88` | The P1 adapter DOES feed it the exact grid — deliberately, as the recorded Decision 16 obligation-4 resolution: exact navigation **inside execution** is legal (Decision 6 governs applicability). The trap this row guards is unchanged for the SYMBOLIC side: applicability/planning must never reach it, and the import guard makes that structural. |
    | `_push_dir_toward_goal` | `:39-47` | Manhattan-nearest goal cell then an axis choice. **Permitted for effect grounding** (Decision 13.3) — it consults no walls, no occupancy and no search. Still forbidden in *applicability*: a precondition may not depend on it. |
    | `_nearest_undelivered_target` | `:98-107` | Already used as a *silent* re-grounding oracle (§B-consistency-8). |
 
@@ -622,10 +622,10 @@ P1/P2 against the real wrapper, not hand-written now.
 | Phase | Ready inputs | Missing / blocked items | Evidence |
 |---|---|---|---|
 | **P0** | — | **COMPLETE.** Frozen typed contracts in `shared/` + `domain/box_push_v1.py`; executive runtime state in `runtime/`; 400 offline tests | `shared/{state_snapshot,symbolic_state,comparison_keys,skills,skill_ir,execution,planner_result,discrepancy,divergence,faults,reports,task,observation,trace_schema,orchestration_config,versioning,backend_contract}.py`; `domain/box_push_v1.py`; `runtime/executive_history.py`; `tests/` (14 modules, 400 tests) |
-| **P1** | Deterministic fixed env, `world` ground truth, composed skills that already return terminal labels, **frozen P0 contracts + `V1Environment` protocol + a passing offline suite to extend** | The wrapper itself: `reset/observe/execute_skill/export_full_state/is_terminal`; `world → StateSnapshot` normalization; **authoritative label re-derivation (headline 0)**; **timeout-vs-success disambiguation (§B-4)**; per-attempt `env.step()` counter; reset-before-use and post-terminal guards; transition/round-trip tests against the real backend | `shared/backend_contract.py` defines the interface and its obligations; no implementation exists yet; `infos` still empty |
+| **P1** | — | **COMPLETE.** `functional_layer/custom_env/box_push/env/box_push_v1_adapter.py::BoxPushV1Adapter` implements the frozen `V1Environment` protocol over the real backend: `world → StateSnapshot` normalization (D4, world-only — behaviourally pinned by grid-vandalism and cache-desync tests); authoritative typed outcome derived from world with the headline-0 `too_heavy`-vs-`blocked` re-derivation in `detail` (D3); explicit typed TIMEOUT from the backend budget (D3); per-attempt `env.step()` counter cross-checked against the joint `step_count` (D2); exhaustive dispatch on `backend_dispatch_key`, no fallback, `make_skill` never called (D14/D16); identity-only pre-flight + per-skill post-flight substitution faults with the result attached (D16); reset-before-use and post-terminal refusal via `InfrastructureFaultError` (D8); `CooperativePush` as ONE executive invocation owning both instances (D1). 47 integration tests in `tests/test_p1_adapter.py`; 30/30 targeted adapter mutations killed (`docs/implementation/p1_mutation_harness.py`) | The runner-faithful drive loop submits a finishing skill's terminal STAY, so a backend-rejected attempt costs 1 primitive step; belief/middleware machinery untouched and unused (AST-pinned) |
 | **P2** | RDDL transition structure. **The `.pddl` files are REFERENCE ONLY** — banner-marked `;; SUPERSEDED FOR V1`; P2 re-issues them from `DOMAIN_IR` (decisions §18 item 1) | Applicability, planner integration returning the 3-way `PlannerResult`, the **world-effect predictor** declared by `SkillIR.predicted_world_effects` (**Decision 13.2**), monitor over both comparison bases, exact-state symbolic belief | `pyperplan` is a dependency but nothing in the repo calls it. The typed IR encoding is **done** (`domain/box_push_v1.py::DOMAIN_IR`) |
 | **P3** | Existing DSPy planner and prompts as *reference* | Typed modules (TaskInterpreter/SkillSelector/RepairSkillCall/Translator+residual/…); **removal of the silent `explore` fallback**; offline fixtures; pinned versions; temperature-0 baseline | `centralized_dspy_planner.py` is one monolithic `ChainOfThought` (`:96-103`) |
-| **P4** | Runner loop shape as reference only | Track comparator, three typed report channels, symbolic-primary + advisory policies, executive loop manager, `NoPlan` vs `PlannerFailure` routing, policy-independent executor, `InfrastructureFault` short-circuit, repeated-failure bookkeeping, executive step budget, trace/history | current runner has no typed results, no retry/failure bookkeeping, and no exception handling (`box_push_centralized.py` has no `try/except`) |
+| **P4** | Runner loop shape as reference only | Track comparator, three typed report channels, symbolic-primary + advisory policies, executive loop manager, `NoPlan` vs `PlannerFailure` routing, policy-independent executor, `InfrastructureFault` short-circuit, repeated-failure bookkeeping, executive step budget, trace/history; **case-(c) budget charging**: `TraceEntry`/`ExecutiveHistory` accessors report RECORDED accounting only (lower bounds), so the loop must charge mid-execution-fault attempts (one executive step + the `primitive_steps_before_failure` from fault detail) from fault provenance on top of the sums; and DECIDE whether case-(c) attempts feed repeated-failure counts (currently they do not — faults escalate via `faults_since`, failures via `failure_count`; make that a recorded decision, not an accident) | current runner has no typed results, no retry/failure bookkeeping, and no exception handling (`box_push_centralized.py` has no `try/except`) |
 
 ### Ordered implementation dependencies
 
@@ -805,6 +805,121 @@ Also corrected: two trace assertions that mirrored the object they were built fr
 frozenset iteration order appeared to prove, and a duplicate-skill-name guard whose test was
 actually satisfied by the duplicate-dispatch-key guard.
 
+### Revision 2026-08-20d — P1 implemented
+
+`BoxPushV1Adapter` lands (see the roadmap row for the full obligation mapping). Register updates:
+
+- **T-W5 (text pins vs behaviour) — closed.** `test_reset_export_equals_the_frozen_initial_state`
+  now pins the frozen instance against the LIVE backend (positions, facings, boxes, walls, goal
+  zone in one executing assertion), subsuming the source-text drift pins' load-bearing role; the
+  text pins remain as fast early warnings.
+- **T-W1 (serialized plan cost) — closed** (`test_plan_cost_is_not_plan_length_in_disguise` now
+  pins `canonical()["cost"]` under a non-unit registry).
+- **T-W2 (trace provenance model_version) — re-assigned P1 → P4.** P1 emits `ExecutionResult`s,
+  not `TraceEntry`s; the decision belongs to the first component that writes real traces (the P4
+  loop manager). Recorded here so the ownership change is explicit, not silently dropped.
+- **Decision 16 obligation 4 — RESOLVED** (exact world-derived grid; see P0_V1_DECISIONS §17).
+- **Shared-surface addition (P0-frozen contracts, additive):** `shared/faults.py` gains
+  `InfrastructureFaultError` — the exception that carries a fault across the `execute_skill`
+  boundary, with an optional attached `ExecutionResult` for post-execution faults. Required by
+  D8/D16: the protocol's return union deliberately excludes the fault channel, and P4 must be
+  able to catch it without importing the backend-side adapter. Exported; no frozen semantic
+  changed.
+- **One raw-vs-typed disagreement became MORE reachable than P0 predicted:** delivering the LAST
+  box ends the episode in the same joint `env.step`, before the skills' evaluation iteration —
+  so the raw label is the non-terminal marker while the authoritative outcome is SUCCESS
+  (`test_cooperative_push_is_one_executive_invocation` pins it). D3 is what makes this benign.
+
+### Revision 2026-08-21c — consistency check round 3 (at the P1 baseline)
+
+Round 3 found 1 FAIL, 3 WARNs — again inside the previous fix:
+
+- **F-1:** the runaway-cap producer spelled the case-(c) provenance key `primitive_steps_consumed`
+  while the P4 work item and the revision note instruct P4 to parse `primitive_steps_before_failure`
+  — and the stray spelling collided with the name of the `TraceEntry.primitive_steps_consumed`
+  accessor, which reports 0 for the same cycle (W-1). Fixed by renaming the cap's key: ONE exact
+  key now spans all four case-(c) producers, `shared/faults.py` states it exactly (wildcard
+  retired), and `test_runaway_cap_fault_carries_the_single_provenance_key` pins it (cap exercised
+  by lowering the module constant) with harness mutation P1-30.
+- W-2: the refusals-carry-no-provenance assertion now runs on BOTH refusal producers.
+- W-3: the accessor docstring names all three zero-situations (rejection, case-(b) refusal,
+  case-(c) mid-execution).
+
+The baseline commit was amended to include this round; the tag moved with it.
+
+### Revision 2026-08-21b — consistency check round 2 (fix-of-the-fix)
+
+The second `/consistency-check P1` found 2 FAILs, both introduced by round 1's F1 rewording:
+
+- **F-A:** `TraceEntry.executive_steps_consumed`'s docstring asserted a false biconditional
+  ("0 unless the call reached the executor") that case (c) falsifies, and
+  `ExecutiveHistory`'s budget sums inherit it — the natural P4 budget source under-charged
+  exactly the runaway/exception attempts a budget exists for. Fixed by RESCOPING, not schema
+  change: both accessors now state they report recorded accounting only; the history sums are
+  documented as lower bounds; the P4 roadmap row carries the explicit charging work item; and
+  `test_case_c_trace_accessors_report_recorded_accounting_only` freezes the 0/0 behaviour as
+  deliberate.
+- **F-B:** the alien-label producer was named case (c) by the rule while carrying none of the
+  `primitive_steps_*` provenance the rule itself demands. Both remaining producers (alien label,
+  dispatch guard) now attach it; the seam test asserts it; harness mutation P1-28 pins it.
+- W-1: both refusal messages now begin with `refused:` (pinned by test + mutation P1-29), so
+  (b)/(c) discrimination needs no per-site string knowledge. W-2: the case-(c)/repeated-failure
+  interaction is recorded in the P4 work item as a decision to make, not an accident to inherit.
+
+### Revision 2026-08-21 — P1 consistency check
+
+`/consistency-check P1` ran two passes (self + independent architecture-reviewer). 12 PASS,
+2 FAIL, 2 WARN — both FAILs in the previous fix delta, both contract-text:
+
+- **F1:** the attempt-occurred rule had been frozen as a two-case dichotomy
+  (`result is not None` ⟺ step consumed), which classified a 600-primitive-step runaway or a
+  mid-drive `env.step` exception as "nothing happened" — contradicting Decision 2. Reworded to
+  the three-case rule (see the corrected 2026-08-20e bullet); no code path changed.
+- **F2:** the `env.step` exception wrap was claimed "mutation-pinned" while nothing exercised
+  it. Now genuinely pinned: `test_env_step_exception_becomes_a_typed_backend_fault` (seam
+  injection, asserts kind, message, `primitive_steps_before_failure`, cause chaining, and that
+  the world really advanced) plus harness mutations P1-26/P1-27.
+- W1: stale roadmap-row counts corrected. W2 (recommendation): the audit's live probe — frozen
+  `DOMAIN_IR` Push effects applied to a pre-projection equal the projection of the real
+  backend's post-state (monitored keys identical) — should land as the first P2 monitor test.
+
+Also verified live during the audit: C3 symbolic-effects-vs-successor agreement (above), no
+`unknown` cells in the exact entities view, dispatch coverage of all registry keys, and the
+three-case fault routing probes.
+
+### Revision 2026-08-20e — P1 review round
+
+Both P1 reviews returned (architecture: 0 FAIL / 5 WARN; test: 3 FAIL / 6 WARN). All addressed:
+
+- **Coop substitution arm, success-by-flip, and both landing-cell reasons now covered** — the
+  three review FAILs were branch-level coverage holes; each now has a live-backend test and a
+  checked-in mutation (`docs/implementation/p1_mutation_harness.py`, 25/25 killed).
+- **Untyped escapes closed in code:** a backend label outside the frozen vocabulary now raises
+  `InfrastructureFaultError(MALFORMED_BACKEND_RESULT)`; an exception out of `env.step` becomes
+  `BACKEND_API_EXCEPTION` with `primitive_steps_before_failure` in detail. Both unreachable with
+  the frozen backend, both typed anyway, both pinned by a seam test AND a harness mutation (the
+  `env.step` pin was added by the P1 consistency check — the first revision claimed it while only
+  the label path was pinned). P4 needs no second generic handler.
+- **Attempt-occurred discrimination rule frozen** (`shared/faults.py`) — THREE cases, not two
+  (the two-case form first recorded here erased the mid-execution fault class and was corrected
+  by the P1 consistency check): (a) `result is not None` ⇒ one executive step, accounting
+  attached; (b) `result is None` + pre-attempt refusal (D8/reset-before-use) ⇒ zero steps, world
+  untouched; (c) `result is None` + mid-execution fault (`env.step` raised, runaway cap, alien
+  label) ⇒ one executive step per Decision 2 (the call reached the executor), world possibly
+  changed, primitive accounting in `fault.detail` only (`primitive_steps_before_failure=N`, which
+  EVERY case-(c) producer attaches) — P4 resynchronizes via `export_full_state()`. The fault KIND is never the discriminator
+  (`EXECUTOR_MONITOR_PROTOCOL_FAILURE` serves refusals AND post-execution faults), and only
+  `result is not None ⇒ step consumed` is a safe inference. Binding on P4.
+- Runaway-cap fault now carries the consumed primitive count; the goto post-flight's
+  claims-success-only scoping is recorded in Decision 16 obligation 3; the two obligation-4
+  stale lines corrected; both mutation harnesses checked in as process evidence
+  (`docs/implementation/p{0,1}_mutation_harness.py`); `_move_box(delivered=True)` now bumps
+  `delivered_target_count` so injected fixtures stay backend-producible.
+- Noted as equivalent-or-near-unreachable, no action: `_push_failure_reason` branch order
+  (heavy-front + wall-landing jointly unreachable on the frozen instance); asymmetric-coop
+  `timed_out any()` / primary-agent raw-label provenance (unpinnable until P2 consumes them);
+  `observe()`'s shallow copy aliasing inner dicts (hygiene).
+
 ### Revision 2026-08-20c — serialization faithfulness, stated per key
 
 The round-3 module asserted the right idea with the wrong granularity: it compared whole canonical
@@ -846,13 +961,13 @@ type/contract level**. They are listed here so P1-P4 do not inherit them as "alr
 | The three report channels stay separate | **Fully covered** | — |
 | `PlanFound`/`NoPlan`/`PlannerFailure` distinct; `PlannerFailure → InfrastructureFault` | Type level only — no planner exists | P2 |
 | Successful execution matches the symbolic predicted normalized `StateSnapshot` | Type level only — `predicted_world_effects` are declarations; no predictor exists | P2 |
-| Backend rejection of an optimistic-but-applicable skill records the right failure + `ExecutionDiscrepancy` | **Schema level only** — `TestOptimisticButInfeasibleAcceptanceRecord` hand-builds the result; applicability half is real | P1 |
+| Backend rejection of an optimistic-but-applicable skill records the right failure + `ExecutionDiscrepancy` | **Execution half now behavioural (P1):** the wrong-box push runs against the real backend — raw `too_heavy` preserved as provenance, typed `FAILURE`/`UNCHANGED`, authoritative reason identifying the front box (`tests/test_p1_adapter.py::test_wrong_box_push_raw_label_disagrees_with_authoritative_outcome`). The `ExecutionDiscrepancy` construction from it remains schema-level until the P2 monitor exists | P2 |
 | Malformed/invalid NL calls rejected or repaired before executor invocation | Type level only — no parser exists | P3 |
 | A new current-cycle `InfrastructureFault` short-circuits execution | Type level only — `short_circuits_cycle`, `arises_before_execution` and the `TraceEntry` refusal are covered; no loop exists | P4 |
 | Orchestration policy changes decisions, not executor semantics | **Not testable at P0** — `OrchestrationPolicy` has no consumer | P4 |
 | Representative tasks terminate as expected | Type level only — goal predicates and `all_targets_delivered` are covered; no loop exists | P2/P4 |
 | NL default tests use stubs | **Vacuous at P0** — there are no NL tests because there is no NL track | P3 |
-| No hidden backend feasibility oracle is introduced | **Partial** — import-level and projection-level guards are real and fail closed, but Decision 13 clause 9's predictor guard is a P2 obligation and the adapter's grid choice (Decision 16 obligation 4) is unresolved | P1/P2 |
+| No hidden backend feasibility oracle is introduced | **Partial** — import-level and projection-level guards are real and fail closed, and the adapter's grid choice is now RESOLVED (exact world-derived grid inside EXECUTION — Decision 16 obligation 4, legal under Decision 6's applicability scope). Decision 13 clause 9's predictor guard remains a P2 obligation | P2 |
 | Traces include task, snapshots, proposals, decision, prediction, execution, channels, provenance, model version | **Schema level** — every field is present and now serialization-faithful; no trace is ever produced because no loop exists | P4 |
 
 ---

@@ -99,11 +99,19 @@ class TraceEntry:
 
     @property
     def executive_steps_consumed(self) -> int:
-        """0 unless the call reached the executor (Decision 2)."""
+        """RECORDED structured accounting only — not always the truth about consumption.
+
+        1 when an `ExecutionResult` was recorded (Decision 2). 0 otherwise — which covers
+        genuinely-zero situations (a pre-executor rejection, a case-(b) refusal) and a case-(c)
+        MID-EXECUTION fault (`shared/faults.py` three-case rule), where one executive step WAS
+        consumed but no result exists and the accounting survives only in `fault.detail`.
+        P4 must charge case-(c) steps from fault provenance, never from this accessor."""
         return self.execution.accounting.executive_steps if self.execution else 0
 
     @property
     def primitive_steps_consumed(self) -> int:
+        """RECORDED primitive accounting only — a case-(c) entry reports 0 here while its fault
+        detail records the primitives that really ran. Same caveat as above."""
         return self.execution.accounting.primitive_steps if self.execution else 0
 
     @property

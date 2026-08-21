@@ -35,8 +35,31 @@ class FaultKind(StrEnum):
 #: `TraceEntry` refuse to represent a cycle that both faulted pre-execution and executed.
 #:
 #: The remaining kinds (malformed backend RESULT, serialization, backend API exception,
-#: executor/monitor protocol) can only be detected during or after an attempt, so they may legally
-#: coexist with an `ExecutionResult`.
+#: executor/monitor protocol) MAY be detected during or after an attempt, so they may legally
+#: coexist with an `ExecutionResult`. NOTE the asymmetry: `arises_before_execution` is
+#: KIND-based, and `EXECUTOR_MONITOR_PROTOCOL_FAILURE` is also legitimately raised for
+#: pre-attempt caller-protocol refusals (post-terminal execution, reset-before-use — D8).
+#: The discrimination rule for "what happened to the attempt?" is therefore NOT the kind, and it
+#: is NOT a two-case rule either — an earlier revision froze `result is not None` as the whole
+#: answer and thereby erased the mid-execution fault class. Three cases:
+#:
+#:   (a) `InfrastructureFaultError.result is not None` — the attempt ran to completion and THEN
+#:       faulted (e.g. post-flight substitution). One executive step; full accounting attached.
+#:   (b) `result is None` and the fault is a PRE-ATTEMPT refusal (D8 post-terminal,
+#:       reset-before-use) — zero executive steps, world untouched.
+#:   (c) `result is None` and the fault fired MID-EXECUTION (`env.step` raised, the runaway cap,
+#:       a label outside the vocabulary): the attempt reached the executor, so per Decision 2 it
+#:       consumed ONE executive step, the world may already have changed, and the primitive
+#:       accounting survives only in `fault.detail`. P4 must resynchronize via
+#:       `export_full_state()` — never assume a faulted attempt was a no-op.
+#:
+#: Only the implication `result is not None ⇒ one executive step` is a safe inference. Cases (b)
+#: and (c) share `result=None` and are distinguished by PROVENANCE: refusal faults are raised
+#: before any skill is constructed and their messages begin with `"refused:"`; mid-execution
+#: faults carry `primitive_steps_before_failure=N` in `detail` — ONE exact key, attached by every
+#: case-(c) producer (the adapter's `env.step` wrap, runaway cap, alien-label guard and dispatch
+#: guard). An earlier revision let the runaway cap use a second spelling that collided with the
+#: `TraceEntry.primitive_steps_consumed` accessor name while meaning something different.
 PRE_EXECUTION_FAULT_KINDS: frozenset = frozenset({
     FaultKind.MALFORMED_SKILL_CALL,
     FaultKind.MISSING_GROUNDING,
@@ -73,3 +96,27 @@ class InfrastructureFault:
             "detail": self.detail,
             "source": self.source,
         }
+
+
+class InfrastructureFaultError(Exception):
+    """Carries an `InfrastructureFault` ACROSS a call boundary as an exception.
+
+    Why this exists (P1, Decision 8 / Decision 16): `V1Environment.execute_skill` returns
+    `ExecutionResult | MalformedCall | UngroundedCall` — the fault channel is deliberately not in
+    that union, because a fault SHORT-CIRCUITS the cycle (:163) rather than being one more result
+    to weigh. Exception semantics match that exactly: post-terminal refusal (D8), a post-flight
+    identity violation (Decision 16 obligation 3), or a non-terminating skill raise this, and the
+    executive loop converts `.fault` into the cycle's fault record.
+
+    `result` is optional and its absence is NOT proof that nothing happened — see the three-case
+    rule on `PRE_EXECUTION_FAULT_KINDS` above: a post-execution fault attaches the consumed
+    attempt's `ExecutionResult` (and `TraceEntry` legally records both, since
+    `EXECUTOR_MONITOR_PROTOCOL_FAILURE` is not pre-execution); a pre-attempt refusal (D8) carries
+    `result=None` with the world untouched; a MID-EXECUTION fault also carries `result=None` while
+    one executive step was consumed and the world may have changed (accounting in `detail` only).
+    """
+
+    def __init__(self, fault: InfrastructureFault, result: Optional[Any] = None):
+        super().__init__(f"{fault.kind}: {fault.message}")
+        self.fault = fault
+        self.result = result

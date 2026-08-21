@@ -43,6 +43,11 @@ class ExecutiveHistory:
         return len(self._entries)
 
     # ── budgets ────────────────────────────────────────────────────────────────────
+    # LOWER BOUNDS, not totals: both sums read the RECORDED accounting, and a case-(c)
+    # mid-execution fault (`shared/faults.py` three-case rule) consumed one executive step and
+    # possibly many primitives that are recorded only in `fault.detail`. The P4 loop must charge
+    # case-(c) attempts from fault provenance ON TOP of these sums — budgeting from these
+    # accessors alone under-charges exactly the runaway/exception attempts a budget exists for.
     @property
     def executive_steps_used(self) -> int:
         return sum(e.executive_steps_consumed for e in self._entries)
