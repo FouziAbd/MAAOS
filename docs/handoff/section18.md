@@ -82,7 +82,7 @@ sub-audits + one independent `architecture-reviewer` contract check.
 | Install instructions | PARTIAL | `requirements.txt` | `pettingzoo>=1.24`, `gymnasium`, `minigrid`, `dspy-ai`, `pyperplan>=2.1`, `pyRDDLGym>=2.7`; deps unpinned except two | Pin exact versions for deterministic V1 (P3 requires it) |
 | Python/OS constraints | PARTIAL | venv `/home/fouzi/PettingZooEnv`, Python 3.12.3, Linux/WSL2 | Established by environment, not declared in repo | Declare in a manifest at P0 |
 | Run command | SATISFIED | `box_push_centralized.py:319 main()` | `cd functional_layer/custom_env/box_push/env && python box_push_centralized.py`; requires a live Ollama at `LLM_BASE` (`:323-325`) | Add an offline V1 entry point that does not need an LM |
-| Automated test command | SATISFIED (P0) | `python3 -m unittest discover -s tests -t .` — 447 tests, deterministic and offline, no LM required (the P1 module steps the real backend headlessly; P0 modules step nothing) | P0 contract freeze + P1 live-backend integration (tests/test_p1_adapter.py) | — |
+| Automated test command | SATISFIED (P0) | `python3 -m unittest discover -s tests -t .` — 526 tests, deterministic and offline, no LM required (the P1 module steps the real backend headlessly; P0 modules step nothing) | P0 contract freeze + P1 live-backend integration (tests/test_p1_adapter.py) | — |
 | Target OS/CI | PARTIAL | — | No CI config in repo | OS/Python frozen by **Decision 10**; CI is a project-management question, not V1 semantics (decisions §18 item 10) |
 
 ---
@@ -623,7 +623,7 @@ P1/P2 against the real wrapper, not hand-written now.
 |---|---|---|---|
 | **P0** | — | **COMPLETE.** Frozen typed contracts in `shared/` + `domain/box_push_v1.py`; executive runtime state in `runtime/`; 400 offline tests | `shared/{state_snapshot,symbolic_state,comparison_keys,skills,skill_ir,execution,planner_result,discrepancy,divergence,faults,reports,task,observation,trace_schema,orchestration_config,versioning,backend_contract}.py`; `domain/box_push_v1.py`; `runtime/executive_history.py`; `tests/` (14 modules, 400 tests) |
 | **P1** | — | **COMPLETE.** `functional_layer/custom_env/box_push/env/box_push_v1_adapter.py::BoxPushV1Adapter` implements the frozen `V1Environment` protocol over the real backend: `world → StateSnapshot` normalization (D4, world-only — behaviourally pinned by grid-vandalism and cache-desync tests); authoritative typed outcome derived from world with the headline-0 `too_heavy`-vs-`blocked` re-derivation in `detail` (D3); explicit typed TIMEOUT from the backend budget (D3); per-attempt `env.step()` counter cross-checked against the joint `step_count` (D2); exhaustive dispatch on `backend_dispatch_key`, no fallback, `make_skill` never called (D14/D16); identity-only pre-flight + per-skill post-flight substitution faults with the result attached (D16); reset-before-use and post-terminal refusal via `InfrastructureFaultError` (D8); `CooperativePush` as ONE executive invocation owning both instances (D1). 47 integration tests in `tests/test_p1_adapter.py`; 30/30 targeted adapter mutations killed (`docs/implementation/p1_mutation_harness.py`) | The runner-faithful drive loop submits a finishing skill's terminal STAY, so a backend-rejected attempt costs 1 primitive step; belief/middleware machinery untouched and unused (AST-pinned) |
-| **P2** | RDDL transition structure. **The `.pddl` files are REFERENCE ONLY** — banner-marked `;; SUPERSEDED FOR V1`; P2 re-issues them from `DOMAIN_IR` (decisions §18 item 1) | Applicability, planner integration returning the 3-way `PlannerResult`, the **world-effect predictor** declared by `SkillIR.predicted_world_effects` (**Decision 13.2**), monitor over both comparison bases, exact-state symbolic belief | `pyperplan` is a dependency but nothing in the repo calls it. The typed IR encoding is **done** (`domain/box_push_v1.py::DOMAIN_IR`) |
+| **P2** | — | **COMPLETE.** `symbolic/` (7 modules): declarative applicability + the ONE deterministic successor (`applicability.py` — literal membership only, geometry cannot reach it); exact-state belief with Decision 13.8 outcome maintenance incl. the consuming-skill retention rule (`belief.py`); deterministic BFS planner returning the 3-way `PlannerResult` with typed budget exhaustion → `PlannerFailure(timed_out=True)` and `except Exception` → `PlannerFailure` (`planner.py`); world-effect predictor grounding `SkillIR.predicted_world_effects` on clause-9 bounded inputs, partial by design on ray miss (`predictor.py`); monitor over BOTH comparison bases with clause-7 outcome-only failure reports (`monitor.py`); deterministic PDDL re-issue from `DOMAIN_IR` byte-pinned to the checked-in `_v1` artifacts + `.soln` from the deterministic planner with `pyperplan` validity cross-check (`pddl_gen.py`, decisions §18 item 1 CLOSED); synthetic `NoPlan` instance (`synthetic.py`, Decision 12). Guards: four import escape routes + predictor input bound (`tests/test_p2_symbolic.py::TestSymbolicSideGuards`). 69 tests (53 unit/guard + 9 PDDL + 7 live acceptance incl. the flagship plan→execute→monitor→replan story with the designed `ExecutionDiscrepancy` and the demonstrated consuming-skill livelock + recovery); 50/50 targeted mutations killed (`docs/implementation/p2_mutation_harness.py`, incl. the VA/L series added by the V1-acceptance and consistency rounds). The `/acceptance-test` deliverable sits on top: `tests/test_v1_acceptance.py` (10 tests — six supervisor cases as `TraceEntry`-recorded live cycles) + `docs/implementation/acceptance_traces.md` (human-readable traces, regenerated live and byte-pinned by `TestTraceDocumentPinned`) | Decisions §19.1 records the P4-binding discoveries (livelock, `CallValidation` gating, belief-not-reprojection monitor wiring, monitor `ValueError`→fault wrap, ghost-identity routing order) |
 | **P3** | Existing DSPy planner and prompts as *reference* | Typed modules (TaskInterpreter/SkillSelector/RepairSkillCall/Translator+residual/…); **removal of the silent `explore` fallback**; offline fixtures; pinned versions; temperature-0 baseline | `centralized_dspy_planner.py` is one monolithic `ChainOfThought` (`:96-103`) |
 | **P4** | Runner loop shape as reference only | Track comparator, three typed report channels, symbolic-primary + advisory policies, executive loop manager, `NoPlan` vs `PlannerFailure` routing, policy-independent executor, `InfrastructureFault` short-circuit, repeated-failure bookkeeping, executive step budget, trace/history; **case-(c) budget charging**: `TraceEntry`/`ExecutiveHistory` accessors report RECORDED accounting only (lower bounds), so the loop must charge mid-execution-fault attempts (one executive step + the `primitive_steps_before_failure` from fault detail) from fault provenance on top of the sums; and DECIDE whether case-(c) attempts feed repeated-failure counts (currently they do not — faults escalate via `faults_since`, failures via `failure_count`; make that a recorded decision, not an accident) | current runner has no typed results, no retry/failure bookkeeping, and no exception handling (`box_push_centralized.py` has no `try/except`) |
 
@@ -830,6 +830,42 @@ actually satisfied by the duplicate-dispatch-key guard.
   so the raw label is the non-terminal marker while the authoritative outcome is SUCCESS
   (`test_cooperative_push_is_one_executive_invocation` pins it). D3 is what makes this benign.
 
+### Revision 2026-08-21e — V1 acceptance round + P2 consistency check
+
+`/acceptance-test` delivered `tests/test_v1_acceptance.py` (10 tests: the six supervisor cases
+as live `TraceEntry`-recorded cycles — normal success; the optimistic failure with livelock +
+scripted recovery; pre-executor rejection at 0/0 steps with the backend untouched; malformed +
+ghost-identity handling traced across BOTH layers; synthetic `NoPlan`; deadlock documented N/A
+per Decision 12) and the byte-pinned `docs/implementation/acceptance_traces.md`, regenerated
+live at test time. Its test-review returned 0 FAIL / 4 WARN / 5 NOTE; all WARNs fixed in-suite
+(failure specifics, plan identities, direct success-match assertions, TraceEntry-coexistence
+enforcement) and pinned by the VA-series mutants.
+
+The `/consistency-check P2` independent pass then audited the whole post-review fix delta:
+1 FAIL / 3 WARN, all documentation/guard-hardening — no product-code defect. Closed in this
+revision: this document's stale counts (447→526 suite tests, 46→50 harness mutants) and the
+now-false "no trace is ever produced" coverage cell; the clause-9 guard's fifth escape route
+(`from symbolic import *`, closed + L3 mutant); the monitor `ValueError` escape and the
+ghost-identity routing order, both recorded as P4-binding items in decisions §19.1 (items 4-5).
+
+### Revision 2026-08-21d — P2 symbolic baseline
+
+P2 implemented: `symbolic/` package (applicability, belief, planner, predictor, monitor,
+pddl_gen, synthetic) + 69 tests + 50-mutant harness (46 at the time of this revision; the
+acceptance and consistency rounds later extended it), all green/killed. Both adversarial reviews
+returned 0 FAIL; every WARN and every surviving-mutant finding from the test review was fixed and
+mutation-pinned in the same round (predictor zone-identity check, `v1_artifacts` raise-not-assert,
+clause-9 guard hardened to four escape routes after review demonstrated `import symbolic` and
+`from symbolic import predictor as _p` evasions, direction-vector table pinned against the
+backend's `constants.DIRECTION_VECTORS`, monitor key-pair/message orientation pins, nearest-cell
+pin on a synthetic two-cell ray, ≥2-literal `unsatisfied` pin, non-LEFT-direction prediction pins).
+
+Key discoveries recorded as P4 inputs in decisions §19.1: the demonstrated consuming-skill
+livelock and its re-establishment escape; `CallValidation` gating as the orchestrator's job;
+monitor wired on the belief, not a re-projection. Decisions §18 items 1 & 6 and §19 D-1..D-4
+closed; §14.1 world-basis cells landed. Scenario #2 re-validated against the adapter
+(`tests/test_p2_acceptance.py::TestScenarioTwoRevalidatedAgainstTheAdapter`).
+
 ### Revision 2026-08-21c — consistency check round 3 (at the P1 baseline)
 
 Round 3 found 1 FAIL, 3 WARNs — again inside the previous fix:
@@ -882,6 +918,7 @@ The second `/consistency-check P1` found 2 FAILs, both introduced by round 1's F
 - W1: stale roadmap-row counts corrected. W2 (recommendation): the audit's live probe — frozen
   `DOMAIN_IR` Push effects applied to a pre-projection equal the projection of the real
   backend's post-state (monitored keys identical) — should land as the first P2 monitor test.
+  (**Landed:** `tests/test_p2_acceptance.py::TestSuccessfulTransitionsMatchPredictions`.)
 
 Also verified live during the audit: C3 symbolic-effects-vs-successor agreement (above), no
 `unknown` cells in the exact entities view, dispatch coverage of all registry keys, and the
@@ -959,16 +996,16 @@ type/contract level**. They are listed here so P1-P4 do not inherit them as "alr
 | Aligned argument types across registry/model/backend | **Registry↔IR fully covered** — they share the signature OBJECT and grounded calls reject raw types. Backend side: dispatch arms and skill arithmetic are source-pinned, and the three constructor signatures Decision 16 translates into are pinned by `test_backend_freeze_drift.py` | — |
 | Canonical `StateSnapshot` normalization + structural equality | **Fully covered** — order independence (agents AND boxes), field-level key sensitivity, cross-process digest | — |
 | The three report channels stay separate | **Fully covered** | — |
-| `PlanFound`/`NoPlan`/`PlannerFailure` distinct; `PlannerFailure → InfrastructureFault` | Type level only — no planner exists | P2 |
-| Successful execution matches the symbolic predicted normalized `StateSnapshot` | Type level only — `predicted_world_effects` are declarations; no predictor exists | P2 |
-| Backend rejection of an optimistic-but-applicable skill records the right failure + `ExecutionDiscrepancy` | **Execution half now behavioural (P1):** the wrong-box push runs against the real backend — raw `too_heavy` preserved as provenance, typed `FAILURE`/`UNCHANGED`, authoritative reason identifying the front box (`tests/test_p1_adapter.py::test_wrong_box_push_raw_label_disagrees_with_authoritative_outcome`). The `ExecutionDiscrepancy` construction from it remains schema-level until the P2 monitor exists | P2 |
+| `PlanFound`/`NoPlan`/`PlannerFailure` distinct; `PlannerFailure → InfrastructureFault` | **Planner half behavioural (P2):** all three results exercised (`tests/test_p2_symbolic.py::TestPlanner` — solvable → 5-step `PlanFound`, synthetic single-agent instance → `NoPlan`, node budget → `PlannerFailure(timed_out=True)`, raised exception → `PlannerFailure`); conflation mutation-pinned both directions. The `PlannerFailure → InfrastructureFault` conversion is the runtime path and remains P4 | P4 |
+| Successful execution matches the symbolic predicted normalized `StateSnapshot` | **Behavioural (P2):** live goto/push/coop successes match BOTH bases (`tests/test_p2_acceptance.py::TestSuccessfulTransitionsMatchPredictions`); coop verified by world-key MEMBERSHIP over the declared two-candidate slot set | — |
+| Backend rejection of an optimistic-but-applicable skill records the right failure + `ExecutionDiscrepancy` | **Fully behavioural (P2):** the flagship acceptance test plans optimistically, executes against the real backend, and the applicable-but-infeasible `Push` produces `EXECUTION_FAILURE_OF_APPLICABLE_SKILL` carrying raw label, failure class and detail (`tests/test_p2_acceptance.py::TestOptimisticPlanFailsInBackend`); message content and key-pair orientation mutation-pinned (X1/X2/X8) | — |
 | Malformed/invalid NL calls rejected or repaired before executor invocation | Type level only — no parser exists | P3 |
 | A new current-cycle `InfrastructureFault` short-circuits execution | Type level only — `short_circuits_cycle`, `arises_before_execution` and the `TraceEntry` refusal are covered; no loop exists | P4 |
 | Orchestration policy changes decisions, not executor semantics | **Not testable at P0** — `OrchestrationPolicy` has no consumer | P4 |
-| Representative tasks terminate as expected | Type level only — goal predicates and `all_targets_delivered` are covered; no loop exists | P2/P4 |
+| Representative tasks terminate as expected | **Partial (P2):** the flagship story reaches `all_targets_delivered` under scripted replanning; the autonomous loop is P4 | P4 |
 | NL default tests use stubs | **Vacuous at P0** — there are no NL tests because there is no NL track | P3 |
-| No hidden backend feasibility oracle is introduced | **Partial** — import-level and projection-level guards are real and fail closed, and the adapter's grid choice is now RESOLVED (exact world-derived grid inside EXECUTION — Decision 16 obligation 4, legal under Decision 6's applicability scope). Decision 13 clause 9's predictor guard remains a P2 obligation | P2 |
-| Traces include task, snapshots, proposals, decision, prediction, execution, channels, provenance, model version | **Schema level** — every field is present and now serialization-faithful; no trace is ever produced because no loop exists | P4 |
+| No hidden backend feasibility oracle is introduced | **Fully guarded (P2):** import-level fail-closed guards, projection-level geometry blindness (`project(near) == project(far)` key equality), and the clause-9 predictor guard closing four import escape routes + the AST input bound (`tests/test_p2_symbolic.py::TestSymbolicSideGuards`); guard escapes themselves mutation-pinned (L1/L2) | — |
+| Traces include task, snapshots, proposals, decision, prediction, execution, channels, provenance, model version | **Behavioural for recorded cycles:** `tests/test_v1_acceptance.py::RecordingHarness` produces a frozen `TraceEntry` per executive cycle against the live backend, rendered into the byte-pinned `docs/implementation/acceptance_traces.md`. The producing LOOP is still scripted test scaffolding — the autonomous P4 loop does not exist | P4 |
 
 ---
 

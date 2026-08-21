@@ -617,7 +617,11 @@ keys), and it silently weakened `:271` from a state-effect check to a two-bit li
 | `CooperativePush` | **Discriminative** — same | same, plus the two tandem slots (**P2**) | always |
 | `GotoPushPose` | **None** — its only effect `in_pose` is executive-tracked, so success and failure project identically | pose cell + facing direction (**P2**) | always |
 
-Every world-basis cell is marked **(P2)**: in P1 the live channels are the symbolic basis and the
+Every world-basis cell marked **(P2)** is now **landed** (2026-08-21):
+`symbolic/predictor.py::predict_world_candidates` grounds all three rows (`CooperativePush` as a
+two-candidate SET over the tandem slots, membership-checked by the monitor) and
+`tests/test_p2_acceptance.py::TestSuccessfulTransitionsMatchPredictions` verifies them against the
+live backend. In P1 the live channels were the symbolic basis and the
 authoritative typed outcome. `GotoPushPose` therefore rests entirely on the outcome until the
 predictor lands — which is exactly why Decision 13.7 makes `ExecutionFailure` independent of any
 comparison.
@@ -790,7 +794,10 @@ cell is not a known undelivered target *in the belief grid*. So the adapter must
    rate (§J-3's primary acceptance scenario #2). The case remains REACHABLE — a physically
    occupied pose cell still yields no path, a spin, the no-progress bail and `blocked`
    (`tests/test_p1_adapter.py::test_goto_blocked_by_partner_on_the_pose_cell` demonstrates it
-   live) — but **P2 must re-validate scenario #2 against the adapter, not against belief-era
+   live) — **re-validated in P2**
+   (`tests/test_p2_acceptance.py::TestScenarioTwoRevalidatedAgainstTheAdapter`: occupied-pose
+   goto and stale-`in_pose` wrong-box push, both against the adapter) — but **P2 must
+   re-validate scenario #2 against the adapter, not against belief-era
    frequencies.**
 
 5. **Never** pass a caller-supplied or NL-supplied coordinate tuple through to the backend. Executive
@@ -812,7 +819,14 @@ it looks like at the one seam where the legacy overload is reachable.
 
 These are scheduled engineering tasks, not open decisions.
 
-1. **P2 — RE-ISSUE the PDDL artifacts FROM `DOMAIN_IR`, do not hand-edit them.** Generating them
+1. ~~**P2 — RE-ISSUE the PDDL artifacts FROM `DOMAIN_IR`, do not hand-edit them.**~~ — **done in
+   P2 (2026-08-21).** `symbolic/pddl_gen.py::v1_artifacts` emits the three `_v1` artifacts
+   deterministically from `DOMAIN_IR`; the checked-in files are pinned byte-for-byte against the
+   emitter by `tests/test_p2_pddl.py::TestRegeneration`, all three recorded divergences are gone
+   (identifiers round-trip through the frozen parsers; `zone` is on every push signature;
+   `explore` is out of the action set), and the `.soln` is the deterministic in-house planner's
+   5-step plan with `pyperplan` as a validity/optimal-length cross-check
+   (`TestPyperplanCrossCheck`). Generating them
    from the frozen IR is what stops this divergence recurring. All the legacy files now carry a
    `;; SUPERSEDED FOR V1` banner naming `domain/box_push_v1.DOMAIN_IR` as the authority, pinned by
    `tests/test_domain_freeze.py::TestLegacyPddlIsMarkedSuperseded`. **Three** recorded divergences:
@@ -834,7 +848,13 @@ These are scheduled engineering tasks, not open decisions.
 4. ~~**P2 — static no-backend-import guard**~~ — **done in P0.** `tests/test_no_backend_imports.py` discovers guarded packages instead of hardcoding them, and the symbolic side is derived (`discovered_guarded_packages() - RUNTIME_PACKAGES`) so a future `symbolic/` package is covered the day it is created, not the day someone remembers.
 5. **P1 — guards and counters:** `world`↔`grid` consistency assertion, reset-before-use,
    post-terminal refusal, per-attempt `env.step()` counter, belief-sharing reset test.
-6. **P2 — implement the world-effect predictor** declared by
+6. ~~**P2 — implement the world-effect predictor**~~ — **done in P2 (2026-08-21).**
+   `symbolic/predictor.py` grounds `predicted_world_effects` on bounded inputs;
+   `symbolic/monitor.py` compares both bases; the clause-9 guard is
+   `tests/test_p2_symbolic.py::TestSymbolicSideGuards` (four import escape routes closed —
+   direct module imports, ImportFrom function names, ImportFrom module-as-alias, and the bare
+   package-root import — plus the AST bound forbidding `walls`/`width`/`height` in the
+   predictor). Original obligation, for the record: declared by
    `SkillIR.predicted_world_effects` (Decision 13.2/13.3), **and add the static guard Decision 13
    clause 9 requires**: the predictor is monitor-side only, so applicability/planning must be
    structurally unable to import it, and its own inputs must be bounded to positions, directions,
@@ -869,6 +889,52 @@ it. Each is listed so that its absence is a recorded decision rather than an ove
 | D-2 | **`first_zone_cell_along` is a partial function.** If the push ray runs along an axis that never crosses the zone, no terminal cell exists and V1 defines no result. | **Reachable, not hypothetical.** `Push`'s direction is the AGENT'S FACING (`D == direction_vector(agent.direction_pre)`), not `push_dir` — `PushSkill` never calls `_push_dir_toward_goal`. Since `in_pose` is non-exclusive and optimistic, a failed `GotoPushPose` can leave an agent facing `UP` while `in_pose` survives, making `Push` symbolically applicable with a vertical ray that never reaches the `x=1` column. (For `CooperativePush` the direction IS `push_dir`, which always aims at the nearest goal cell, so that skill is not exposed.) | Decision 16 avoids depending on it (`Push` uses `dest=None`, so the adapter never computes a terminal cell). **P2 obligation:** the predictor must emit NO world-basis prediction when the ray misses the zone, rather than guessing a cell — the symbolic basis and the authoritative outcome still apply. |
 | D-3 | **Regenerated PDDL and planner solution.** | The legacy artifacts diverge from the frozen IR on three counts and are banner-marked; regenerating them from `DOMAIN_IR` is a P2 task (§18 item 1). | `domain/box_push_v1.py::DOMAIN_IR` is the authority; `tests/test_domain_freeze.py` pins the banners and bans brittle line citations into the artifacts. |
 | D-4 | **Monitor-side predictor implementation** (the component that consumes D-1 and compares both bases). | Requires P1's authoritative post-state and P2's predictor. | `ExecutionDiscrepancy` already carries both typed key pairs; `ProjectionContract.agrees` is the symbolic half. Until it lands, `GotoPushPose` failure is detected through the authoritative typed outcome only (Decision 13 clause 7). |
+
+### 19.1 P2 closure — and discoveries recorded for P4 (2026-08-21)
+
+All four deferred items landed in P2:
+
+| # | Resolution | Evidence |
+|---|---|---|
+| D-1 | Predictor grounds `predicted_world_effects` on bounded inputs, monitor-side only | `symbolic/predictor.py`; guard `tests/test_p2_symbolic.py::TestSymbolicSideGuards` |
+| D-2 | `first_zone_cell_along` returns `None` on a ray miss and the predictor emits NO world-basis prediction — never a guessed cell | `symbolic/predictor.py::first_zone_cell_along`; pinned by the ray-miss and nearest-cell tests + mutation R2/X3 |
+| D-3 | Artifacts re-issued from `DOMAIN_IR`, byte-pinned; `.soln` is the deterministic planner's plan, pyperplan cross-checked | `symbolic/pddl_gen.py`; `tests/test_p2_pddl.py` |
+| D-4 | Monitor over both bases; clause-7 failures stand on the typed outcome alone | `symbolic/monitor.py`; `tests/test_p2_symbolic.py::TestMonitorUnit` |
+
+Three P2 discoveries are binding **inputs to P4**, recorded here so the orchestrator design does
+not rediscover them:
+
+1. **The consuming-skill livelock is real and demonstrated live.** A failed `Push` retains
+   `in_pose` (the frozen Decision 13.8 consuming-skill rule), so replanning from the unchanged
+   belief yields the bare `[Push]` plan again, which fails again — a symbolic-only livelock. The
+   flagship acceptance test (`tests/test_p2_acceptance.py::TestOptimisticPlanFailsInBackend::
+   test_the_flagship_plan_execute_monitor_replan_story`) demonstrates the loop AND the escape:
+   re-establishment (`GotoPushPose` succeeds, refreshing the formation) lets the retried plan
+   complete. P4's repeated-failure bookkeeping (:118) is the general escape; the belief rule
+   itself must NOT be weakened to break the loop (that would be silent model strengthening).
+2. **The orchestrator must gate execution on `CallValidation` itself.** The P2 acceptance harness
+   (`_SymbolicHarness`) chooses to skip the backend on `SymbolicallyInapplicable` — that gating
+   choice is P4's contract, not the harness's; P4 must implement it from the typed verdict, never
+   copy harness wiring. `_teleport` in the acceptance module is test-only scaffolding and must
+   not leak into any product path.
+3. **Monitor input note (design, not defect):** the monitor's `pre_symbolic` is the BELIEF state
+   the attempt was chosen under (projection + tracked fluents). On this domain the monitored view
+   of that belief is extensionally equal to `project(result.pre_state)` (tracked fluents are
+   excluded from the monitored subset), so passing either yields the same verdicts today; the
+   belief is the contractually correct argument and P4 must wire the belief, not re-project.
+4. **Untyped predictor escape through the monitor.** A zone-identity mismatch raises a bare
+   `ValueError` out of `monitor_execution` (`symbolic/predictor.py` zone check, called at
+   `symbolic/monitor.py`). Unreachable in V1 (single frozen zone), but P4's runtime path must
+   convert it to an `InfrastructureFault` exactly as it converts `PlannerFailure` — the monitor
+   is a component, not a fault boundary.
+5. **Ghost-identity routing order is a P4 decision, not an inherited accident.** Symbolic
+   applicability has no universe-membership check, so a call naming a nonexistent object (e.g.
+   `box_9`) degenerates into `SymbolicallyInapplicable` (its literals simply never hold) and the
+   Decision-7 `UngroundedCall → MISSING_GROUNDING` fault is produced only by the adapter's own
+   identity pre-flight (`tests/test_v1_acceptance.py` case 4 traces both layers). P4 must DECIDE
+   whether grounding-vs-universe validation runs before symbolic applicability — so a ghost call
+   routes as a typed fault rather than a quiet symbolic verdict — and record that ordering; both
+   defenses exist today, only the ordering is open.
 
 ---
 

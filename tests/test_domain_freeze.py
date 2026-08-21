@@ -270,9 +270,18 @@ class TestLegacyPddlIsMarkedSuperseded(unittest.TestCase):
         # The FOND variant's primary divergence is not staleness but SCOPE: it is
         # `:non-deterministic`, which `.claude/rules/v1-scope.md` puts outside V1 entirely.
         "box_push_domain_fond.pddl": ("NOT A V1 ARTIFACT", ":non-deterministic"),
+        # The V1 artifacts are GENERATED from the frozen IR (§18 item 1) — hand-editing them is
+        # the failure mode the emitter exists to end, so the banner says so and the P2
+        # regeneration test enforces byte-equality with `symbolic.pddl_gen.v1_artifacts()`.
+        "box_push_domain_v1.pddl": ("GENERATED FROM domain/box_push_v1.py::DOMAIN_IR",),
+        "box_push_problem_v1.pddl": ("GENERATED FROM domain/box_push_v1.py::DOMAIN_IR",),
+        "box_push_problem_v1.pddl.soln": ("GENERATED FROM domain/box_push_v1.py::DOMAIN_IR",),
     }
 
-    def test_every_pddl_artifact_announces_that_it_is_not_the_v1_model(self):
+    def test_every_pddl_artifact_carries_its_required_markers(self):
+        """Legacy artifacts announce supersession/out-of-scope; the generated V1 artifacts
+        announce their generated-from-IR provenance. Every file in the directory must be in
+        this table — adding one without deciding its marker fails here."""
         files = sorted(self.PDDL_DIR.glob("*.pddl")) + sorted(self.PDDL_DIR.glob("*.soln"))
         self.assertTrue(files, "no PDDL artifacts found; did the reference files move?")
         self.assertEqual(
