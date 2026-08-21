@@ -1,5 +1,14 @@
-pettingzoo>=1.24.0
-gymnasium
-pygame
-numpy
-dspy-ai
+# Pinned exactly for the deterministic V1 baseline (decisions §18 item 2; supervisor :234).
+# These are the versions the V1 battery runs against; bump only with a recorded decision.
+pettingzoo==1.25.0
+gymnasium==1.2.3
+pygame==2.6.1
+numpy==2.4.0
+dspy-ai==3.1.0
+minigrid==3.0.0
+Pillow==12.2.0
+requests==2.32.5
+
+# Formal-model validation for box_push (PDDL/RDDL skill-level models)
+pyperplan==2.1
+pyRDDLGym==2.7

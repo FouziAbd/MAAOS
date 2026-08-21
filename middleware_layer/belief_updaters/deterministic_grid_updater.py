@@ -213,7 +213,11 @@ class DeterministicGridUpdater(BaseBeliefUpdater):
                 oid = self._find_object_near([wx, wy], is_target=False)
                 return f"decoy_{oid}" if oid is not None else "decoy_?"
         if t == _TYPE_AGENT:
-            return "agent"
+            # Another agent's position is transient and tracked separately via self-state.
+            # Recording it as a static "agent" obstacle would permanently ghost-block the
+            # cell (e.g. a wall gap) for navigation/exploration after the agent moves on.
+            # Mark the cell as observed-empty instead.
+            return "empty"
         return "empty"
 
     # ── Object position helpers ───────────────────────────────────────────────
@@ -228,6 +232,29 @@ class DeterministicGridUpdater(BaseBeliefUpdater):
                 if self._grid[x][y] == lbl:
                     return [x, y]
         return None
+
+    def _resolve_target_id(self, required_agents: int) -> Optional[int]:
+        """
+        Identify which target object was just picked, using its required_agents.
+        Returns the object_N whose is_target=True and required_agents match and whose
+        status is still 'available'. Falls back to any available target.
+        Valid because this env has exactly one solo and one cooperative target, so the
+        pick reward (solo vs latch) uniquely identifies which was acted on.
+        """
+        fallback = None
+        for eid, edata in self._entities.items():
+            if not eid.startswith("object_"):
+                continue
+            if not edata.get("is_target"):
+                continue
+            if edata.get("status") not in (None, "available"):
+                continue
+            oid = int(eid.split("_")[1])
+            if fallback is None:
+                fallback = oid
+            if edata.get("required_agents", 1) == required_agents:
+                return oid
+        return fallback
 
     def _find_object_near(self, pos: list, is_target: bool) -> Optional[int]:
         """
@@ -272,8 +299,21 @@ class DeterministicGridUpdater(BaseBeliefUpdater):
                     nx = max(0, min(self._width  - 1, pos[0] + dx))
                     ny = max(0, min(self._height - 1, pos[1] + dy))
                     self_state["position"] = [nx, ny]
+                    # Box-push: if the agent advanced ONTO a cell the belief still labels
+                    # as a box, that box was just pushed away — clear the stale label so it
+                    # doesn't linger as a "ghost box" under the agent. (No-op in CST, where
+                    # agents can never move onto a box cell.)
+                    cur = self._grid[nx][ny]
+                    if cur.startswith("target") or cur.startswith("decoy"):
+                        self._grid[nx][ny] = "empty"
 
         elif action == _ACTION_PICK_OR_INTERACT:
+            # True-POMDP discover-by-attempt: object IDs are unknown when first seen
+            # (the grid cell is "target_?"/"decoy_?"). We infer what happened from the
+            # reward magnitude rather than from a pre-known ID:
+            #   reward > 0.06  -> solo pickup (+0.1 env bonus, net ~0.09)
+            #   0 < reward <= 0.06 -> cooperative latch (+0.05 env bonus, net ~0.04)
+            #   reward <= 0    -> pick failed, no state change
             if reward > 0:
                 pos = self_state.get("position")
                 if pos is not None:
@@ -281,29 +321,30 @@ class DeterministicGridUpdater(BaseBeliefUpdater):
                     fx, fy = pos[0] + dx, pos[1] + dy
                     if 0 <= fx < self._width and 0 <= fy < self._height:
                         label = self._grid[fx][fy]
-                        if label.startswith("target_") or label.startswith("decoy_"):
-                            try:
-                                oid = int(label.split("_")[1])
-                            except (IndexError, ValueError):
-                                return
-                            obj = self._entities.setdefault(f"object_{oid}", {})
-                            req = obj.get("required_agents", 1)
-                            if req <= 1:
+                        if label.startswith("target") or label.startswith("decoy"):
+                            if reward > 0.06:
                                 # Solo pickup: object is gone from the grid immediately.
+                                oid = self._resolve_target_id(required_agents=1)
                                 self._grid[fx][fy] = "empty"
-                                obj["status"] = "carried_by_self"
-                                self_state["carrying_object_id"] = oid
+                                if oid is not None:
+                                    obj = self._entities.setdefault(f"object_{oid}", {})
+                                    obj["status"] = "carried_by_self"
+                                    self_state["carrying_object_id"] = oid
                             else:
                                 # Cooperative partial latch: in the real env the object
                                 # stays on the grid until ALL required agents have latched.
-                                # Do NOT clear the grid cell — the image update will keep
-                                # it accurate.  Switch to full-hold only when the image
-                                # later shows the cell as empty (both agents latched).
-                                obj["status"] = "engaged_by_self"
-                                eng = self_state.get("engaged_object_ids", [])
-                                if oid not in eng:
-                                    eng.append(oid)
-                                self_state["engaged_object_ids"] = eng
+                                # Do NOT clear the grid cell — the image update keeps it
+                                # accurate (cell becomes empty once both agents latch).
+                                oid = self._resolve_target_id(required_agents=2)
+                                if oid is not None:
+                                    obj = self._entities.setdefault(f"object_{oid}", {})
+                                    obj["status"] = "engaged_by_self"
+                                    eng = self_state.get("engaged_object_ids", [])
+                                    if oid not in eng:
+                                        eng.append(oid)
+                                    self_state["engaged_object_ids"] = eng
+                                    # Now that identity is known, relabel the grid cell.
+                                    self._grid[fx][fy] = f"target_{oid}"
 
         elif action == _ACTION_DROP:
             cid = self_state.get("carrying_object_id")

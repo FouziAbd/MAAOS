@@ -1,159 +1,186 @@
-# CLAUDE.md
+# MAAOS — Claude Code Project Instructions
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Current objective
 
-## Project Overview
+Implement the supervisor's **Symbolic-Twin BoxPush V1** architecture.
 
-**ma_aos** is a multi-agent LLM-driven system where LLMs drive agent decision-making inside PettingZoo parallel environments. The current working environment is **KAZ** (Knights, Archers, Zombies). A custom POMDP grid environment (**CooperativeSearchTransport**) is under active development.
+**Current scope is P0-P4 only.** Do not implement P5-P9 unless the user explicitly asks.
 
-## Running the Code
+The original specification is stored at:
+`docs/supervisor/Symbolic_Twin_BoxPush_Implementation_Plan_Self_Contained_v5.docx`
 
-All demo/entry-point scripts must be run from their own directory because they use bare `from module import ...` imports (no package structure):
+The working P0-P4 extraction is:
+`docs/supervisor/SUPERVISOR_P0_P4_CONTRACT.md`
+
+Section 18 handoff evidence is maintained in:
+`docs/handoff/section18.md`
+
+## Authority and source of truth
+
+1. Existing BoxPush environment/backend code is authoritative for **actual low-level execution behavior**.
+2. The supervisor specification is authoritative for the **executive architecture and V1 semantics**.
+3. `docs/handoff/section18.md` is the semantic contract mapping the existing code to that architecture.
+4. Never invent domain behavior when the code or specification does not establish it. Mark it unresolved.
+
+## Current repository baseline
+
+The active BoxPush/skill work is on the `middleware_layer` branch. The existing repository uses:
+
+- `functional_layer/` — PettingZoo/custom environments
+- `middleware_layer/` — observation/belief processing
+- `model_layer/` — DSPy/LLM planning
+- `utils/` — logging/support
+
+The current architecture is a useful baseline, not the target P0-P4 architecture.
+
+### Current BoxPush entry point
+
+Run from its own directory because the repository currently uses bare imports/path insertion:
 
 ```bash
-# KAZ with LLM agents (main experiment — vector_state=True, DSPy+Ollama)
-cd functional_layer/envs
-python KAZ.py
-
-# KAZ with vision LLM (experimental — vector_state=False, raw Ollama vision API)
-cd functional_layer/envs
-python KAZ_vision.py
-
-# KAZ with RL reward shaping + LLM agents
-cd functional_layer/envs
-python KAZ_RL_LLM_Agents.py
-
-# Cooperative transport demos (run from env/ directory)
-cd functional_layer/custom_env/cooperative_search_transport/env
-python demo_cooperative_solution.py   # hardcoded 2-agent cooperative carry
-python demo_hardcoded_solution.py
-python demo.py
-
-# Toy rescue env
-cd functional_layer/custom_env/toy_rescuce_env
-python toy_rescue_env_v0.py
+cd functional_layer/custom_env/box_push/env
+python box_push_centralized.py
 ```
 
-**Prerequisites:**
-- `pip install pettingzoo gymnasium pygame numpy dspy-ai minigrid Pillow requests`
-- Ollama running locally: `ollama serve` (default port 11434)
-- A model loaded: `ollama pull llama3`
-- For vision experiments: a multimodal model e.g. `ollama pull gemma4:e4b` or `ollama pull qwen3.6`
+Do not perform a broad package/import refactor while implementing P0-P4 unless it is necessary and separately justified.
 
-## Architecture
+## Required V1 architecture
 
-Four layers, each independently importable:
+Keep these responsibilities conceptually separate even if small adapters share files initially:
 
-```
-functional_layer/   ← PettingZoo environments (pure gym, no LLM)
-middleware_layer/   ← Observation/scenario simplification + tactical assessment
-model_layer/        ← LLM agent (DSPy planner, belief state, history)
-utils/              ← Logging (logging_utils.py)
-```
+- environment/backend wrapper
+- executor
+- symbolic track
+- NL track
+- translator
+- symbolic predictor
+- monitor
+- track comparator
+- track orchestrator
+- executive loop manager
+- guards
+- trace/history/model versioning contracts
 
-### Data flow (KAZ)
+The orchestrator decides between tracks. The executor is policy-independent.
 
-```
-env.step() → raw obs
-    → summarize_kaz_obs()          # computes attack_ok, turn_hint, distances
-    → MiddlewareOrchestrator.process_observation()  # returns tactical summary as-is
-    → Agent.choose_action_with_tactical_info()
-        → DSPyPlanner.selec_action_index()  # LLM ChainOfThought — decides ALL actions
-    → env.step(action_idx)
-```
+## Critical V1 rule: intentionally optimistic symbolic model
 
-**The LLM decides all actions. There is no post-processing override.** Tactical rules are enforced through the scenario description prompt, not in code. If agents are ignoring rules, fix the prompt or the tactical signals — do not add code overrides.
+The symbolic model is deliberately a simple high-level classical abstraction.
 
-### Middleware layer
+**Never add backend BFS, reachability, pathfinding, collision feasibility, or another procedural environment oracle to symbolic applicability/planning merely to make plans executable.**
 
-`MiddlewareOrchestrator` is the single entry point. It:
-- Runs one-time LLM simplification of scenario/goal at agent init (cached)
-- If `tactical_summary` is provided to `process_observation()`, it is returned directly (bypasses LLM obs simplification)
-- `ActionDescriptor` is **deprecated for KAZ** — plain string action maps are used instead
-- Belief system is only wired when `entity_schema=` is passed to the constructor; otherwise `belief_manager` is `None`
+A grounded skill may be symbolically applicable and still fail in the authoritative backend. That must be observable as an `ExecutionDiscrepancy`, especially `ExecutionFailure`, and routed through the orchestrator.
 
-### Model layer
+Do not silently strengthen the symbolic model after such a failure.
 
-`Agent` is the main class. Key method: `choose_action_with_tactical_info(obs, tactical_summary)`.
+## Executive skill abstraction
 
-- `DSPyPlanner` uses DSPy `ChainOfThought` with signature `NextActionSig`. Output field `action` is the integer index.
-- `RewardManager` and `BeliefStateManager` are **stubs** — not used in active experiments.
-- `History` logs to SQLite (`agent_history.db`).
+The executive operates on **high-level grounded skills**.
 
-### CooperativeSearchTransport environment
+Primitive actions may be composed internally by a backend skill implementation. Do not expose primitive turns/moves as executive planning actions unless the frozen V1 domain explicitly defines them as executive skills.
 
-Lives in `functional_layer/custom_env/cooperative_search_transport/env/`. All files must be imported from that directory.
+For every executive skill, establish:
 
-Key files:
-- `state.py` — `AgentState`, `ObjectState` (has `engaged_agents: List[str]`), `WorldState`
-- `constants.py` — `Actions` (0–6), `Directions`, `DIRECTION_VECTORS`
-- `cooperative_search_transport_env.py` — MiniGrid single-agent base, defines grid layout and initial object positions
-- `multi_agent_env.py` — PettingZoo `ParallelEnv` wrapper; all multi-agent logic lives here
-- `objects.py` — `TargetPackage`, `DecoyPackage`, `AgentMarker`, `DeliveryTile`
+- stable name
+- typed arguments
+- backend implementation mapping
+- symbolic preconditions
+- deterministic success effects
+- success/failure labels
+- true backend feasibility differences
+- failure state semantics
+- executive-step consumption semantics
 
-**Grid layout (12×12):** delivery zone at (1–2, 1–2); wall at x=4 (gaps y=3, y=8); wall at x=8 (gap y=6); Object-0 (target, 2-agent) at (2,9); Object-1 (target, 1-agent) at (6,5). Agents start at (10,10) and (10,9) facing LEFT.
+## Failure semantics
 
-**Cooperative carry mechanic** (implemented on `middleware_layer` branch):
-1. Agent calls `PICK_OR_INTERACT` facing a `required_agents > 1` object → added to `obj.engaged_agents`
-2. Once `len(engaged_agents) >= required_agents`, object is removed from the grid (jointly held)
-3. All engaged agents do `MOVE_FORWARD` facing the same direction → agents + object move together
-4. `DROP` by any agent removes them from `engaged_agents`; object is put back on grid if hold breaks
-5. Agents in a joint hold are **blocked from individual MOVE_FORWARD** (checked via `_is_agent_in_joint_hold`)
+Never assume a failed skill is a no-op.
 
-**Direction arithmetic:** `TURN_LEFT = (dir-1) % 4`, `TURN_RIGHT = (dir+1) % 4`. `RIGHT=0 DOWN=1 LEFT=2 UP=3`. MOVE_FORWARD with UP moves to `(x, y-1)`.
+For every important failure mode determine whether the backend:
 
-## KAZ-Specific Implementation Details
+1. leaves world state unchanged,
+2. partially executes and returns with changed state, or
+3. rejects before any transition.
 
-### Thresholds in `summarize_kaz_obs()`
+Also record whether the failed **executive skill attempt** consumes an executive step.
 
-| Role | max_dist | max_angle | ally_block_dist | ally_block_angle |
-|------|----------|-----------|-----------------|------------------|
-| Archer | 0.85 | 20° | 0.20 | 15° |
-| Knight | 0.25 | 70° | 0.15 | 25° |
+Distinguish:
 
-`attack_ok=True` requires: zombie in front (`z_dot > 0`), within `max_angle`, within `max_dist`, and `ally_block_attack=False`.
+- `primitive_step`: one low-level environment transition/action cycle
+- `executive_step`: one attempted high-level grounded skill at an executive decision boundary
 
-### `_turn_hint` — coordinate system gotcha
+Do not infer one from the other without an explicit contract.
 
-KAZ uses **image coordinates** (y increases downward). This flips cross-product handedness vs standard math:
+## V1 assumptions
 
-```python
-cross = h[0] * r[1] - h[1] * r[0]
-return "RIGHT" if cross > 0 else "LEFT"   # opposite of standard math — do not change
-```
+For P0-P4 use:
 
-Swapping this back to standard math breaks all rotation guidance.
+- deterministic dynamics at the symbolic level
+- fully observable exact symbolic state
+- canonical typed `StateSnapshot`
+- no probabilistic belief requirement
+- no asynchronous skill overlap
+- deterministic sequential executive decisions
+- text/typed NL input only
+- no VLM/rendered-image input
+- skill cost 1 unless the domain contract says otherwise
 
-### `_prev_positions` global state
+Keep existing partial-observation/POMDP code for later work; use an adapter/mode for classical V1 rather than deleting it.
 
-`summarize_kaz_obs()` uses a module-level `_prev_positions: dict` to detect `movement_blocked`. This dict persists across calls and must be agent-keyed. Pass `agent_id=` on every call.
+## Required typed distinctions
 
-### `rotations_needed` is informational
+Never conflate:
 
-`rotations_needed` is included in the tactical summary only when > 0. It is an estimate, not a condition. The LLM should attack when `attack_ok=True`, not wait for `rotations_needed == 0`.
+- `PlanFound(plan)`
+- `NoPlan(reason)`
+- `PlannerFailure(error_or_timeout)`
 
-### Archer patrol zones
+Never conflate:
 
-`archer_0` patrols `x=0.15–0.50`, `archer_1` patrols `x=0.50–0.85` — split to prevent clustering. The split is implemented in `get_scenario_description()` via `"0" in agent_id`.
+- `ExecutionDiscrepancy` — symbolic prediction/model vs authoritative execution
+- `TrackDivergence` — NL track vs symbolic track disagreement/coverage/translation issue
+- `InfrastructureFault` — API/backend/serialization/protocol/runtime fault
 
-## KAZ Vision Experiment (`KAZ_vision.py`)
+A current `InfrastructureFault` short-circuits the normal current cycle. `PlannerFailure` becomes `InfrastructureFault`; `NoPlan` is a legitimate symbolic result for the orchestrator.
 
-An alternative KAZ runner using `vector_state=False` (512×512 RGB image per agent) with a vision-capable Ollama model instead of DSPy. Bypasses the entire middleware/model layer — calls Ollama `/api/chat` directly.
+## Change policy
 
-**Key design decisions:**
-- Each agent gets its own **POMDP local obs** (centered on itself) — not the global render frame. `env.render()` gives a god-view that breaks self-identification.
-- Raw obs is too dark (max pixel ~198 on dark maroon background). **Gamma correction** (`gamma=0.4`) brightens dark pixels without color distortion — do not use `autocontrast` or linear brightness (both over-expose).
-- `"think": True` enables Qwen3/Gemma4 reasoning mode. For Qwen3 specifically, use `/api/chat` not `/api/generate` — the latter returns empty `response` because thinking tokens consume the token budget.
-- Structured output format `SCENE / DECISION / ACTION:` forces per-step visual reasoning before action selection.
-- Logs to `logs_vision_run.txt` (separate from `logs_run.txt`).
+Before changing existing environment behavior:
 
-**Tuning levers** (top of file): `VISION_MODEL`, `TIMEOUT`, `gamma` inside `enhance_obs()`.
+1. inspect and document the current behavior;
+2. identify the precise architectural mismatch;
+3. prefer a wrapper/adapter;
+4. preserve backend execution semantics where possible;
+5. change backend semantics only when explicitly necessary.
 
-## KAZ RL Files
+Do not modify code simply to make a symbolic test pass if the test is exposing a legitimate execution discrepancy.
 
-- `KAZ_RL.py` — `KAZRLWrapper` class adding shaped rewards: `-0.01` per step, `+1.0` kill, `-1.0` death or zombie escape. Import via `from KAZ_RL import create_kaz_rl_env`.
-- `KAZ_RL_LLM_Agents.py` — Same LLM agent setup as `KAZ.py` but running on top of `KAZRLWrapper` for denser reward signals.
+## NL/DSPy policy
 
-## Branch Notes
+The V1 NL track is a peer reasoning track, not the sole executive planner.
 
-Current branch: `middleware_layer`. The `main` branch is the stable baseline. The cooperative transport env and its joint-carry mechanic exist only on this branch.
+Prefer small typed modules over one monolithic prompt. Default P0-P4 tests must not require a live LM. Provide deterministic stub/recorded responses; live calls belong in separately marked integration tests.
+
+Malformed NL skill calls must be typed validation/repair/rejection cases. Do not silently convert malformed output into an unrelated valid skill such as `explore`.
+
+## Documentation and evidence
+
+When claiming a requirement is satisfied, point to exact files/classes/functions/tests.
+
+Do not document intended behavior as implemented behavior.
+
+Keep `docs/handoff/section18.md` and the final implementation document synchronized with actual code.
+
+## Testing
+
+Every P0-P4 architectural addition requires tests.
+
+Required acceptance coverage includes:
+
+- normal successful execution
+- symbolically applicable but backend-infeasible skill
+- symbolically inapplicable call
+- malformed call
+- `NoPlan` case when available
+- explicit failure state and executive-step-consumption evidence
+
+Use `/handoff-audit`, `/implement-phase`, `/consistency-check`, `/acceptance-test`, and `/final-audit` as the primary project workflows.

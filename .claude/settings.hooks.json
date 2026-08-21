@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/task_completed_tests.py"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

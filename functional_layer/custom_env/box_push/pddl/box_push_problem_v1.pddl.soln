@@ -1,0 +1,11 @@
+;; GENERATED FROM domain/box_push_v1.py::DOMAIN_IR by symbolic/pddl_gen.py — the
+;; deterministic V1 planner's solution for box-push-v1-deliver-both. DO NOT HAND-EDIT.
+;; 5 steps, cost 5. Verified by effect simulation (the
+;; regeneration test replays it through symbolic.apply_effects to the goal). NOTE the
+;; plan is OPTIMISTIC by design: executed literally, its final step fails in the
+;; backend (stale non-exclusive in_pose) — the designed ExecutionDiscrepancy signal.
+(goto_push_pose agent_0 box_0 delivery_zone)
+(goto_push_pose agent_0 box_1 delivery_zone)
+(goto_push_pose agent_1 box_0 delivery_zone)
+(cooperate_push agent_0 agent_1 box_0 delivery_zone)
+(push agent_0 box_1 delivery_zone)

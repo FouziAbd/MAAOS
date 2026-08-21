@@ -1,0 +1,148 @@
+////////////////////////////////////////////////////////////////////////////////
+// BoxPush — skill-level factored MDP (RDDL)
+//
+// Derived ONLY from box_push_problem_description.md. Action fluents ARE the skills,
+// chosen concurrently for both agents each decision step. RDDL captures what the
+// PDDL model drops: the reward signal, concurrency, and weight-discovery.
+//
+// This is the option-level POSMDP of the centralized runner, written in RDDL.
+// Deterministic transitions use KronDelta; the only real uncertainty is which box
+// `explore` resolves and the hidden weight (here given via the HEAVY non-fluent, so
+// the model is a fully-observable MDP; see the note at the end for the POMDP variant).
+////////////////////////////////////////////////////////////////////////////////
+domain box_push_skills {
+
+    requirements = { concurrent, reward-deterministic, constrained-state };
+
+    types {
+        agent : object;
+        box   : object;
+    };
+
+    pvariables {
+
+        // ---- non-fluents (static prior) --------------------------------------
+        HEAVY(box)        : { non-fluent, bool, default = false }; // true iff box is heavy
+
+        // ---- reward constants ------------------------------------------------
+        STEP_COST         : { non-fluent, real, default = 0.01 };
+        DELIVER_REWARD    : { non-fluent, real, default = 20.0 };
+        BLOCK_PENALTY     : { non-fluent, real, default = 0.10 };
+
+        // ---- state fluents ---------------------------------------------------
+        discovered(box)          : { state-fluent, bool, default = false };
+        delivered(box)           : { state-fluent, bool, default = false };
+        weight-known(box)        : { state-fluent, bool, default = false };
+        in-pose(agent, box)      : { state-fluent, bool, default = false };
+
+        // ---- action fluents (the skills) -------------------------------------
+        do_explore(agent, box)   : { action-fluent, bool, default = false };
+        do_goto(agent, box)      : { action-fluent, bool, default = false };
+        do_push(agent, box)      : { action-fluent, bool, default = false };
+        do_cooperate(agent, box) : { action-fluent, bool, default = false };
+        do_wait(agent)           : { action-fluent, bool, default = false };
+    };
+
+    cpfs {
+
+        // A box becomes (stays) discovered if any agent explores it.
+        discovered'(?b) =
+            KronDelta( discovered(?b) | (exists_{?a : agent} do_explore(?a, ?b)) );
+
+        // Weight becomes known once any in-pose agent pushes the box.
+        weight-known'(?b) =
+            KronDelta( weight-known(?b)
+                       | (exists_{?a : agent} [ do_push(?a, ?b) ^ in-pose(?a, ?b) ]) );
+
+        // in-pose: set by goto on a discovered, undelivered box; cleared once delivered;
+        // otherwise persists.
+        in-pose'(?a, ?b) =
+            KronDelta(
+                if ( delivered(?b) )
+                    then false
+                else if ( do_goto(?a, ?b) ^ discovered(?b) ^ ~delivered(?b) )
+                    then true
+                else in-pose(?a, ?b)
+            );
+
+        // Delivery:
+        //   - LIGHT box: one in-pose agent pushing it delivers it.
+        //   - HEAVY box: two DISTINCT in-pose agents both choosing cooperate deliver it.
+        delivered'(?b) =
+            KronDelta(
+                delivered(?b)
+                | ( ~HEAVY(?b)
+                    ^ (exists_{?a : agent} [ do_push(?a, ?b) ^ in-pose(?a, ?b) ]) )
+                | ( HEAVY(?b)
+                    ^ (exists_{?a1 : agent, ?a2 : agent}
+                         [ (?a1 ~= ?a2)
+                           ^ do_cooperate(?a1, ?b) ^ in-pose(?a1, ?b)
+                           ^ do_cooperate(?a2, ?b) ^ in-pose(?a2, ?b) ]) )
+            );
+    };
+
+    // Reward: small per-step cost; large bonus for each box newly delivered this step;
+    // penalty for a lone push of a heavy box (it did not move — "too heavy").
+    reward =
+        - STEP_COST
+        + DELIVER_REWARD *
+            (sum_{?b : box}
+              [ ~delivered(?b) ^
+                ( ( ~HEAVY(?b) ^ (exists_{?a : agent} [ do_push(?a, ?b) ^ in-pose(?a, ?b) ]) )
+                | ( HEAVY(?b)  ^ (exists_{?a1 : agent, ?a2 : agent}
+                       [ (?a1 ~= ?a2)
+                         ^ do_cooperate(?a1, ?b) ^ in-pose(?a1, ?b)
+                         ^ do_cooperate(?a2, ?b) ^ in-pose(?a2, ?b) ]) ) ) ])
+        - BLOCK_PENALTY *
+            (sum_{?b : box}
+              [ HEAVY(?b) ^ ~delivered(?b)
+                ^ (exists_{?a : agent} [ do_push(?a, ?b) ^ in-pose(?a, ?b) ]) ]);
+
+    state-action-constraints {
+        // Each agent chooses exactly one skill per step (a skill is either a wait or a
+        // single (verb, box) pair).
+        forall_{?a : agent}
+          [ ( do_wait(?a)
+              + (sum_{?b : box} do_explore(?a, ?b))
+              + (sum_{?b : box} do_goto(?a, ?b))
+              + (sum_{?b : box} do_push(?a, ?b))
+              + (sum_{?b : box} do_cooperate(?a, ?b)) ) == 1 ];
+    };
+
+    // Episode ends as soon as every box is delivered (the task goal).
+    termination {
+        forall_{?b : box} [ delivered(?b) ];
+    };
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Instance: 2 agents, 2 boxes (box0 heavy, box1 light), nothing discovered.
+////////////////////////////////////////////////////////////////////////////////
+non-fluents box_push_2x2 {
+    domain = box_push_skills;
+    objects {
+        agent : { a1, a2 };
+        box   : { box0, box1 };
+    };
+    non-fluents {
+        HEAVY(box0) = true;
+        HEAVY(box1) = false;
+    };
+}
+
+instance box_push_inst {
+    domain     = box_push_skills;
+    non-fluents = box_push_2x2;
+    // all state fluents start at their defaults (nothing discovered/delivered/in-pose)
+    max-nondef-actions = pos-inf;   // concurrent: both agents act each step
+    horizon    = 20;
+    discount   = 1.0;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// POMDP note: to model weight DISCOVERY faithfully, make HEAVY a hidden state and add
+// an observation fluent revealed only after a push (i.e. weight-known gates the
+// observation of HEAVY). The transition structure above is unchanged; only the
+// observability of HEAVY differs. Kept out of the base model so it stays a clean,
+// fully-observable, simulatable MDP.
+////////////////////////////////////////////////////////////////////////////////
