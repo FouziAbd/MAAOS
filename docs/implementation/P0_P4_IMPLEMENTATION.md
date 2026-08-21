@@ -30,6 +30,9 @@ observable signal (§16, §19), never a reason to add a feasibility oracle.
   `python -B -m tests.test_v1_acceptance --write`.
 - Live NL integration: `MAAOS_LIVE_LM=1 python -B -m unittest tests.test_p3_live_lm`
   (requires local Ollama serving the pinned model).
+- **Human-watchable V1 run** (pygame window, no LLM needed):
+  `cd functional_layer/custom_env/box_push/env && python box_push_v1_run.py`
+  (`--policy symbolic_primary` to watch the designed halt; `--headless`; `--delay 0.05`).
 - Legacy runner (superseded reference, not a V1 path):
   `cd functional_layer/custom_env/box_push/env && python box_push_centralized.py`.
 
