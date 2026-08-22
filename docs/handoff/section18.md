@@ -830,6 +830,37 @@ actually satisfied by the duplicate-dispatch-key guard.
   so the raw label is the non-terminal marker while the authoritative outcome is SUCCESS
   (`test_cooperative_push_is_one_executive_invocation` pins it). D3 is what makes this benign.
 
+### Revision 2026-08-22c — second hostile final audit (/final-audit report)
+
+Three independent auditors re-audited the full program at HEAD `e5afd3d`, none crediting
+filenames or documentation. Backend-truth (backend-investigator): 0 FAIL / 7 PASS — every
+raw label independently re-traced to its actual emit site (comment line numbers still
+exact); failure classification re-verified world-derived and double-enforced; the demo
+`_WatchableAdapter` wrap proven accounting-neutral (primitive counting lives in `_drive`
+after the still-original transition call); all four case-(c) producers still attach the
+exact `primitive_steps_before_failure=N` key. Residual observations recorded, none PARTIAL:
+the demo wrapper is untested and would type a `render()` raise as `BACKEND_API_EXCEPTION`
+with case-(c) provenance (demo-only, conservative); CooperativePush's partner label enters
+`detail` as unchecked free text (provenance only); net pre/post classification reads an
+exact-restore excursion as UNCHANGED; `FOUND_DECOY` stays declared-but-instance-unreachable
+as the declaration records. Architecture (architecture-reviewer): 0 FAIL / 0 PARTIAL /
+1 WARN / 34 PASS over the full 11-item hunt list, all milestone deliverables, roadmap rows
+and V1 constraints — every numeric documentation claim survived direct counting (641 tests,
+54/54 and 292 mutants, five tags, pinned model name, threshold-3 demo narrative); the WARN
+was a docstring imprecision (`ExecutiveLoopManager` said the NL track is "consulted only
+under ADVISORY_TWO_TRACK" while `observe()` deliberately feeds under any policy and its
+failure can FAULT a SYMBOLIC_PRIMARY episode) — FIXED in this revision by rewording the
+docstring to state the propose-only policy gate explicitly. Regression-evidence
+(test-reviewer): 12/12 required properties PASS with biting-test evidence, suite executed
+live (641 OK, 1 gated skip); the H8/observe-boundary tests verified to assert distinguishing
+behavior (identity-level pass-through checks, real-adapter wrappers, no mocked-away
+properties); minor notes recorded — the two honestly-documented identifier-level pins for
+extensionally-equivalent mutants (L9/A7), the near-vacuous backend-mapping string check
+rescued by the P1 dispatch test, case 6 as a documented-N/A per Decision 12. Full mutation
+battery re-run live after all auditor reads: 121/121, 30/30, 50/50, 37/37, 54/54 — 292/292
+killed, clean restore, suite green after. Combined: 0 FAIL anywhere; the program's
+completion claim is re-confirmed at the post-H8 tree.
+
 ### Revision 2026-08-22b — H8 residuals closed (observe boundary + typed pass-through)
 
 The 22a review's two WARNs fixed on explicit instruction. WARN-1: `nl_track.observe()` now

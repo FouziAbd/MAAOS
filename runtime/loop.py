@@ -81,7 +81,10 @@ class ExecutiveLoopManager:
 
     The environment arrives by INJECTION: this package cannot import the backend (the
     fail-closed import guard), which structurally separates the loop from any concrete
-    environment. The optional `nl_track` is consulted only under ADVISORY_TWO_TRACK.
+    environment. For the optional `nl_track`, only `propose()` is policy-gated to
+    ADVISORY_TWO_TRACK; `observe()` feeds the attached track under ANY policy (data flows
+    loop->NL only, LM-free), and an observe() failure is an infrastructure fault — so a
+    SYMBOLIC_PRIMARY episode with an attached track can legitimately FAULT on it.
     """
 
     def __init__(

@@ -1,9 +1,13 @@
 # MAAOS Symbolic-Twin BoxPush V1 — P0-P4 Implementation Documentation
 
 **Status: COMPLETE** — closed by a three-auditor hostile final audit with 0 FAIL on every
-surface (`docs/handoff/section18.md` revision 2026-08-21n). Every claim below is grounded in
-the current tree; where low-level behavior is clear in code, this document points at the
-file/class/function instead of restating the algorithm.
+surface (`docs/handoff/section18.md` revision 2026-08-21n), and RE-CONFIRMED by a second
+three-auditor hostile final audit at HEAD `e5afd3d` after the H8-closure arc: backend-truth
+0 FAIL / 7 PASS, architecture 0 FAIL / 0 PARTIAL / 1 WARN (a docstring imprecision on
+`observe()` policy-gating, fixed in the same revision), regression-evidence 12/12 PASS, with
+the full 292-mutant battery re-verified live (revision 2026-08-22c). Every claim below is
+grounded in the current tree; where low-level behavior is clear in code, this document
+points at the file/class/function instead of restating the algorithm.
 
 ---
 
@@ -19,7 +23,7 @@ observable signal (§16, §19), never a reason to add a feasibility oracle.
 
 ## 2. Repository, branch, commit, commands
 
-- Branch `middleware_layer`, HEAD `c4d21c7`; phase baselines tagged `p0-v1-freeze`,
+- Branch `middleware_layer`, HEAD `e5afd3d` (second final audit); phase baselines tagged `p0-v1-freeze`,
   `p1-v1-classical-env`, `p2-v1-symbolic-baseline`, `p3-v1-nl-baseline`,
   `p4-v1-orchestrator`.
 - Full battery (repo root): `python -B -m unittest discover -s tests -t .`
