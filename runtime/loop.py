@@ -515,7 +515,14 @@ class ExecutiveLoopManager:
         reasoning content), but the LIFECYCLE POSITION differs per call site: before any
         execution on the first cycle, after a COMPLETED attempt post-execution. The fault
         therefore carries `stage="observe"` and each call site classifies by its actual
-        position — never by kind alone."""
+        position — never by kind alone.
+
+        CONTRACT NOTE (consistency-all 1e): the WARN-2 pass-through below re-raises an
+        already-typed `InfrastructureFaultError` UNCHANGED — so a non-V1 track that raises a
+        typed fault with a pre-execution KIND from observe() would reach a post-execution
+        entry alongside an `ExecutionResult` and be refused loudly by `TraceEntry`'s
+        lifecycle-legality check (a track-contract violation, fail-closed by design; the
+        shipped NLTrack raises only untyped `RuntimeError`s here)."""
         if self.nl_track is None:
             return
         try:
