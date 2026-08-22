@@ -1,9 +1,13 @@
 # MAAOS Symbolic-Twin BoxPush V1 — P0-P4 Implementation Documentation
 
 **Status: COMPLETE** — closed by a three-auditor hostile final audit with 0 FAIL on every
-surface (`docs/handoff/section18.md` revision 2026-08-21n). Every claim below is grounded in
-the current tree; where low-level behavior is clear in code, this document points at the
-file/class/function instead of restating the algorithm.
+surface (`docs/handoff/section18.md` revision 2026-08-21n), and RE-CONFIRMED by a second
+three-auditor hostile final audit at HEAD `e5afd3d` after the H8-closure arc: backend-truth
+0 FAIL / 7 PASS, architecture 0 FAIL / 0 PARTIAL / 1 WARN (a docstring imprecision on
+`observe()` policy-gating, fixed in the same revision), regression-evidence 12/12 PASS, with
+the full 292-mutant battery re-verified live (revision 2026-08-22c). Every claim below is
+grounded in the current tree; where low-level behavior is clear in code, this document
+points at the file/class/function instead of restating the algorithm.
 
 ---
 
@@ -19,13 +23,13 @@ observable signal (§16, §19), never a reason to add a feasibility oracle.
 
 ## 2. Repository, branch, commit, commands
 
-- Branch `middleware_layer`, HEAD `c4d21c7`; phase baselines tagged `p0-v1-freeze`,
+- Branch `middleware_layer`, HEAD `e5afd3d` (second final audit); phase baselines tagged `p0-v1-freeze`,
   `p1-v1-classical-env`, `p2-v1-symbolic-baseline`, `p3-v1-nl-baseline`,
   `p4-v1-orchestrator`.
 - Full battery (repo root): `python -B -m unittest discover -s tests -t .`
-  → 629 tests, OK (1 skip: the `MAAOS_LIVE_LM=1`-gated live test).
+  → 641 tests, OK (1 skip: the `MAAOS_LIVE_LM=1`-gated live test).
 - Mutation harnesses (mutate + restore product files; run one at a time):
-  `python -B docs/implementation/p{0..4}_mutation_harness.py` → 121/30/50/37/43, all killed.
+  `python -B docs/implementation/p{0..4}_mutation_harness.py` → 121/30/50/37/54, all killed.
 - Regenerate the byte-pinned traces after intentional behavior changes:
   `python -B -m tests.test_v1_acceptance --write`.
 - Live NL integration: `MAAOS_LIVE_LM=1 python -B -m unittest tests.test_p3_live_lm`
@@ -249,11 +253,31 @@ One producer each (grep-audited tree-wide): the monitor, the comparator, and typ
 sites. `ExecutionDiscrepancy` carries typed key pairs per basis; `InfrastructureFault`
 short-circuits the current cycle at every raise site (traced in the final audit), with
 episode continuation a config choice (`halt_on_infrastructure_fault`); `TraceEntry` refuses
-lifecycle-illegal combinations (pre-execution fault + execution). Known open corrective
-action **H8**: `runtime/loop.py::_advisory_proposal` converts `nl_track.propose` exceptions
-into a MalformedCall-backed COVERAGE_GAP divergence, blurring infrastructure provenance into
-the divergence channel — smallest correction recorded (log a non-short-circuiting fault for
-raised exceptions), deliberately unfixed in the report-mode audit.
+lifecycle-illegal combinations (pre-execution fault + execution). Corrective action **H8**
+(the final audit's one WARN) is **CLOSED**: an exception escaping `nl_track.propose()` is now
+`FaultKind.NL_TRACK_FAILURE` — a PRE-executor infrastructure fault (`shared/faults.py::
+PRE_EXECUTION_FAULT_KINDS`) raised by `runtime/loop.py::_advisory_proposal` via
+`InfrastructureFaultError` (`raise ... from`, cause preserved) and caught in `_run_cycle`
+before `compare_tracks` and before `execute()`: zero executive/primitive steps, world
+untouched, no `ExecutionResult`, no manufactured divergence; the entry keeps the cycle's
+already-established record and routes through `_maybe_fault_halt`. Typed malformed LM
+OUTPUT is unchanged: `NLProposal.malformed` → comparator COVERAGE_GAP. Tests:
+`tests/test_p4_runtime.py::TestAdvisoryComparatorThroughTheLoop` (exploding track,
+missing-fixture `UnrecordedRequestError`, malformed-still-divergence, cause chaining);
+mutants A4/N1-N4. The follow-up (WARN-1/WARN-2 of the closure review) extends the same
+principle to `observe()`: one typed boundary (`runtime/loop.py::_observe`) at all three call
+sites, with the fault carrying `stage="observe"` and each site classifying by its ACTUAL
+lifecycle position — the first-cycle site is pre-execution (fault replaces the cycle, zero
+steps, liveness-bounded in continue mode), the post-execution sites preserve the completed
+attempt's `ExecutionResult`/`post_state`/accounting first-class on the fault entry (case-(a)
+precedent; the case-(a) site records the observer fault alongside the primary), and no
+repeated-failure count accrues from an observer fault. `InfrastructureFault` gains the
+`stage` provenance field; `arises_before_execution` is stage-qualified (unstaged stays
+fail-closed pre-execution). Both NL boundaries pass an already-typed
+`InfrastructureFaultError` through unwrapped. Tests:
+`tests/test_p4_runtime.py::TestObserveFaultBoundary`,
+`tests/test_trace_and_history.py::TestTraceLifecycleLegality` (staged classification +
+coexistence); mutants S1-S7.
 
 ## 17. Representative state-by-state acceptance traces
 
@@ -267,10 +291,10 @@ the goal.
 
 ## 18. Test matrix and commands
 
-629 tests (commands in §2), 14+ modules: P0 contracts (~400: freeze pins, canonical
+641 tests (commands in §2), 14+ modules: P0 contracts (~400: freeze pins, canonical
 faithfulness, channel separation, trace lifecycle, no-backend-imports with fail-closed
 probes), P1 adapter (47), P2 symbolic/PDDL/acceptance (69), V1 acceptance (14 incl. loop
-cases), P3 NL (51), P4 runtime (42), plus guards. Mutation evidence: 281 mutants across five
+cases), P3 NL (51), P4 runtime (52), plus guards. Mutation evidence: 292 mutants across five
 checked-in harnesses, all killed (hang⇒kill semantics where liveness is the property).
 Mechanical pins: suite-count row == live discovery
 (`tests/test_domain_freeze.py::TestHandoffCountsAreMechanical`), tree-wide citation-drift

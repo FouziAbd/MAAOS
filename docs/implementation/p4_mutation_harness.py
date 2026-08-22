@@ -122,20 +122,22 @@ M = [
                     return self._finish(EpisodeOutcome.FAULTED, fault.message)''',
   '''                    return self._finish(EpisodeOutcome.FAULTED, fault.message)'''),
  ('A4 NL propose failure silently swallowed again', LO,
-  '''            from nl.track import NLProposal''',
+  '''            raise InfrastructureFaultError(InfrastructureFault(
+                kind=FaultKind.NL_TRACK_FAILURE,''',
   '''            return None
-            from nl.track import NLProposal'''),
+            raise InfrastructureFaultError(InfrastructureFault(
+                kind=FaultKind.NL_TRACK_FAILURE,'''),
  ('A5 goal-vs-budget tie flipped back', LO,
-  '''            if self.task.is_satisfied_by(snapshot):
-                return self._finish(EpisodeOutcome.GOAL_REACHED, "task goal satisfied")
-            exhausted = self._budget_exhausted()
-            if exhausted:
-                return self._finish(EpisodeOutcome.BUDGET_EXHAUSTED, exhausted)''',
-  '''            exhausted = self._budget_exhausted()
-            if exhausted:
-                return self._finish(EpisodeOutcome.BUDGET_EXHAUSTED, exhausted)
-            if self.task.is_satisfied_by(snapshot):
-                return self._finish(EpisodeOutcome.GOAL_REACHED, "task goal satisfied")'''),
+  '''                if self.task.is_satisfied_by(snapshot):
+                    return self._finish(EpisodeOutcome.GOAL_REACHED, "task goal satisfied")
+                exhausted = self._budget_exhausted()
+                if exhausted:
+                    return self._finish(EpisodeOutcome.BUDGET_EXHAUSTED, exhausted)''',
+  '''                exhausted = self._budget_exhausted()
+                if exhausted:
+                    return self._finish(EpisodeOutcome.BUDGET_EXHAUSTED, exhausted)
+                if self.task.is_satisfied_by(snapshot):
+                    return self._finish(EpisodeOutcome.GOAL_REACHED, "task goal satisfied")'''),
  ('A6 first-cycle NL observation dropped', LO,
   '''            if first and self.nl_track is not None:''',
   '''            if False:'''),
@@ -195,6 +197,95 @@ M = [
  ("W4a normal path regresses to a redundant re-export", LO,
   '''        self.belief.sync(result.post_state)''',
   '''        self.belief.sync(self.env.export_full_state())'''),
+ # -- N series: H8 closure pins (NL exception provenance) --
+ ('N1 H8 regression: NL exception laundered back into a standing MalformedCall', LO,
+  '''            raise InfrastructureFaultError(InfrastructureFault(
+                kind=FaultKind.NL_TRACK_FAILURE,
+                message=f"NL track propose() raised {type(error).__name__}: {error}",
+                source="runtime/loop.py::_advisory_proposal",
+                stage="propose",
+            )) from error''',
+  '''            from nl.track import NLProposal
+            from shared.reports import CoverageReport
+            return NLProposal(
+                call=None,
+                malformed=MalformedCall(
+                    reason=f"NL track produced no proposal: {type(error).__name__}: {error}",
+                    raw="",
+                ),
+                coverage=CoverageReport(), confidence=None, repaired=False,
+            )'''),
+ ('N2 NL_TRACK_FAILURE dropped from the pre-executor kinds', "shared/faults.py",
+  '''    FaultKind.PLANNER_COMPUTATION_FAILURE,
+    FaultKind.NL_TRACK_FAILURE,
+})''',
+  '''    FaultKind.PLANNER_COMPUTATION_FAILURE,
+})'''),
+ ('N3 backend execution continues after the NL fault', LO,
+  '''            fault = error.fault
+            self._entry(step, snapshot, symbolic_result=planner_result,
+                        selected_call=call, validation=verdict,
+                        decision=ExecutiveDecision.EXECUTE,
+                        predicted_symbolic_key=predicted_symbolic_key,
+                        predicted_world_key=predicted_world_key,
+                        faults=(fault,))
+            return self._maybe_fault_halt(fault)''',
+  '''            nl_proposal = None'''),
+ ('N4 genuine malformed LM output escalated into an infrastructure fault', LO,
+  '''            return self.nl_track.propose(self.task)''',
+  '''            proposal = self.nl_track.propose(self.task)
+            if proposal is not None and proposal.malformed is not None:
+                raise InfrastructureFaultError(InfrastructureFault(
+                    kind=FaultKind.NL_TRACK_FAILURE,
+                    message="malformed NL output treated as a fault (mutant)",
+                    source="runtime/loop.py::_advisory_proposal",
+                )) from None
+            return proposal'''),
+ # -- S series: H8 WARN-1/WARN-2 closure pins (observe boundary + typed pass-through) --
+ ('S1 site-3 observe boundary removed (untyped crash returns)', LO,
+  '''        try:
+            self._observe(result.post_state, str(call.skill), result.outcome)
+        except InfrastructureFaultError as oerr:''',
+  '''        self._observe(result.post_state, str(call.skill), result.outcome)
+        if False:
+            oerr = None'''),
+ ('S2 post-execution observe fault drops the execution evidence', LO,
+  '''                        divergences=divergences, execution=result,
+                        post_state=result.post_state, faults=(oerr.fault,))''',
+  '''                        divergences=divergences, execution=None,
+                        post_state=None, faults=(oerr.fault,))'''),
+ ('S3 observe-stage discrimination dropped (kind-only classification)', "shared/faults.py",
+  '''        if self.kind is FaultKind.NL_TRACK_FAILURE and self.stage == "observe":''',
+  '''        if False:'''),
+ ('S4 typed fault re-wrapped at the propose boundary (WARN-2 regression)', LO,
+  '''        except InfrastructureFaultError:
+            raise                               # WARN-2: never re-wrap an already-typed fault
+        except Exception as error:
+            # H8 (final audit, closed): an exception ESCAPING the NL track is infrastructure,''',
+  '''        except Exception as error:
+            # H8 (final audit, closed): an exception ESCAPING the NL track is infrastructure,'''),
+ ('S5 typed fault re-wrapped at the observe boundary (WARN-2 regression)', LO,
+  '''        except InfrastructureFaultError:
+            raise                               # WARN-2: never re-wrap an already-typed fault
+        except Exception as error:
+            raise InfrastructureFaultError(InfrastructureFault(
+                kind=FaultKind.NL_TRACK_FAILURE,
+                message=f"NL track observe() raised''',
+  '''        except Exception as error:
+            raise InfrastructureFaultError(InfrastructureFault(
+                kind=FaultKind.NL_TRACK_FAILURE,
+                message=f"NL track observe() raised'''),
+ ('S6 first-cycle observe fault silently swallowed', LO,
+  '''                    observe_fault = error.fault''',
+  '''                    observe_fault = None'''),
+ ('S7 case-a observer fault dropped from the record', LO,
+  '''                except InfrastructureFaultError as oerr:
+                    # WARN-1 site 2: the observer fault is RECORDED alongside the primary
+                    # executor-boundary fault (both post-execution-compatible); the primary
+                    # fault stays the cycle's verdict
+                    extra_faults = (oerr.fault,)''',
+  '''                except InfrastructureFaultError as oerr:
+                    extra_faults = ()'''),
  # ── history ──
  ("H1 failure key drops the pre-state", EH,
   '''        return (pre_state.world_key(), call.key())''',

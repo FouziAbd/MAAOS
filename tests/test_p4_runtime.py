@@ -593,6 +593,34 @@ class _StubNLTrack:
         return self._proposals.pop(0) if self._proposals else _proposal(WAIT, residual=("w",))
 
 
+class _ExplodingNLTrack:
+    """Duck-typed NL track whose propose() RAISES — the H8 infrastructure case."""
+    def __init__(self, error=None):
+        self.error = error if error is not None else RuntimeError("LM seam exploded")
+        self.observed = 0
+
+    def observe(self, snapshot, skill=None, outcome=None):
+        self.observed += 1
+
+    def propose(self, task):
+        raise self.error
+
+
+class _ObserveExplodingTrack(_StubNLTrack):
+    """Duck-typed NL track whose observe() RAISES from the `fail_from`-th call on — the H8
+    WARN-1 case. fail_from=1 hits the first-cycle (pre-execution) site; fail_from=2 lets the
+    first observe succeed and hits the post-execution site."""
+    def __init__(self, proposals, fail_from=1, error=None):
+        super().__init__(proposals)
+        self.fail_from = fail_from
+        self.error = error if error is not None else RuntimeError("observer exploded")
+
+    def observe(self, snapshot, skill=None, outcome=None):
+        self.observed += 1
+        if self.observed >= self.fail_from:
+            raise self.error
+
+
 class TestAdvisoryComparatorThroughTheLoop(unittest.TestCase):
     def test_divergences_are_recorded_on_executed_entries(self):
         proposals = [_proposal(PUSH, confidence=0.4)] * 40     # contradiction + low confidence
@@ -620,12 +648,12 @@ class TestAdvisoryComparatorThroughTheLoop(unittest.TestCase):
         # the track observed every executed outcome
         self.assertGreaterEqual(loop.nl_track.observed, len(executed))
 
-    def test_real_nl_track_failure_is_typed_coverage_gap_evidence_not_silence(self):
-        """Architecture review W4: with a REAL NLTrack and no fixtures, propose() raises —
-        the loop records it as a standing-malformed proposal, and the comparator (sole
-        divergence constructor) emits COVERAGE_GAP on the cycle's entry. The observe-first
-        fix is proven en passant: without it the error would be the RuntimeError precondition,
-        not the typed fixture miss."""
+    def test_real_nl_track_missing_fixture_is_an_nl_track_failure_fault(self):
+        """H8 closed: with a REAL NLTrack and no recorded fixtures, propose() raises the
+        typed UnrecordedRequestError — infrastructure, not reasoning content. The loop must
+        record NL_TRACK_FAILURE and short-circuit, never launder the raise into a
+        COVERAGE_GAP divergence. The observe-first fix is proven en passant: without it the
+        error would be the RuntimeError precondition, not the typed fixture miss."""
         from nl import NLTrack, RecordedLM
         loop = ExecutiveLoopManager(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
@@ -633,12 +661,13 @@ class TestAdvisoryComparatorThroughTheLoop(unittest.TestCase):
             nl_track=NLTrack(RecordedLM()),
         )
         episode = loop.run()
-        self.assertIs(episode.outcome, EpisodeOutcome.GOAL_REACHED)
-        executed = [e for e in episode.history.entries if e.execution is not None]
-        gap = [d for e in executed for d in e.divergences
-               if d.kind is DivergenceKind.COVERAGE_GAP]
-        self.assertTrue(gap)
-        self.assertIn("UnrecordedRequestError", gap[0].nl_view)
+        self.assertIs(episode.outcome, EpisodeOutcome.FAULTED)
+        (fault,) = episode.history.entries[-1].faults
+        self.assertIs(fault.kind, FaultKind.NL_TRACK_FAILURE)
+        self.assertIn("UnrecordedRequestError", fault.message)
+        # the raise never becomes divergence evidence anywhere in the history
+        for entry in episode.history.entries:
+            self.assertEqual(entry.divergences, ())
 
     def test_an_agreeing_advisory_proposal_cannot_disappear_from_the_trace(self):
         """Consistency-all W1: agreement means the comparator has nothing to raise — but the
@@ -692,6 +721,89 @@ class TestAdvisoryComparatorThroughTheLoop(unittest.TestCase):
         iterations = 9 + 1                                     # 9 executing cycles + goal check
         self.assertEqual(env.exports, iterations)
 
+    def test_nl_track_exception_short_circuits_before_the_backend(self):
+        """H8 closed, the loop-driven pin: an exception ESCAPING nl_track.propose() is a
+        pre-executor NL_TRACK_FAILURE fault — the backend is never invoked, zero
+        executive/primitive steps are charged, the world is untouched, and no
+        TrackDivergence is manufactured for it."""
+        class _ExecCountingEnv:
+            def __init__(self):
+                self._inner = BoxPushV1Adapter()
+                self.executions = 0
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+            def execute_skill(self, call):
+                self.executions += 1
+                return self._inner.execute_skill(call)
+
+        env = _ExecCountingEnv()
+        loop = ExecutiveLoopManager(
+            env, TASK_DELIVER_BOTH,
+            OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK),
+            nl_track=_ExplodingNLTrack(),
+        )
+        episode = loop.run()
+        self.assertIs(episode.outcome, EpisodeOutcome.FAULTED)
+        entry = episode.history.entries[-1]
+        (fault,) = entry.faults
+        self.assertIs(fault.kind, FaultKind.NL_TRACK_FAILURE)
+        # classified PRE-EXECUTOR: detection precedes execute(), so no attempt occurred
+        self.assertTrue(fault.arises_before_execution)
+        # the cycle's already-established record survives on the fault entry...
+        self.assertIsNotNone(entry.symbolic_result)
+        self.assertIsNotNone(entry.selected_call)
+        self.assertIsInstance(entry.validation, ValidatedCall)
+        self.assertIs(entry.decision, ExecutiveDecision.EXECUTE)
+        self.assertIsNotNone(entry.predicted_symbolic_key)
+        self.assertIsNotNone(entry.predicted_world_key)
+        # ...but nothing is manufactured: no proposal, no divergence, no execution
+        self.assertIsNone(entry.nl_proposal)
+        self.assertEqual(entry.divergences, ())
+        self.assertIsNone(entry.execution)
+        # the backend was never reached and nothing was charged
+        self.assertEqual(env.executions, 0)
+        self.assertEqual(env.export_full_state().episode.step_count, 0)
+        self.assertEqual(loop.executive_steps_charged, 0)
+        self.assertEqual(loop.primitive_steps_charged, 0)
+
+    def test_malformed_lm_output_is_still_coverage_gap_evidence_not_a_fault(self):
+        """The channel boundary, both directions: the LM RETURNING content the parser/repair
+        rejected is a typed NLProposal.malformed → COVERAGE_GAP through the comparator —
+        never an infrastructure fault, and execution proceeds normally."""
+        malformed = _proposal(malformed=MalformedCall("garbage from the LM", raw="x"))
+        loop = ExecutiveLoopManager(
+            BoxPushV1Adapter(), TASK_DELIVER_BOTH,
+            OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK),
+            nl_track=_StubNLTrack([malformed] * 40),
+        )
+        episode = loop.run()
+        self.assertIs(episode.outcome, EpisodeOutcome.GOAL_REACHED)
+        executed = [e for e in episode.history.entries if e.execution is not None]
+        self.assertTrue(executed)
+        for entry in executed:
+            self.assertIn(DivergenceKind.COVERAGE_GAP,
+                          [d.kind for d in entry.divergences])
+        for entry in episode.history.entries:
+            self.assertNotIn(FaultKind.NL_TRACK_FAILURE,
+                             [f.kind for f in entry.faults])
+
+    def test_nl_fault_preserves_the_original_exception_as_cause(self):
+        """`raise ... from error`: the typed wrap must not orphan the real traceback."""
+        original = ValueError("seam blew up mid-request")
+        loop = ExecutiveLoopManager(
+            BoxPushV1Adapter(), TASK_DELIVER_BOTH,
+            OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK),
+            nl_track=_ExplodingNLTrack(original),
+        )
+        with self.assertRaises(InfrastructureFaultError) as ctx:
+            loop._advisory_proposal()
+        self.assertIs(ctx.exception.__cause__, original)
+        self.assertIsNone(ctx.exception.result)                # no attempt ever occurred
+        self.assertIs(ctx.exception.fault.kind, FaultKind.NL_TRACK_FAILURE)
+        self.assertIn("ValueError", ctx.exception.fault.message)
+
     def test_symbolic_primary_never_consults_the_nl_track(self):
         track = _StubNLTrack([])
         loop = ExecutiveLoopManager(
@@ -704,6 +816,143 @@ class TestAdvisoryComparatorThroughTheLoop(unittest.TestCase):
             self.assertEqual(entry.divergences, ())
         # observe() feeding is legitimate (data flows loop->NL only); propose() must be 0
         self.assertEqual(getattr(track, "proposed", 0), 0)
+
+
+# ── H8 WARN-1/WARN-2: the typed nl_track.observe() boundary ───────────────────────
+
+class TestObserveFaultBoundary(unittest.TestCase):
+    def _advisory(self, env, track, **cfg):
+        return ExecutiveLoopManager(
+            env, TASK_DELIVER_BOTH,
+            OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK, **cfg),
+            nl_track=track,
+        )
+
+    def test_first_cycle_observe_fault_is_pre_execution_at_that_site(self):
+        """WARN-1 site 1: observe() fails before ANY planning or execution — classified by
+        POSITION: zero steps, world untouched, backend never invoked, cycle replaced."""
+        class _ExecCountingEnv:
+            def __init__(self):
+                self._inner = BoxPushV1Adapter()
+                self.executions = 0
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+            def execute_skill(self, call):
+                self.executions += 1
+                return self._inner.execute_skill(call)
+
+        env = _ExecCountingEnv()
+        loop = self._advisory(env, _ObserveExplodingTrack([], fail_from=1))
+        episode = loop.run()
+        self.assertIs(episode.outcome, EpisodeOutcome.FAULTED)
+        entry = episode.history.entries[-1]
+        (fault,) = entry.faults
+        self.assertIs(fault.kind, FaultKind.NL_TRACK_FAILURE)
+        self.assertEqual(fault.stage, "observe")
+        self.assertIn("observe()", fault.message)
+        # the fault REPLACED the cycle: nothing downstream was established or touched
+        self.assertIsNone(entry.symbolic_result)
+        self.assertIsNone(entry.execution)
+        self.assertEqual(entry.divergences, ())
+        self.assertEqual(env.executions, 0)
+        self.assertEqual(env.export_full_state().episode.step_count, 0)
+        self.assertEqual(loop.executive_steps_charged, 0)
+        self.assertEqual(loop.primitive_steps_charged, 0)
+
+    def test_post_execution_observe_fault_preserves_the_execution_evidence(self):
+        """WARN-1 site 3: the attempt COMPLETED before observe() failed — the result,
+        post_state, recorded accounting, and the cycle's divergence evidence all stay
+        first-class on the fault-carrying entry; only the monitor comparison is skipped."""
+        loop = self._advisory(BoxPushV1Adapter(), _ObserveExplodingTrack([], fail_from=2))
+        episode = loop.run()
+        self.assertIs(episode.outcome, EpisodeOutcome.FAULTED)
+        entry = episode.history.entries[-1]
+        (fault,) = entry.faults
+        self.assertIs(fault.kind, FaultKind.NL_TRACK_FAILURE)
+        self.assertEqual(fault.stage, "observe")
+        # NOT reinterpreted as a pre-executor refusal: the kind-based guarantee is withheld
+        self.assertFalse(fault.arises_before_execution)
+        self.assertIsNotNone(entry.execution)
+        self.assertIsNotNone(entry.post_state)
+        self.assertIs(entry.decision, ExecutiveDecision.EXECUTE)
+        self.assertIsNotNone(entry.coverage)                   # NL evidence columns survive
+        # the WAIT stub proposal's COVERAGE_GAP was computed pre-execution and survives too
+        self.assertIn(DivergenceKind.COVERAGE_GAP, [d.kind for d in entry.divergences])
+        # the completed attempt's accounting is charged, not discarded
+        self.assertEqual(loop.executive_steps_charged, 1)
+        self.assertEqual(
+            loop.primitive_steps_charged, entry.execution.accounting.primitive_steps
+        )
+
+    def test_observer_fault_never_accrues_a_symbolic_execution_failure(self):
+        """Item: a FAILED execution whose observer also failed escalates through the fault
+        channel only — the repeated-failure count stays untouched (single-channel rule)."""
+        loop = self._advisory(_FailingGotoEnv(), _ObserveExplodingTrack([], fail_from=2))
+        episode = loop.run()
+        self.assertIs(episode.outcome, EpisodeOutcome.FAULTED)
+        entry = episode.history.entries[-1]
+        self.assertIsNotNone(entry.execution)
+        self.assertIsNot(entry.execution.outcome, ExecutionOutcome.SUCCESS)
+        self.assertTrue(entry.faults)
+        self.assertEqual(
+            episode.history.failure_count(entry.pre_state, entry.selected_call), 0
+        )
+
+    def test_case_a_records_both_the_primary_and_the_observer_fault(self):
+        """WARN-1 site 2: an observer fault during case-(a) handling is RECORDED alongside
+        the primary executor-boundary fault; the primary stays the cycle's verdict."""
+        loop = self._advisory(_CaseAEnv(), _ObserveExplodingTrack([], fail_from=2))
+        episode = loop.run()
+        self.assertIs(episode.outcome, EpisodeOutcome.FAULTED)
+        entry = episode.history.entries[-1]
+        self.assertIsNotNone(entry.execution)                  # case (a): result attached
+        kinds = [f.kind for f in entry.faults]
+        self.assertEqual(kinds, [FaultKind.EXECUTOR_MONITOR_PROTOCOL_FAILURE,
+                                 FaultKind.NL_TRACK_FAILURE])
+        self.assertIn(str(FaultKind.EXECUTOR_MONITOR_PROTOCOL_FAILURE), episode.reason)
+
+    def test_repeated_observe_faults_in_continue_mode_are_bounded(self):
+        """Continue mode: every observe-fault cycle is zero-charge, so the cross-cycle
+        liveness guard — not an infinite loop — terminates the episode."""
+        loop = self._advisory(
+            BoxPushV1Adapter(), _ObserveExplodingTrack([], fail_from=1),
+            halt_on_infrastructure_fault=False,
+        )
+        episode = loop.run()
+        self.assertIs(episode.outcome, EpisodeOutcome.FAULTED)
+        self.assertIn("liveness", episode.reason)
+        self.assertEqual(loop.executive_steps_charged, 0)
+
+    def test_typed_faults_pass_through_both_boundaries_unwrapped(self):
+        """WARN-2: an already-typed InfrastructureFaultError raised by the NL track is
+        re-raised IDENTICALLY — never re-wrapped, never coarsened to NL_TRACK_FAILURE."""
+        typed = InfrastructureFaultError(InfrastructureFault(
+            kind=FaultKind.BACKEND_API_EXCEPTION, message="already typed",
+        ))
+        loop = self._advisory(BoxPushV1Adapter(), _ExplodingNLTrack(typed))
+        with self.assertRaises(InfrastructureFaultError) as ctx:
+            loop._advisory_proposal()
+        self.assertIs(ctx.exception, typed)
+        loop = self._advisory(
+            BoxPushV1Adapter(), _ObserveExplodingTrack([], fail_from=1, error=typed)
+        )
+        with self.assertRaises(InfrastructureFaultError) as ctx:
+            loop._observe(None)
+        self.assertIs(ctx.exception, typed)
+
+    def test_observe_fault_cause_chaining_is_preserved(self):
+        original = ValueError("belief update blew up")
+        loop = self._advisory(
+            BoxPushV1Adapter(), _ObserveExplodingTrack([], fail_from=1, error=original)
+        )
+        with self.assertRaises(InfrastructureFaultError) as ctx:
+            loop._observe(None)
+        self.assertIs(ctx.exception.__cause__, original)
+        self.assertIsNone(ctx.exception.result)                # no attempt attached
+        self.assertIs(ctx.exception.fault.kind, FaultKind.NL_TRACK_FAILURE)
+        self.assertEqual(ctx.exception.fault.stage, "observe")
 
 
 if __name__ == "__main__":

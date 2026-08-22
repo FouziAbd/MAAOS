@@ -81,7 +81,10 @@ class ExecutiveLoopManager:
 
     The environment arrives by INJECTION: this package cannot import the backend (the
     fail-closed import guard), which structurally separates the loop from any concrete
-    environment. The optional `nl_track` is consulted only under ADVISORY_TWO_TRACK.
+    environment. For the optional `nl_track`, only `propose()` is policy-gated to
+    ADVISORY_TWO_TRACK; `observe()` feeds the attached track under ANY policy (data flows
+    loop->NL only, LM-free), and an observe() failure is an infrastructure fault — so a
+    SYMBOLIC_PRIMARY episode with an attached track can legitimately FAULT on it.
     """
 
     def __init__(
@@ -190,23 +193,37 @@ class ExecutiveLoopManager:
         first = True
         while True:
             snapshot = self._sync()
+            observe_fault: Optional[InfrastructureFault] = None
             if first and self.nl_track is not None:
                 # the NL track observes the INITIAL situation too — without this, a real
                 # NLTrack's observe-before-propose precondition silently discards every
                 # episode's first advisory proposal (review W4)
-                self.nl_track.observe(snapshot)
-                first = False
-            # DECIDED (review X10): on the exact tie the GOAL wins — the goal test is free
-            # (no step charged), so reporting BUDGET_EXHAUSTED for a completed task would be
-            # an accounting artifact, not a semantic outcome
-            if self.task.is_satisfied_by(snapshot):
-                return self._finish(EpisodeOutcome.GOAL_REACHED, "task goal satisfied")
-            exhausted = self._budget_exhausted()
-            if exhausted:
-                return self._finish(EpisodeOutcome.BUDGET_EXHAUSTED, exhausted)
+                try:
+                    self._observe(snapshot)
+                    first = False               # only a SUCCESSFUL observe discharges it
+                except InfrastructureFaultError as error:
+                    # WARN-1 site 1: detected BEFORE any planning/execution this cycle —
+                    # zero steps, world untouched, classified by POSITION at this site.
+                    # The fault REPLACES the cycle (:163): goal/budget belong to the
+                    # normal cycle and are re-checked next cycle; the shared liveness
+                    # bookkeeping below bounds continue mode (zero-charge by construction).
+                    observe_fault = error.fault
+            if observe_fault is None:
+                # DECIDED (review X10): on the exact tie the GOAL wins — the goal test is
+                # free (no step charged), so reporting BUDGET_EXHAUSTED for a completed
+                # task would be an accounting artifact, not a semantic outcome
+                if self.task.is_satisfied_by(snapshot):
+                    return self._finish(EpisodeOutcome.GOAL_REACHED, "task goal satisfied")
+                exhausted = self._budget_exhausted()
+                if exhausted:
+                    return self._finish(EpisodeOutcome.BUDGET_EXHAUSTED, exhausted)
 
             charged_before = self.executive_steps_charged
-            outcome = self._run_cycle(step, snapshot)
+            if observe_fault is not None:
+                self._entry(step, snapshot, faults=(observe_fault,))
+                outcome = self._maybe_fault_halt(observe_fault)
+            else:
+                outcome = self._run_cycle(step, snapshot)
             step += 1
             if outcome is not None:
                 return outcome
@@ -320,7 +337,22 @@ class ExecutiveLoopManager:
         )
         candidates = predict_world_candidates(snapshot, call, self.task.zone)
         predicted_world_key = candidates[0].world_key() if candidates else None
-        nl_proposal = self._advisory_proposal()
+        try:
+            nl_proposal = self._advisory_proposal()
+        except InfrastructureFaultError as error:
+            # NL_TRACK_FAILURE is a PRE-EXECUTOR infrastructure fault (:163, H8): the
+            # advisory consultation precedes execute(), so the cycle short-circuits with the
+            # world untouched, zero executive/primitive steps charged, no ExecutionResult —
+            # and NO manufactured divergence: divergences compare track CONTENT, and there
+            # is none. The entry keeps everything already established this cycle.
+            fault = error.fault
+            self._entry(step, snapshot, symbolic_result=planner_result,
+                        selected_call=call, validation=verdict,
+                        decision=ExecutiveDecision.EXECUTE,
+                        predicted_symbolic_key=predicted_symbolic_key,
+                        predicted_world_key=predicted_world_key,
+                        faults=(fault,))
+            return self._maybe_fault_halt(fault)
         divergences = compare_tracks(call, nl_proposal)
         # P3 EVIDENCE PRESERVATION (consistency-all W1): the frozen schema reserves proposal
         # columns, and an AGREEING advisory proposal must not vanish just because the
@@ -351,10 +383,16 @@ class ExecutiveLoopManager:
                 # it rather than re-exporting (same instant by construction, not argument)
                 self.belief.sync(error.result.post_state)
                 self.belief.record_outcome(error.result)
-                if self.nl_track is not None:
-                    self.nl_track.observe(
+                extra_faults = ()
+                try:
+                    self._observe(
                         error.result.post_state, str(call.skill), error.result.outcome
                     )
+                except InfrastructureFaultError as oerr:
+                    # WARN-1 site 2: the observer fault is RECORDED alongside the primary
+                    # executor-boundary fault (both post-execution-compatible); the primary
+                    # fault stays the cycle's verdict
+                    extra_faults = (oerr.fault,)
                 self._entry(step, snapshot, symbolic_result=planner_result,
                             selected_call=call,
                             validation=verdict if isinstance(verdict, ValidatedCall) else None,
@@ -364,7 +402,8 @@ class ExecutiveLoopManager:
                             predicted_symbolic_key=predicted_symbolic_key,
                             predicted_world_key=predicted_world_key,
                             divergences=divergences, execution=error.result,
-                            post_state=error.result.post_state, faults=(fault,))
+                            post_state=error.result.post_state,
+                            faults=(fault,) + extra_faults)
             else:
                 self._charge_case_c(fault)      # case (c) — see module docstring
                 self._entry(step, snapshot, symbolic_result=planner_result,
@@ -385,8 +424,23 @@ class ExecutiveLoopManager:
         # here; the NEXT cycle's _sync is the resynchronization point.
         self.belief.sync(result.post_state)
         self.belief.record_outcome(result)
-        if self.nl_track is not None:
-            self.nl_track.observe(result.post_state, str(call.skill), result.outcome)
+        try:
+            self._observe(result.post_state, str(call.skill), result.outcome)
+        except InfrastructureFaultError as oerr:
+            # WARN-1 site 3: the attempt COMPLETED — its result, post_state and recorded
+            # accounting are authoritative and stay first-class in the trace; only the
+            # remainder of the cycle (the monitor comparison) is short-circuited (:163),
+            # mirroring the case-(a) precedent. Standing recovery advice deliberately
+            # remains, exactly as on every other fault path except the ungrounded drop.
+            self._entry(step, snapshot, symbolic_result=planner_result, selected_call=call,
+                        validation=verdict, decision=ExecutiveDecision.EXECUTE,
+                        nl_proposal=nl_call_column,
+                        coverage=nl_coverage, confidence=nl_confidence,
+                        predicted_symbolic_key=predicted_symbolic_key,
+                        predicted_world_key=predicted_world_key,
+                        divergences=divergences, execution=result,
+                        post_state=result.post_state, faults=(oerr.fault,))
+            return self._maybe_fault_halt(oerr.fault)
         discrepancies, monitor_fault = self._monitor(pre_symbolic, result)
         self._all_discrepancies.extend(discrepancies)
         if self._pending_recovery:
@@ -442,20 +496,49 @@ class ExecutiveLoopManager:
             return None
         try:
             return self.nl_track.propose(self.task)
-        except Exception as error:              # advisory evidence must not kill the cycle...
-            # ...but it must not vanish either (review W4): a failed proposal is recorded as
-            # a standing MalformedCall, which the comparator — the ONLY constructor of
-            # TrackDivergence — turns into COVERAGE_GAP evidence on this cycle's entry
-            from nl.track import NLProposal
-            from shared.reports import CoverageReport
-            return NLProposal(
-                call=None,
-                malformed=MalformedCall(
-                    reason=f"NL track produced no proposal: {type(error).__name__}: {error}",
-                    raw="",
-                ),
-                coverage=CoverageReport(), confidence=None, repaired=False,
-            )
+        except InfrastructureFaultError:
+            raise                               # WARN-2: never re-wrap an already-typed fault
+        except Exception as error:
+            # H8 (final audit, closed): an exception ESCAPING the NL track is infrastructure,
+            # not reasoning content — the earlier rewrite into a standing MalformedCall
+            # manufactured COVERAGE_GAP evidence with fault provenance. Typed malformed LM
+            # OUTPUT (the model returned content the parser/repair rejected) still arrives as
+            # `NLProposal.malformed` from inside NLTrack and still becomes COVERAGE_GAP via
+            # the comparator, the only TrackDivergence constructor. Only the RAISE is a fault.
+            raise InfrastructureFaultError(InfrastructureFault(
+                kind=FaultKind.NL_TRACK_FAILURE,
+                message=f"NL track propose() raised {type(error).__name__}: {error}",
+                source="runtime/loop.py::_advisory_proposal",
+                stage="propose",
+            )) from error
+
+    def _observe(self, snapshot: StateSnapshot, skill=None, outcome=None) -> None:
+        """WARN-1: the SINGLE typed boundary for `nl_track.observe()` — same principle as
+        `_advisory_proposal` (an exception escaping the NL track is infrastructure, never
+        reasoning content), but the LIFECYCLE POSITION differs per call site: before any
+        execution on the first cycle, after a COMPLETED attempt post-execution. The fault
+        therefore carries `stage="observe"` and each call site classifies by its actual
+        position — never by kind alone.
+
+        CONTRACT NOTE (consistency-all 1e): the WARN-2 pass-through below re-raises an
+        already-typed `InfrastructureFaultError` UNCHANGED — so a non-V1 track that raises a
+        typed fault with a pre-execution KIND from observe() would reach a post-execution
+        entry alongside an `ExecutionResult` and be refused loudly by `TraceEntry`'s
+        lifecycle-legality check (a track-contract violation, fail-closed by design; the
+        shipped NLTrack raises only untyped `RuntimeError`s here)."""
+        if self.nl_track is None:
+            return
+        try:
+            self.nl_track.observe(snapshot, skill, outcome)
+        except InfrastructureFaultError:
+            raise                               # WARN-2: never re-wrap an already-typed fault
+        except Exception as error:
+            raise InfrastructureFaultError(InfrastructureFault(
+                kind=FaultKind.NL_TRACK_FAILURE,
+                message=f"NL track observe() raised {type(error).__name__}: {error}",
+                source="runtime/loop.py::_observe",
+                stage="observe",
+            )) from error
 
     def _maybe_fault_halt(self, fault: InfrastructureFault) -> Optional[EpisodeResult]:
         """:163 — the fault has already short-circuited the CURRENT cycle (the caller returns

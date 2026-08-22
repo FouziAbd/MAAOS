@@ -391,6 +391,10 @@ CASES = [
             "source": InfrastructureFault(
                 kind=FaultKind.BACKEND_API_EXCEPTION, message="m", detail="d", source="x"
             ),
+            "stage": InfrastructureFault(
+                kind=FaultKind.BACKEND_API_EXCEPTION, message="m", detail="d", source="s",
+                stage="observe",
+            ),
         },
     ),
     (

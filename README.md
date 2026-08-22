@@ -51,10 +51,10 @@ each (`ExecutionDiscrepancy` / `TrackDivergence` / `InfrastructureFault`).
 ## Tests and evidence
 
 ```bash
-python -B -m unittest discover -s tests -t .    # 629 tests, offline, deterministic, ~0.5s
+python -B -m unittest discover -s tests -t .    # 641 tests, offline, deterministic, ~0.5s
 ```
 
-- 281 checked-in mutation-harness mutants across five harnesses, all killed
+- 292 checked-in mutation-harness mutants across five harnesses, all killed
   (`docs/implementation/p{0..4}_mutation_harness.py`).
 - Mechanical pins: the documented suite count equals live discovery; a tree-wide
   citation-drift guard; byte-pinned human-readable acceptance traces
