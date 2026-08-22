@@ -38,7 +38,7 @@ M = [
  ("G6b pre_executor drops inapplicable", SK, "        return isinstance(self, (MalformedCall, UngroundedCall, SymbolicallyInapplicable))", "        return isinstance(self, (MalformedCall, UngroundedCall))"),
  ("G7a rejection may coexist with execution", TS, "            if self.validation is not None and self.validation.is_pre_executor_rejection:", "            if False:"),
  ("G7b pre-exec fault may coexist", TS, "            early = [f for f in self.faults if f.arises_before_execution]", "            early = []"),
- ("G7c fault kind misclassified", FA, "    FaultKind.PLANNER_COMPUTATION_FAILURE,\n})", "    FaultKind.PLANNER_COMPUTATION_FAILURE,\n    FaultKind.BACKEND_API_EXCEPTION,\n})"),
+ ("G7c fault kind misclassified", FA, "    FaultKind.NL_TRACK_FAILURE,\n})", "    FaultKind.NL_TRACK_FAILURE,\n    FaultKind.BACKEND_API_EXCEPTION,\n})"),
  ("G10a failure always retracts", SY, "        if world_changed:\n            return self.retract(state, literal)\n        return state", "        return self.retract(state, literal)"),
  ("G10b failure never retracts", SY, "        if world_changed:\n            return self.retract(state, literal)\n        return state", "        return state"),
  ("G10c retract sweeps the predicate", SY, "        return SymbolicState.of(set(state.literals) - {literal})", "        return SymbolicState.of(l for l in state.literals if l.predicate != literal.predicate)"),

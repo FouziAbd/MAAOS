@@ -39,6 +39,12 @@ class FaultKind(StrEnum):
 #: faults the cycle with the world untouched and zero steps consumed. It is infrastructure
 #: provenance, never comparator evidence — typed malformed LM OUTPUT stays `NLProposal.malformed`
 #: → COVERAGE_GAP through the comparator, the only `TrackDivergence` constructor (H8).
+#: MEMBERSHIP IS STAGE-QUALIFIED (H8 WARN-1): the NL track has a second consultation stage —
+#: `observe()` — which may run AFTER a completed attempt, so an observe-stage fault legally
+#: coexists with that attempt's `ExecutionResult`. The fault carries its lifecycle position in
+#: `stage` ("propose" | "observe"), and `arises_before_execution` consults it: kind alone
+#: cannot answer for a staged boundary. The unstaged default remains pre-execution
+#: (fail-closed: an NL fault of unknown position can never coexist with an ExecutionResult).
 #:
 #: The remaining kinds (malformed backend RESULT, serialization, backend API exception,
 #: executor/monitor protocol) MAY be detected during or after an attempt, so they may legally
@@ -80,6 +86,11 @@ class InfrastructureFault:
     message: str
     detail: str = ""
     source: str = ""
+    #: Lifecycle provenance for STAGED boundaries (H8 WARN-1). The NL track consults twice per
+    #: cycle-family — "propose" strictly before the executor, "observe" possibly after a
+    #: completed attempt — under ONE kind, so position must come from the fault instance, not
+    #: the kind. Empty for single-stage kinds.
+    stage: str = ""
 
     def __post_init__(self) -> None:
         if not self.message:
@@ -93,6 +104,11 @@ class InfrastructureFault:
     @property
     def arises_before_execution(self) -> bool:
         """True when the fault is detected upstream of the executor, so no attempt occurred."""
+        if self.kind is FaultKind.NL_TRACK_FAILURE and self.stage == "observe":
+            # the observer runs on both sides of the executor (H8 WARN-1): a post-execution
+            # observe fault legally coexists with the completed attempt's ExecutionResult,
+            # so the kind-based guarantee is withheld — position over kind
+            return False
         return self.kind in PRE_EXECUTION_FAULT_KINDS
 
     def canonical(self) -> Dict[str, Any]:
@@ -102,6 +118,7 @@ class InfrastructureFault:
             "message": self.message,
             "detail": self.detail,
             "source": self.source,
+            "stage": self.stage,
         }
 
 

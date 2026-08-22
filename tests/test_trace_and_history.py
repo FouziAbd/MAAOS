@@ -327,6 +327,39 @@ class TestTraceLifecycleLegality(unittest.TestCase):
                     InfrastructureFault(kind=kind, message="x").arises_before_execution
                 )
 
+    def test_nl_track_failure_classification_is_stage_qualified(self):
+        """H8 WARN-1: the NL boundary is STAGED — propose precedes the executor by
+        construction, observe may run after a completed attempt, and an unstaged NL fault
+        stays fail-closed (pre-execution, so it can never coexist with a result)."""
+        nl = FaultKind.NL_TRACK_FAILURE
+        self.assertTrue(
+            InfrastructureFault(kind=nl, message="x", stage="propose").arises_before_execution
+        )
+        self.assertFalse(
+            InfrastructureFault(kind=nl, message="x", stage="observe").arises_before_execution
+        )
+        self.assertTrue(InfrastructureFault(kind=nl, message="x").arises_before_execution)
+
+    def test_an_observe_stage_nl_fault_may_coexist_with_a_result(self):
+        """H8 WARN-1: a post-execution observer fault must be recordable WITH the completed
+        attempt's authoritative ExecutionResult; a propose-stage or unstaged NL fault must
+        still be refused alongside one."""
+        pre = initial_state()
+        nl = FaultKind.NL_TRACK_FAILURE
+        entry = TraceEntry(
+            **self._entry_kwargs(pre),
+            execution=_failed_execution(pre),
+            faults=(InfrastructureFault(kind=nl, message="x", stage="observe"),),
+        )
+        self.assertTrue(entry.short_circuited)
+        for stage in ("propose", ""):
+            with self.subTest(stage=stage), self.assertRaises(ValueError):
+                TraceEntry(
+                    **self._entry_kwargs(pre),
+                    execution=_failed_execution(pre),
+                    faults=(InfrastructureFault(kind=nl, message="x", stage=stage),),
+                )
+
     def test_a_rejected_cycle_with_no_execution_is_legal(self):
         from shared.skills import MalformedCall
         pre = initial_state()
