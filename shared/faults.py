@@ -27,12 +27,18 @@ class FaultKind(StrEnum):
     EXECUTOR_MONITOR_PROTOCOL_FAILURE = "executor_monitor_protocol_failure"
     PLANNER_COMPUTATION_FAILURE = "planner_computation_failure"
     MALFORMED_SKILL_CALL = "malformed_skill_call"
+    NL_TRACK_FAILURE = "nl_track_failure"
 
 
 #: Faults that arise BEFORE the executor is ever invoked, so they short-circuit the cycle with no
 #: execution having taken place. :163 says a new fault aborts the cycle "at the point of
-#: detection" — for these three that point is upstream of the executor, which is what lets
+#: detection" — for these kinds that point is upstream of the executor, which is what lets
 #: `TraceEntry` refuse to represent a cycle that both faulted pre-execution and executed.
+#: `NL_TRACK_FAILURE` belongs here because the advisory consultation precedes `execute()`:
+#: an exception ESCAPING `nl_track.propose()` (LM/seam/DSPy raise, missing recorded fixture)
+#: faults the cycle with the world untouched and zero steps consumed. It is infrastructure
+#: provenance, never comparator evidence — typed malformed LM OUTPUT stays `NLProposal.malformed`
+#: → COVERAGE_GAP through the comparator, the only `TrackDivergence` constructor (H8).
 #:
 #: The remaining kinds (malformed backend RESULT, serialization, backend API exception,
 #: executor/monitor protocol) MAY be detected during or after an attempt, so they may legally
@@ -64,6 +70,7 @@ PRE_EXECUTION_FAULT_KINDS: frozenset = frozenset({
     FaultKind.MALFORMED_SKILL_CALL,
     FaultKind.MISSING_GROUNDING,
     FaultKind.PLANNER_COMPUTATION_FAILURE,
+    FaultKind.NL_TRACK_FAILURE,
 })
 
 

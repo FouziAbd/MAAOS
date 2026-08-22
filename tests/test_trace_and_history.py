@@ -313,7 +313,10 @@ class TestTraceLifecycleLegality(unittest.TestCase):
     def test_pre_execution_faults_are_exactly_the_upstream_kinds(self):
         self.assertEqual(
             {str(k) for k in PRE_EXECUTION_FAULT_KINDS},
-            {"malformed_skill_call", "missing_grounding", "planner_computation_failure"},
+            # nl_track_failure (H8): the advisory consultation precedes execute(), so an
+            # exception escaping nl_track.propose() faults the cycle before any attempt
+            {"malformed_skill_call", "missing_grounding", "planner_computation_failure",
+             "nl_track_failure"},
         )
         for kind in PRE_EXECUTION_FAULT_KINDS:
             with self.subTest(kind=kind):

@@ -320,7 +320,22 @@ class ExecutiveLoopManager:
         )
         candidates = predict_world_candidates(snapshot, call, self.task.zone)
         predicted_world_key = candidates[0].world_key() if candidates else None
-        nl_proposal = self._advisory_proposal()
+        try:
+            nl_proposal = self._advisory_proposal()
+        except InfrastructureFaultError as error:
+            # NL_TRACK_FAILURE is a PRE-EXECUTOR infrastructure fault (:163, H8): the
+            # advisory consultation precedes execute(), so the cycle short-circuits with the
+            # world untouched, zero executive/primitive steps charged, no ExecutionResult —
+            # and NO manufactured divergence: divergences compare track CONTENT, and there
+            # is none. The entry keeps everything already established this cycle.
+            fault = error.fault
+            self._entry(step, snapshot, symbolic_result=planner_result,
+                        selected_call=call, validation=verdict,
+                        decision=ExecutiveDecision.EXECUTE,
+                        predicted_symbolic_key=predicted_symbolic_key,
+                        predicted_world_key=predicted_world_key,
+                        faults=(fault,))
+            return self._maybe_fault_halt(fault)
         divergences = compare_tracks(call, nl_proposal)
         # P3 EVIDENCE PRESERVATION (consistency-all W1): the frozen schema reserves proposal
         # columns, and an AGREEING advisory proposal must not vanish just because the
@@ -442,20 +457,18 @@ class ExecutiveLoopManager:
             return None
         try:
             return self.nl_track.propose(self.task)
-        except Exception as error:              # advisory evidence must not kill the cycle...
-            # ...but it must not vanish either (review W4): a failed proposal is recorded as
-            # a standing MalformedCall, which the comparator — the ONLY constructor of
-            # TrackDivergence — turns into COVERAGE_GAP evidence on this cycle's entry
-            from nl.track import NLProposal
-            from shared.reports import CoverageReport
-            return NLProposal(
-                call=None,
-                malformed=MalformedCall(
-                    reason=f"NL track produced no proposal: {type(error).__name__}: {error}",
-                    raw="",
-                ),
-                coverage=CoverageReport(), confidence=None, repaired=False,
-            )
+        except Exception as error:
+            # H8 (final audit, closed): an exception ESCAPING the NL track is infrastructure,
+            # not reasoning content — the earlier rewrite into a standing MalformedCall
+            # manufactured COVERAGE_GAP evidence with fault provenance. Typed malformed LM
+            # OUTPUT (the model returned content the parser/repair rejected) still arrives as
+            # `NLProposal.malformed` from inside NLTrack and still becomes COVERAGE_GAP via
+            # the comparator, the only TrackDivergence constructor. Only the RAISE is a fault.
+            raise InfrastructureFaultError(InfrastructureFault(
+                kind=FaultKind.NL_TRACK_FAILURE,
+                message=f"NL track propose() raised {type(error).__name__}: {error}",
+                source="runtime/loop.py::_advisory_proposal",
+            )) from error
 
     def _maybe_fault_halt(self, fault: InfrastructureFault) -> Optional[EpisodeResult]:
         """:163 — the fault has already short-circuited the CURRENT cycle (the caller returns

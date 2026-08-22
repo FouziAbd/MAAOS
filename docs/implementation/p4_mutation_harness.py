@@ -122,9 +122,11 @@ M = [
                     return self._finish(EpisodeOutcome.FAULTED, fault.message)''',
   '''                    return self._finish(EpisodeOutcome.FAULTED, fault.message)'''),
  ('A4 NL propose failure silently swallowed again', LO,
-  '''            from nl.track import NLProposal''',
+  '''            raise InfrastructureFaultError(InfrastructureFault(
+                kind=FaultKind.NL_TRACK_FAILURE,''',
   '''            return None
-            from nl.track import NLProposal'''),
+            raise InfrastructureFaultError(InfrastructureFault(
+                kind=FaultKind.NL_TRACK_FAILURE,'''),
  ('A5 goal-vs-budget tie flipped back', LO,
   '''            if self.task.is_satisfied_by(snapshot):
                 return self._finish(EpisodeOutcome.GOAL_REACHED, "task goal satisfied")
@@ -195,6 +197,49 @@ M = [
  ("W4a normal path regresses to a redundant re-export", LO,
   '''        self.belief.sync(result.post_state)''',
   '''        self.belief.sync(self.env.export_full_state())'''),
+ # -- N series: H8 closure pins (NL exception provenance) --
+ ('N1 H8 regression: NL exception laundered back into a standing MalformedCall', LO,
+  '''            raise InfrastructureFaultError(InfrastructureFault(
+                kind=FaultKind.NL_TRACK_FAILURE,
+                message=f"NL track propose() raised {type(error).__name__}: {error}",
+                source="runtime/loop.py::_advisory_proposal",
+            )) from error''',
+  '''            from nl.track import NLProposal
+            from shared.reports import CoverageReport
+            return NLProposal(
+                call=None,
+                malformed=MalformedCall(
+                    reason=f"NL track produced no proposal: {type(error).__name__}: {error}",
+                    raw="",
+                ),
+                coverage=CoverageReport(), confidence=None, repaired=False,
+            )'''),
+ ('N2 NL_TRACK_FAILURE dropped from the pre-executor kinds', "shared/faults.py",
+  '''    FaultKind.PLANNER_COMPUTATION_FAILURE,
+    FaultKind.NL_TRACK_FAILURE,
+})''',
+  '''    FaultKind.PLANNER_COMPUTATION_FAILURE,
+})'''),
+ ('N3 backend execution continues after the NL fault', LO,
+  '''            fault = error.fault
+            self._entry(step, snapshot, symbolic_result=planner_result,
+                        selected_call=call, validation=verdict,
+                        decision=ExecutiveDecision.EXECUTE,
+                        predicted_symbolic_key=predicted_symbolic_key,
+                        predicted_world_key=predicted_world_key,
+                        faults=(fault,))
+            return self._maybe_fault_halt(fault)''',
+  '''            nl_proposal = None'''),
+ ('N4 genuine malformed LM output escalated into an infrastructure fault', LO,
+  '''            return self.nl_track.propose(self.task)''',
+  '''            proposal = self.nl_track.propose(self.task)
+            if proposal is not None and proposal.malformed is not None:
+                raise InfrastructureFaultError(InfrastructureFault(
+                    kind=FaultKind.NL_TRACK_FAILURE,
+                    message="malformed NL output treated as a fault (mutant)",
+                    source="runtime/loop.py::_advisory_proposal",
+                )) from None
+            return proposal'''),
  # ── history ──
  ("H1 failure key drops the pre-state", EH,
   '''        return (pre_state.world_key(), call.key())''',
