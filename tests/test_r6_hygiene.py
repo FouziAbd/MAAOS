@@ -272,6 +272,28 @@ class TestMalformedBackendReturnsAreTypedFaults(unittest.TestCase):
         adapter._env.reset = original_reset
         self.assertEqual(adapter.reset(), initial_state())
 
+    def test_a_raise_out_of_reset_is_a_typed_backend_fault(self):
+        """The reset seam mirrors the step seam: an exception out of the authoritative reset
+        is BACKEND_API_EXCEPTION (pre-attempt, no provenance key), and the D8 latch stays
+        unset so use-before-reset is still refused afterwards."""
+        adapter = BoxPushV1Adapter()
+
+        def exploding_reset(seed=None):
+            raise RuntimeError("cosmic ray at reset")
+
+        adapter._env.reset = exploding_reset
+        with self.assertRaises(InfrastructureFaultError) as ctx:
+            adapter.reset()
+        fault = ctx.exception.fault
+        self.assertIs(fault.kind, FaultKind.BACKEND_API_EXCEPTION)
+        self.assertIn("cosmic ray at reset", fault.message)
+        self.assertNotIn("primitive_steps", fault.detail)
+        self.assertIsNone(ctx.exception.result)
+        self.assertIsInstance(ctx.exception.__cause__, RuntimeError)
+        with self.assertRaises(InfrastructureFaultError) as ctx:
+            adapter.export_full_state()
+        self.assertTrue(ctx.exception.fault.message.startswith("refused:"))
+
     def test_a_malformed_world_before_an_attempt_is_a_typed_fault_without_provenance(self):
         cases = {
             "agent position None": lambda w: setattr(w.agents["agent_0"], "position", None),

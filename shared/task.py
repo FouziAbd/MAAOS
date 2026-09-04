@@ -9,7 +9,7 @@ translator has a source and a target, and so a coverage residual can be computed
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, Tuple
 
 from shared.ids import BoxId, ZoneId

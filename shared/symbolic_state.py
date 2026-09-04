@@ -55,7 +55,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, FrozenSet, Iterable, Mapping, Tuple
+from typing import Any, Dict, FrozenSet, Iterable, Tuple
 
 from shared.comparison_keys import SymbolicKey
 
@@ -98,10 +98,12 @@ class SymbolicState:
 
     def restricted_to(self, predicates: Iterable[str]) -> "SymbolicState":
         keep = set(predicates)
-        return SymbolicState.of(l for l in self.literals if l.predicate in keep)
+        return SymbolicState.of(
+            literal for literal in self.literals if literal.predicate in keep
+        )
 
     def canonical(self) -> Tuple[str, ...]:
-        return tuple(sorted(l.canonical() for l in self.literals))
+        return tuple(sorted(literal.canonical() for literal in self.literals))
 
     def key(self) -> SymbolicKey:
         """Typed so it cannot be written into a world-key field (Decision 13.6)."""
@@ -110,8 +112,8 @@ class SymbolicState:
 
     def difference(self, other: "SymbolicState") -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
         """(present-here-only, present-there-only) — the monitor's mismatch detail."""
-        mine = {l.canonical() for l in self.literals}
-        theirs = {l.canonical() for l in other.literals}
+        mine = {literal.canonical() for literal in self.literals}
+        theirs = {literal.canonical() for literal in other.literals}
         return tuple(sorted(mine - theirs)), tuple(sorted(theirs - mine))
 
     def __len__(self) -> int:

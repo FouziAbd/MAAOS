@@ -1,0 +1,76 @@
+# MAAOS — Symbolic-Twin BoxPush V1 (project metadata and tool configuration, R6).
+#
+# The repository is a flat multi-package tree (shared/, domain/, symbolic/, nl/, runtime/,
+# app/ plus the sys.path-mounted BoxPush backend), not a distributable package: `uv` manages
+# the environment and the lockfile for it but never builds/installs the project itself
+# (`[tool.uv] package = false`).
+#
+# Runtime dependencies are pinned EXACTLY and mirror requirements.txt line for line
+# (decisions §18 item 2; supervisor :234) — tests/test_r6_tooling.py asserts the two agree
+# and that uv.lock carries every pin with hashes. Bump only with a recorded decision.
+
+[project]
+name = "maaos"
+version = "1.0.0"
+description = "MAAOS Symbolic-Twin BoxPush V1: an optimistic symbolic planner and an LLM reasoning track as peers over an authoritative backend"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"      # Decision 10: Python 3.12 is the frozen V1 interpreter
+dependencies = [
+    "pettingzoo==1.25.0",
+    "gymnasium==1.2.3",
+    "pygame==2.6.1",
+    "numpy==2.4.0",
+    "dspy-ai==3.1.0",
+    "minigrid==3.0.0",
+    "Pillow==12.2.0",
+    "requests==2.32.5",
+    "pyperplan==2.1",
+    "pyRDDLGym==2.7",
+]
+
+[dependency-groups]
+# Static checks only. The default test job needs none of these; CI installs them for the
+# lint/type gates. Pinned so the gate's verdict is reproducible.
+dev = [
+    "mypy==2.3.1",
+    "ruff==0.16.6",
+    "PyYAML==6.0.3",      # tests/test_r6_tooling.py parses the CI workflow
+]
+
+[tool.uv]
+package = false
+
+[tool.mypy]
+# The R6 static gate: the architectural core plus the R1-R5 conformance witnesses and the
+# R5 probe fixture. `follow_imports = silent` type-checks the frozen V1 domain/symbolic/nl
+# modules for inference but reports only the gated files (their own debt is recorded in
+# docs/refactor/REFACTORING_IMPLEMENTATION.md §R6). Widening the scope is a deliberate act.
+python_version = "3.12"
+files = [
+    "shared",
+    "runtime",
+    "app",
+    "tests/contract_conformance.py",
+    "tests/probe_counter.py",
+]
+follow_imports = "silent"
+ignore_missing_imports = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+# Lint scope is named explicitly at the call site (`ruff check shared runtime app`); the
+# legacy/research trees are excluded so an accidental wider invocation never lints them.
+extend-exclude = [
+    "middleware_layer",
+    "model_layer",
+    "functional_layer",
+    "ui",
+    "utils",
+    "docs",
+]
+
+[tool.ruff.lint]
+# Lint only, no formatter: the frozen V1 sources are not reformatted (R6 tooling decision).
+# pyflakes + the pycodestyle error classes ruff enables by default, plus warnings.
+select = ["E4", "E7", "E9", "F", "W"]

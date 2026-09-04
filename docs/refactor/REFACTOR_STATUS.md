@@ -4,7 +4,12 @@
 
 Claude Code harness: **refreshed for post-P0-P4 refactoring**
 
-Current refactor phase: **R6 IN PROGRESS**
+Current refactor phase: **R6 IN PROGRESS** — commits 1-3 of the four-commit
+split (hygiene, typing, tooling) are implemented and verified; commit 4 (the
+legacy move) is stopped pending an owner decision because a pure `git mv` would
+break the runner's `--nl live` import and the opt-in live test, and would move
+the V1 live seam `model_layer/planner/v1_nl_live.py` (details:
+`docs/refactor/REFACTORING_IMPLEMENTATION.md` §R6 "Legacy move").
 
 The completed Symbolic-Twin V1 implementation phases P0-P4 remain the frozen
 behavioral baseline.
@@ -19,7 +24,7 @@ behavioral baseline.
 | R3 | COMPLETE | Correct proposal-comparison lifecycle |
 | R4 | COMPLETE | Make domain composition explicit |
 | R5 | COMPLETE | Prove runtime substitutability with a test-only probe domain |
-| R6 | IN PROGRESS | Correctness, typing, CI, dependency and legacy hygiene |
+| R6 | IN PROGRESS (1-3 of 4 commits; legacy move awaits owner) | Correctness, typing, CI, dependency and legacy hygiene |
 
 ## Baseline command
 
@@ -34,7 +39,7 @@ phase adds or removes tests.
 
 ## Baseline evidence
 
-Current offline suite: 826 tests, deterministic and offline
+Current offline suite: 844 tests, deterministic and offline
 
 Frozen pristine baseline: commit
 `116d1fdde7b54f5e2f44f98f9f36304c92569162`, captured 2026-09-04 in
@@ -49,11 +54,11 @@ actual enforcement work.
 
 | Tool | Decision | Baseline |
 |---|---|---|
-| mypy | Adopt, scoped to `shared/` + `runtime/` first, `--ignore-missing-imports`; widen later only if R6 calls for it | mypy 2.3.1, captured 2026-09-04: `python -m mypy shared runtime --ignore-missing-imports` → **49 errors in 7 files** (25 source files checked), saved in `docs/refactor/baseline/mypy_pristine.txt`. 49 is the "must not increase" baseline; R6 owns driving it down |
-| ruff | Adopt for lint (no autoformat rewrite of frozen code) | NOT INSTALLED at pre-flight |
-| uv lock | Adopt `uv` lockfile for dependency reproducibility in R6 | `uv` not on PATH at pre-flight |
-| GitHub Actions | Offline suite only — `.github/workflows/offline-tests.yml` added at pre-flight; no live-LM or network-dependent job | In place |
-| Import boundaries | Enforce as plain `unittest` tests (no extra tool) as R1-R4 introduce the boundaries | Owned by R1-R4/R6 |
+| mypy | Adopt, scoped to `shared/` + `runtime/` first, `--ignore-missing-imports`; widen later only if R6 calls for it | mypy 2.3.1, captured 2026-09-04: `python -m mypy shared runtime --ignore-missing-imports` → **49 errors in 7 files** (25 source files checked), saved in `docs/refactor/baseline/mypy_pristine.txt`. 49 is the "must not increase" baseline; R6 owns driving it down. **R6 (2026-09-05): 0 errors** on the gate `shared runtime app tests/contract_conformance.py tests/probe_counter.py` (`[tool.mypy]` in `pyproject.toml`, `follow_imports = silent`; 38 files); enforced by `tests/test_r6_typing.py` and CI |
+| ruff | Adopt for lint (no autoformat rewrite of frozen code) | NOT INSTALLED at pre-flight. **R6: ruff 0.16.6**, lint-only `E4,E7,E9,F,W` on `shared runtime app` (`[tool.ruff]` in `pyproject.toml`), clean; enforced by `tests/test_r6_tooling.py` and CI |
+| uv lock | Adopt `uv` lockfile for dependency reproducibility in R6 | `uv` not on PATH at pre-flight. **R6: uv 0.12.9**, `uv.lock` (91 packages, sha256 hashes, Python ==3.12.*); `uv lock --check` up to date; the frozen `numpy==2.4.0` pin is yanked upstream (WARN, owner) |
+| GitHub Actions | Offline suite only — `.github/workflows/offline-tests.yml` added at pre-flight; no live-LM or network-dependent job | In place. **R6:** `uv sync --locked` → offline suite → `ruff check shared runtime app` → `mypy`; not yet observed running (branch unpushed) |
+| Import boundaries | Enforce as plain `unittest` tests (no extra tool) as R1-R4 introduce the boundaries | Owned by R1-R4/R6 — in place (`tests/test_no_backend_imports.py`, `tests/test_r4_composition.py`, `tests/test_r1_contracts.py` scans hardened in R6) |
 
 ## R6 owner decisions
 

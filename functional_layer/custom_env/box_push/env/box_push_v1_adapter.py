@@ -132,7 +132,16 @@ class BoxPushV1Adapter:
     # ── V1Environment protocol ─────────────────────────────────────────────────────
 
     def reset(self, *, seed: Optional[int] = None) -> StateSnapshot:
-        returned = self._env.reset(seed=seed)
+        try:
+            returned = self._env.reset(seed=seed)
+        except Exception as error:
+            # a raise out of the authoritative reset is infrastructure, never a domain outcome;
+            # pre-attempt: zero steps, nothing to resynchronize (R6, same channel as env.step)
+            raise InfrastructureFaultError(InfrastructureFault(
+                kind=FaultKind.BACKEND_API_EXCEPTION,
+                message=f"env.reset raised {type(error).__name__}: {error}",
+                source="BoxPushV1Adapter.reset",
+            )) from error
         if not (isinstance(returned, tuple) and len(returned) == 2):
             raise self._malformed(
                 f"env.reset returned {type(returned).__name__} instead of the "

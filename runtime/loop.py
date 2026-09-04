@@ -44,8 +44,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
+from shared.comparison_keys import SymbolicKey, WorldKey
 from shared.contracts import (
     AdvisoryProposal,
     DomainServices,
@@ -66,11 +67,14 @@ from shared.contracts import (
     TrackRequest,
 )
 from shared.discrepancy import ExecutionDiscrepancy
+from shared.divergence import TrackDivergence
 from shared.execution import ExecutionOutcome, ExecutionResult
 from shared.faults import InfrastructureFault, InfrastructureFaultError, FaultKind
 from shared.orchestration_config import ExecutiveDecision, OrchestrationConfig
 from shared.planner_result import PlanFound, PlannerFailure, PlannerResult
+from shared.reports import ConfidenceReport, CoverageReport
 from shared.skills import (
+    CallValidation,
     MalformedCall,
     SymbolicallyInapplicable,
     UngroundedCall,
@@ -229,10 +233,37 @@ class ExecutiveLoopManager[
             self._extra_executive += 1
             self._extra_primitive += int(match.group(1))
 
-    def _entry(self, step: int, snapshot: StateT, **kw: Any) -> TraceEntry[StateT, CallT, TaskT]:
+    def _entry(
+        self,
+        step: int,
+        snapshot: StateT,
+        *,
+        symbolic_result: Optional[PlannerResult] = None,
+        nl_proposal: Optional[RuntimeCall] = None,
+        coverage: Optional[CoverageReport] = None,
+        confidence: Tuple[ConfidenceReport, ...] = (),
+        decision: Optional[ExecutiveDecision] = None,
+        selected_call: Optional[CallT] = None,
+        validation: Optional[CallValidation] = None,
+        predicted_world_key: Optional[WorldKey] = None,
+        predicted_symbolic_key: Optional[SymbolicKey] = None,
+        execution: Optional[ExecutionResult[StateT, CallT]] = None,
+        post_state: Optional[StateT] = None,
+        discrepancies: Tuple[ExecutionDiscrepancy[CallT], ...] = (),
+        divergences: Tuple[TrackDivergence, ...] = (),
+        faults: Tuple[InfrastructureFault, ...] = (),
+    ) -> TraceEntry[StateT, CallT, TaskT]:
+        """Trace assembly, typed column by column (R6): every value the loop records is
+        checked against the entry's parameters at the call site, not erased through `**kw`."""
         entry: TraceEntry[StateT, CallT, TaskT] = TraceEntry(
             executive_step=step, task=self.task, pre_state=snapshot,
-            model_version=self.domain.model_version, provenance=self.provenance, **kw,
+            model_version=self.domain.model_version, provenance=self.provenance,
+            symbolic_result=symbolic_result, nl_proposal=nl_proposal, coverage=coverage,
+            confidence=confidence, decision=decision, selected_call=selected_call,
+            validation=validation, predicted_world_key=predicted_world_key,
+            predicted_symbolic_key=predicted_symbolic_key, execution=execution,
+            post_state=post_state, discrepancies=discrepancies, divergences=divergences,
+            faults=faults,
         )
         self.history.append(entry)
         return entry

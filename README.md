@@ -78,4 +78,7 @@ the legacy runner's silent-fallback patterns are exactly what the V1 typed contr
 and the partial-observability belief machinery is capital for post-V1 milestones (its known
 defects are recorded in section18 before any revival).
 
-Python 3.12, Linux/WSL2; dependencies pinned exactly in `requirements.txt`.
+Python 3.12, Linux/WSL2; dependencies pinned exactly in `requirements.txt` and mirrored in
+`pyproject.toml`, with the full transitive environment locked (hashes included) in `uv.lock`
+— `uv sync --locked` restores it; CI (`.github/workflows/offline-tests.yml`) runs the offline
+suite plus `ruff check shared runtime app` and `mypy` (scope in `pyproject.toml`) from that lock.
