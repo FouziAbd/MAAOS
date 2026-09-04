@@ -18,6 +18,7 @@ from typing import Any, Mapping, Union
 
 from shared.backend_contract import V1Environment
 from shared.contracts import (
+    DomainServices,
     Environment,
     Halt,
     OrchestrationContext,
@@ -38,7 +39,8 @@ from shared.task import Task
 
 from nl.recovery import propose_recovery
 from nl.track import NLProposal, NLTrack
-from runtime.comparator import DEFAULT_COMPARATOR, BoxPushActionComparator
+from app.box_push_v1 import BoxPushDomainServices
+from app.comparator import DEFAULT_COMPARATOR, BoxPushActionComparator
 from runtime.policies import AdvisoryTwoTrackPolicy, SymbolicPrimaryPolicy
 from symbolic import ExactSymbolicBelief
 
@@ -52,6 +54,7 @@ V1EnvironmentContract = Environment[
 V1SymbolicTrackContract = SymbolicTrack[StateSnapshot, SymbolicState]
 V1ReasoningTrackContract = ReasoningTrack[StateSnapshot, Task, NLProposal]
 V1PolicyContract = OrchestrationPolicyContract[StateSnapshot, GroundedSkillCall, NLProposal]
+V1DomainServicesContract = DomainServices[StateSnapshot, SymbolicState, GroundedSkillCall]
 
 
 def environment_conforms(env: V1Environment) -> V1EnvironmentContract:
@@ -62,6 +65,11 @@ def environment_conforms(env: V1Environment) -> V1EnvironmentContract:
 
 def symbolic_track_conforms(belief: ExactSymbolicBelief) -> V1SymbolicTrackContract:
     return belief
+
+
+def domain_services_conform(services: BoxPushDomainServices) -> V1DomainServicesContract:
+    """R4: the BoxPush domain-services bundle satisfies the generic contract statically."""
+    return services
 
 
 def reasoning_track_conforms(track: NLTrack) -> V1ReasoningTrackContract:

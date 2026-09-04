@@ -1,7 +1,7 @@
 ---
 paths:
   - "nl/**/*"
-  - "runtime/**/*comparator*"
+  - "app/**/*comparator*"
   - "runtime/**/*orchestrator*"
   - "tests/**/*nl*"
   - "tests/**/*track*"

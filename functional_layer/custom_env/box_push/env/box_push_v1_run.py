@@ -1,6 +1,6 @@
 """Human-watchable V1 executive run — the V1 counterpart of the legacy runner's demo.
 
-Runs the P4 `ExecutiveLoopManager` over the real backend with pygame rendering, printing each
+Runs the P4 executive loop over the real backend with pygame rendering, printing each
 executive cycle as it happens. Unlike the legacy runner this needs NO LLM: the symbolic track
 plans, and under the advisory policy the deterministic NL RecoveryProposer supplies the
 livelock escape.
@@ -19,6 +19,11 @@ only the RecoveryProposer's advice is ever executed (through the same gates as a
 
 Lives on the legacy side of the import guards BY DESIGN: guarded packages may not import the
 backend, so a demo that owns both the env config and the loop belongs here, like the adapter.
+
+R4: the runner constructs the backend adapter and hands it to the BoxPush composition root
+(`app.box_push_v1.build_loop`), which assembles the domain services, symbolic track,
+comparator, recovery provider, and policy and injects them into the generic loop. The
+runtime core itself is never told about BoxPush.
 """
 import argparse
 import os
@@ -34,8 +39,8 @@ for _p in (_ROOT, _THIS):
 from box_push_env import EnvConfig                                   # noqa: E402
 from box_push_v1_adapter import BoxPushV1Adapter, _default_config    # noqa: E402
 
+from app.box_push_v1 import build_loop                               # noqa: E402
 from domain.box_push_v1 import TASK_DELIVER_BOTH                     # noqa: E402
-from runtime.loop import ExecutiveLoopManager                        # noqa: E402
 from shared.orchestration_config import (                            # noqa: E402
     OrchestrationConfig,
     OrchestrationPolicy,
@@ -96,7 +101,7 @@ def main() -> None:
         max_steps=base.max_steps, agent_view_size=base.agent_view_size,
         render_mode=None if args.headless else "human", seed=base.seed,
     )
-    loop = ExecutiveLoopManager(
+    loop = build_loop(
         _WatchableAdapter(config, args.delay), TASK_DELIVER_BOTH,
         OrchestrationConfig(policy=OrchestrationPolicy(args.policy)),
         nl_track=nl_track,

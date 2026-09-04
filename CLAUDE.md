@@ -31,6 +31,10 @@ The supported Symbolic-Twin V1 runtime is the code under:
 - `symbolic/`
 - `nl/`
 - `runtime/`
+- `app/` — composition root; `app.box_push_v1.build_loop` assembles the BoxPush
+  environment, tracks, comparator, equivalence, recovery provider and policy over
+  the domain-agnostic `runtime/`. The only package that may import both `runtime/`
+  and `domain/`
 - `functional_layer/custom_env/box_push/env/box_push_v1_adapter.py`
 - `functional_layer/custom_env/box_push/env/box_push_v1_run.py`
 

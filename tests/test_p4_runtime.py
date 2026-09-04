@@ -46,7 +46,8 @@ from shared.skills import (
     SymbolicallyInapplicable,
     ValidatedCall,
 )
-from runtime.comparator import compare_tracks
+from app.box_push_v1 import BoxPushDomainServices, build_loop
+from app.comparator import compare_tracks
 from runtime.loop import EpisodeOutcome, ExecutiveLoopManager
 from runtime.orchestrator import decide
 
@@ -158,13 +159,13 @@ class TestOrchestratorRouting(unittest.TestCase):
 # ── loop fault/budget/rejection paths ──────────────────────────────────────────────
 
 class _PlannerFailureLoop(ExecutiveLoopManager):
-    def _plan(self):
+    def _plan(self, snapshot):
         return PlannerFailure(error="injected: solver crashed", timed_out=False)
 
 
 class _InapplicableHeadLoop(ExecutiveLoopManager):
     """Planner that always proposes a symbolically inapplicable head (Push without pose)."""
-    def _plan(self):
+    def _plan(self, snapshot):
         return PlanFound(plan=(GroundedSkillCall(
             SkillName.PUSH, (AGENT_0,), BOX_HEAVY, DELIVERY_ZONE),))
 
@@ -237,7 +238,8 @@ class _CaseAEnv:
 
 class TestLoopFaultAndBudgetPaths(unittest.TestCase):
     def test_planner_failure_becomes_a_typed_fault_and_short_circuits(self):
-        loop = _PlannerFailureLoop(BoxPushV1Adapter(), TASK_DELIVER_BOTH)
+        loop = build_loop(BoxPushV1Adapter(), TASK_DELIVER_BOTH,
+                          loop_class=_PlannerFailureLoop)
         episode = loop.run()
         self.assertIs(episode.outcome, EpisodeOutcome.FAULTED)
         (fault,) = episode.history.entries[-1].faults
@@ -251,8 +253,11 @@ class TestLoopFaultAndBudgetPaths(unittest.TestCase):
         from symbolic import Universe
         task = Task(task_id="heavy-solo", description="Deliver the heavy box",
                     goal_delivered=(BOX_HEAVY,), zone=DELIVERY_ZONE)
-        loop = ExecutiveLoopManager(BoxPushV1Adapter(), task)
-        loop._universe = Universe(agents=(AGENT_0,), boxes=(BOX_HEAVY,), zone=DELIVERY_ZONE)
+        loop = build_loop(
+            BoxPushV1Adapter(), task,
+            domain=BoxPushDomainServices(task, universe=Universe(
+                agents=(AGENT_0,), boxes=(BOX_HEAVY,), zone=DELIVERY_ZONE)),
+        )
         episode = loop.run()
         self.assertIs(episode.outcome, EpisodeOutcome.HALTED_NO_PLAN)
         self.assertIn("semantic result", episode.reason)
@@ -263,9 +268,10 @@ class TestLoopFaultAndBudgetPaths(unittest.TestCase):
 
     def test_rejection_guard_bounds_free_replans(self):
         """Decision 2: pre-executor rejections are free, so the loop must bound them."""
-        loop = _InapplicableHeadLoop(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(max_rejections_per_cycle=2),
+            loop_class=_InapplicableHeadLoop,
         )
         episode = loop.run()
         self.assertIs(episode.outcome, EpisodeOutcome.FAULTED)
@@ -275,7 +281,7 @@ class TestLoopFaultAndBudgetPaths(unittest.TestCase):
         self.assertEqual(loop.executive_steps_charged, 0)
 
     def test_case_c_fault_charges_one_executive_and_the_detail_primitives(self):
-        loop = ExecutiveLoopManager(_CaseCEnv(), TASK_DELIVER_BOTH)
+        loop = build_loop(_CaseCEnv(), TASK_DELIVER_BOTH)
         episode = loop.run()
         self.assertIs(episode.outcome, EpisodeOutcome.FAULTED)
         self.assertEqual(loop.executive_steps_charged, 1)      # charged from fault provenance
@@ -291,7 +297,7 @@ class TestLoopFaultAndBudgetPaths(unittest.TestCase):
         """Kills L13: a budget checked against RECORDED accounting alone under-charges exactly
         the case-(c) attempts a budget exists for (runtime/executive_history.py's own warning).
         Here the ONLY charge is the case-(c) fault — recorded sums stay 0."""
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             _CaseCEnv(), TASK_DELIVER_BOTH,
             OrchestrationConfig(executive_step_budget=1,
                                 halt_on_infrastructure_fault=False),
@@ -305,10 +311,11 @@ class TestLoopFaultAndBudgetPaths(unittest.TestCase):
         """Kills L14: in continue mode a permanently failing planner charges nothing, so no
         budget can end the episode — only the cross-cycle liveness guard can. (With the guard
         disabled this test HANGS, which the mutation harness counts as a kill via timeout.)"""
-        loop = _PlannerFailureLoop(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(halt_on_infrastructure_fault=False,
                                 max_rejections_per_cycle=3),
+            loop_class=_PlannerFailureLoop,
         )
         episode = loop.run()
         self.assertIs(episode.outcome, EpisodeOutcome.FAULTED)
@@ -334,7 +341,7 @@ class TestLoopFaultAndBudgetPaths(unittest.TestCase):
         self.assertNotIn("pre_symbolic = project(", source)
 
     def test_fault_continue_mode_survives_the_fault_and_completes(self):
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             _CaseCEnv(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK,
                                 halt_on_infrastructure_fault=False),
@@ -346,7 +353,7 @@ class TestLoopFaultAndBudgetPaths(unittest.TestCase):
     def test_case_a_fault_records_the_attached_result_and_charges_recorded_accounting(self):
         """Architecture review F1: a case-(a) fault's attached ExecutionResult IS the record —
         one executive step via RECORDED accounting (never _charge_case_c), post-state kept."""
-        loop = ExecutiveLoopManager(_CaseAEnv(), TASK_DELIVER_BOTH)
+        loop = build_loop(_CaseAEnv(), TASK_DELIVER_BOTH)
         episode = loop.run()
         self.assertIs(episode.outcome, EpisodeOutcome.FAULTED)
         entry = episode.history.entries[-1]
@@ -366,7 +373,7 @@ class TestLoopFaultAndBudgetPaths(unittest.TestCase):
     def test_case_a_in_continue_mode_needs_no_redundant_reestablishment(self):
         """W4 follow-through: with record_outcome applied on the case-(a) path, the episode
         completes in the normal 9 steps — before the fix the lost in_pose cost a 10th."""
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             _CaseAEnv(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK,
                                 halt_on_infrastructure_fault=False),
@@ -389,7 +396,7 @@ class TestLoopFaultAndBudgetPaths(unittest.TestCase):
                     ), result=result)
                 return result
 
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             _CaseAFailEnv(), TASK_DELIVER_BOTH,
             OrchestrationConfig(halt_on_infrastructure_fault=False),
         )
@@ -407,7 +414,7 @@ class TestLoopFaultAndBudgetPaths(unittest.TestCase):
     def test_no_recovery_advice_halts_instead_of_spinning(self):
         """Test review F2 (public path): repeated failure of a NON-consuming skill under
         advisory yields no recovery advice; the loop must HALT, not spin REQUEST_PROPOSAL."""
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             _FailingGotoEnv(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK),
         )
@@ -423,7 +430,7 @@ class TestLoopFaultAndBudgetPaths(unittest.TestCase):
     def test_primitive_budget_exhausts(self):
         """Test review F1: the primitive branch was shipped dead — a wait/wait-style episode
         is bounded by the EXECUTIVE budget, but primitive-heavy skills need this one."""
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(primitive_step_budget=5),
         )
@@ -435,7 +442,7 @@ class TestLoopFaultAndBudgetPaths(unittest.TestCase):
     def test_goal_wins_the_budget_tie(self):
         """DECIDED (review X10): the goal test is free, so a completed task reports
         GOAL_REACHED even when the budget is simultaneously exhausted."""
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK,
                                 executive_step_budget=9),   # exactly the episode's step count
@@ -463,10 +470,11 @@ class TestLoopFaultAndBudgetPaths(unittest.TestCase):
                     self._pending_recovery = (stale,)
                 return super()._run_cycle(step, snapshot)
 
-        loop = _StaleAdviceLoop(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK,
                                 max_rejections_per_cycle=3),
+            loop_class=_StaleAdviceLoop,
         )
         episode = loop.run()
         self.assertIs(episode.outcome, EpisodeOutcome.GOAL_REACHED)
@@ -477,7 +485,7 @@ class TestLoopFaultAndBudgetPaths(unittest.TestCase):
     def test_ungrounded_fault_drops_pending_recovery_in_continue_mode(self):
         """Test review X5: ghost advice must not stand after its fault, or continue mode
         loops on it until the liveness guard fires with a misleading reason."""
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(halt_on_infrastructure_fault=False),
         )
@@ -493,7 +501,7 @@ class TestLoopFaultAndBudgetPaths(unittest.TestCase):
         """§19.1 item 4, directly exercised (test review W7): the escape is unreachable in the
         single-zone V1 domain, so the wrap is pinned at the unit seam."""
         from shared.ids import ZoneId
-        loop = ExecutiveLoopManager(BoxPushV1Adapter(), TASK_DELIVER_BOTH)
+        loop = build_loop(BoxPushV1Adapter(), TASK_DELIVER_BOTH)
         loop.env.reset()
         loop._sync()
         alien = GroundedSkillCall(SkillName.PUSH, (AGENT_0,), BOX_LIGHT, ZoneId("mars"))
@@ -536,7 +544,7 @@ class TestLoopFaultAndBudgetPaths(unittest.TestCase):
         self.assertIn("standing_recovery=self._pending_recovery[0]", source)
 
     def test_executive_budget_exhausts(self):
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(executive_step_budget=2),
         )
@@ -547,7 +555,7 @@ class TestLoopFaultAndBudgetPaths(unittest.TestCase):
     def test_ghost_identity_routes_as_missing_grounding_before_applicability(self):
         """§19.1 item 5, loop-driven case 4: grounding gate FIRST, typed fault, cycle
         short-circuited, backend untouched."""
-        loop = ExecutiveLoopManager(BoxPushV1Adapter(), TASK_DELIVER_BOTH)
+        loop = build_loop(BoxPushV1Adapter(), TASK_DELIVER_BOTH)
         loop.env.reset()
         snapshot = loop._sync()
         ghost = GroundedSkillCall(SkillName.PUSH, (AGENT_0,), BoxId.parse("box_9"), DELIVERY_ZONE)
@@ -564,7 +572,7 @@ class TestLoopFaultAndBudgetPaths(unittest.TestCase):
     def test_stale_recovery_advice_is_dropped_on_inapplicability(self):
         """Case 3, loop-driven: an inapplicable standing call is a typed REPLAN entry with
         zero steps; the loop recovers by replanning, not by faulting."""
-        loop = ExecutiveLoopManager(BoxPushV1Adapter(), TASK_DELIVER_BOTH)
+        loop = build_loop(BoxPushV1Adapter(), TASK_DELIVER_BOTH)
         loop.env.reset()
         snapshot = loop._sync()
         stale = GroundedSkillCall(SkillName.PUSH, (AGENT_0,), BOX_HEAVY, DELIVERY_ZONE)
@@ -625,7 +633,7 @@ class _ObserveExplodingTrack(_StubNLTrack):
 class TestAdvisoryComparatorThroughTheLoop(unittest.TestCase):
     def test_divergences_are_recorded_on_executed_entries(self):
         proposals = [_proposal(PUSH, confidence=0.4)] * 40     # contradiction + low confidence
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK),
             nl_track=_StubNLTrack(proposals),
@@ -656,7 +664,7 @@ class TestAdvisoryComparatorThroughTheLoop(unittest.TestCase):
         COVERAGE_GAP divergence. The observe-first fix is proven en passant: without it the
         error would be the RuntimeError precondition, not the typed fixture miss."""
         from nl import NLTrack, RecordedLM
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK),
             nl_track=NLTrack(RecordedLM()),
@@ -679,7 +687,7 @@ class TestAdvisoryComparatorThroughTheLoop(unittest.TestCase):
             SkillName.GOTO_PUSH_POSE, (AGENT_0,), BOX_HEAVY, DELIVERY_ZONE
         )
         agreeing = _proposal(first_head)
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK),
             nl_track=_StubNLTrack([agreeing] * 40),
@@ -713,7 +721,7 @@ class TestAdvisoryComparatorThroughTheLoop(unittest.TestCase):
                 return self._inner.export_full_state()
 
         env = _CountingEnv()
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             env, TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK),
         )
@@ -745,7 +753,7 @@ class TestAdvisoryComparatorThroughTheLoop(unittest.TestCase):
                 return self._inner.execute_skill(call)
 
         env = _ExecCountingEnv()
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             env, TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK),
             nl_track=_ExplodingNLTrack(),
@@ -781,7 +789,7 @@ class TestAdvisoryComparatorThroughTheLoop(unittest.TestCase):
         rejected is a typed NLProposal.malformed → COVERAGE_GAP through the comparator —
         never an infrastructure fault, and execution proceeds normally."""
         malformed = _proposal(malformed=MalformedCall("garbage from the LM", raw="x"))
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK),
             nl_track=_StubNLTrack([malformed] * 40),
@@ -800,7 +808,7 @@ class TestAdvisoryComparatorThroughTheLoop(unittest.TestCase):
     def test_nl_fault_preserves_the_original_exception_as_cause(self):
         """`raise ... from error`: the typed wrap must not orphan the real traceback."""
         original = ValueError("seam blew up mid-request")
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK),
             nl_track=_ExplodingNLTrack(original),
@@ -814,7 +822,7 @@ class TestAdvisoryComparatorThroughTheLoop(unittest.TestCase):
 
     def test_symbolic_primary_never_consults_the_nl_track(self):
         track = _StubNLTrack([])
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.SYMBOLIC_PRIMARY),
             nl_track=track,
@@ -830,7 +838,7 @@ class TestAdvisoryComparatorThroughTheLoop(unittest.TestCase):
 
 class TestObserveFaultBoundary(unittest.TestCase):
     def _advisory(self, env, track, **cfg):
-        return ExecutiveLoopManager(
+        return build_loop(
             env, TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK, **cfg),
             nl_track=track,

@@ -1,6 +1,7 @@
 ---
 paths:
   - "runtime/**/*"
+  - "app/**/*"
   - "shared/**/*"
   - "domain/**/*"
   - "symbolic/**/*"

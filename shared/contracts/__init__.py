@@ -1,9 +1,9 @@
-"""shared.contracts — the R1 narrow typed contracts (report Phase 1).
+"""shared.contracts — the narrow typed contracts (report Phase 1, extended by R3/R4).
 
-Six protocols plus the immutable contexts and typed decision variants the target
-architecture composes against. Introduced WITHOUT behavior change: the V1 runtime keeps
-its current wiring until the owning phases (R2 policies, R3 comparison lifecycle, R4
-injection/composition) consume these contracts.
+The R1 protocols plus the immutable contexts and typed decision variants the target
+architecture composes against, consumed phase by phase: R2 policies, R3 the comparison
+lifecycle, R4 the domain-services bundle and constructor injection of every variable
+component into the generic runtime.
 
 Rules embodied here:
 - generic only in the domain-owned types the report names (state, call/action, execution
@@ -24,6 +24,7 @@ from shared.contracts.comparison import (
     ProposalComparator,
     RecoveryProvider,
 )
+from shared.contracts.domain import DomainServices, Prediction
 from shared.contracts.environment import Environment
 from shared.contracts.policy import (
     Execute,
@@ -40,6 +41,8 @@ from shared.contracts.tracks import ReasoningTrack, SymbolicTrack
 
 __all__ = [
     "Environment",
+    "DomainServices",
+    "Prediction",
     "SymbolicTrack",
     "ReasoningTrack",
     "ActionEquivalence",

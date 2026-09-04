@@ -98,7 +98,7 @@ class TestShippedComponentsSatisfyTheProtocols(unittest.TestCase):
         # satisfied by the scoped BoxPushActionComparator instance (the legacy
         # compare_tracks function remains only as a divergence-tuple wrapper over it).
         from nl.recovery import propose_recovery
-        from runtime.comparator import DEFAULT_COMPARATOR
+        from app.comparator import DEFAULT_COMPARATOR
         self.assertIsInstance(DEFAULT_COMPARATOR, ProposalComparator)
         self.assertIsInstance(propose_recovery, RecoveryProvider)
         self.assertIs(contract_conformance.comparator_conforms, DEFAULT_COMPARATOR)

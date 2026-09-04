@@ -21,6 +21,15 @@ here, with the P4-binding decisions from `docs/decisions/P0_V1_DECISIONS.md` §1
     `faults_since` accessor exists for cycle logic but the V1 loop does not yet consume it —
     :163 is permissive), failures through `failure_count`. One attempt never escalates
     through both channels.
+
+R4 (report Phase 4): this module is the GENERIC runtime core. It imports only `shared`
+contracts and the domain-independent runtime helpers; every domain-owned operation
+(planning, grounding, applicability, prediction, monitoring, the model version) reaches it
+through the injected `DomainServices`, the symbolic belief through the injected
+`SymbolicTrack`, and the comparator / recovery provider / policy through their own
+contracts. The loop names no domain concept: it never reads an agent, box, or zone. The
+BoxPush application is assembled in the composition root `app/box_push_v1.py`; the import
+boundary is enforced by `tests/test_r4_composition.py`.
 """
 from __future__ import annotations
 
@@ -33,13 +42,17 @@ from shared.backend_contract import V1Environment
 from shared.discrepancy import ExecutionDiscrepancy
 from shared.execution import ExecutionResult
 from shared.contracts import (
+    DomainServices,
     Halt,
     OrchestrationContext,
     OrchestrationPolicyContract,
     PolicyDecision,
     PreliminaryContext,
+    ProposalComparator,
+    RecoveryProvider,
     Replan,
     RequestProposal,
+    SymbolicTrack,
     TrackRequest,
 )
 from shared.faults import InfrastructureFault, InfrastructureFaultError, FaultKind
@@ -53,19 +66,13 @@ from shared.skills import (
     ValidatedCall,
 )
 from shared.state_snapshot import StateSnapshot
-from shared.symbolic_state import GroundedLiteral
 from shared.task import Task
 from shared.trace_schema import TraceEntry
-from shared.versioning import ModelVersion, Provenance
+from shared.versioning import Provenance
 
-from domain.box_push_v1 import DOMAIN_IR, MODEL_VERSION, PROJECTION, project
-from nl.recovery import propose_recovery
-from runtime.comparator import DEFAULT_COMPARATOR
 from runtime.executive_history import ExecutiveHistory
 from runtime.executor import execute
 from runtime.policies import build_policy
-from symbolic import ExactSymbolicBelief, Universe, evaluate, monitor_execution, plan
-from symbolic.predictor import predict_symbolic, predict_world_candidates
 
 _CASE_C_KEY = re.compile(r"primitive_steps_before_failure=(\d+)")
 
@@ -89,16 +96,36 @@ class EpisodeResult:
 class ExecutiveLoopManager:
     """Deterministic sequential V1 executive loop over an injected `V1Environment`.
 
-    The environment arrives by INJECTION: this package cannot import the backend (the
-    fail-closed import guard), which structurally separates the loop from any concrete
-    environment. The orchestration POLICY arrives the same way (R2): pass any
-    `OrchestrationPolicyContract` object, or omit it and the registry in
-    `runtime/policies.py` builds the one named by `config.policy` — the loop itself never
-    dispatches on the policy enum. For the optional `nl_track`, `propose()` is consulted
-    only when the policy's `required_inputs()` requests the advisory proposal; `observe()`
-    feeds the attached track under ANY policy (data flows loop->NL only, LM-free), and an
-    observe() failure is an infrastructure fault — so a SYMBOLIC_PRIMARY episode with an
-    attached track can legitimately FAULT on it.
+    Every variable component arrives by INJECTION (R4 completes what R2 began):
+
+      - `env`: this package cannot import the backend (the fail-closed import guard), which
+        structurally separates the loop from any concrete environment.
+      - `domain` (keyword-only, required): the `DomainServices` bundle — planning,
+        grounding, applicability, prediction, monitoring, model version. The loop holds no
+        domain constant and applies no domain function of its own.
+      - `symbolic_track` (keyword-only, required): the belief-holding `SymbolicTrack`,
+        synced from the authoritative state before every use.
+      - `policy` (R2): any `OrchestrationPolicyContract` object, or omit it and the
+        registry in `runtime/policies.py` builds the one named by `config.policy` — the
+        loop itself never dispatches on the policy enum.
+      - `comparator` (R3 evidence, R4 injection): required whenever an `nl_track` is
+        attached — a requested proposal must be comparable — and unused otherwise.
+      - `recovery_provider`: consulted only on a REQUEST_PROPOSAL decision; with none
+        injected, no recovery advice exists and the loop halts exactly as it does when the
+        provider returns nothing.
+
+    For the optional `nl_track`, `propose()` is consulted only when the policy's
+    `required_inputs()` requests the advisory proposal; `observe()` feeds the attached
+    track under ANY policy (data flows loop->NL only, LM-free), and an observe() failure is
+    an infrastructure fault — so a SYMBOLIC_PRIMARY episode with an attached track can
+    legitimately FAULT on it.
+
+    A policy that overrides `decide()` owns re-declaring `required_inputs()`: the shipped
+    policies derive their request from their own routing, and a subclass overriding only
+    one of the two inherits a request that matches the BASE routing, not its own.
+
+    The BoxPush assembly is `app.box_push_v1.build_loop`; this class is the same for any
+    domain that supplies the contracts.
     """
 
     def __init__(
@@ -109,24 +136,31 @@ class ExecutiveLoopManager:
         nl_track=None,
         provenance: Optional[Provenance] = None,
         policy: Optional[OrchestrationPolicyContract] = None,
+        *,
+        domain: DomainServices,
+        symbolic_track: SymbolicTrack,
+        comparator: Optional[ProposalComparator] = None,
+        recovery_provider: Optional[RecoveryProvider] = None,
     ) -> None:
+        if nl_track is not None and comparator is None:
+            raise TypeError(
+                "an attached nl_track requires an injected comparator: a requested "
+                "proposal must be comparable — compose one at the application boundary"
+            )
         self.env = env
         self.task = task
         self.config = config or OrchestrationConfig()
         self.policy = policy if policy is not None else build_policy(self.config)
-        # DEFERRED(R4): the composition root owns injecting the comparator; until then the
-        # loop composes the default (domain equivalence + documented threshold) itself.
-        self._comparator = DEFAULT_COMPARATOR
+        self.domain = domain
+        self.comparator = comparator
+        self.recovery_provider = recovery_provider
         self.nl_track = nl_track
         self.history = ExecutiveHistory()
-        self.belief = ExactSymbolicBelief(DOMAIN_IR, PROJECTION, project)
+        self.belief = symbolic_track
         self.provenance = provenance or Provenance(
-            source="runtime/loop.py::ExecutiveLoopManager", model_version=MODEL_VERSION,
+            source="runtime/loop.py::ExecutiveLoopManager",
+            model_version=domain.model_version,
         )
-        self._goal = frozenset(
-            GroundedLiteral("delivered", (str(b),)) for b in task.goal_delivered
-        )
-        self._universe: Optional[Universe] = None
         # case-(c) charges live OUTSIDE the recorded accounting (see module docstring)
         self._extra_executive = 0
         self._extra_primitive = 0
@@ -154,36 +188,17 @@ class ExecutiveLoopManager:
     def _sync(self) -> StateSnapshot:
         snapshot = self.env.export_full_state()
         self.belief.sync(snapshot)
-        if self._universe is None:
-            self._universe = Universe.from_snapshot(snapshot, self.task.zone)
         return snapshot
 
-    def _plan(self) -> PlannerResult:
-        return plan(DOMAIN_IR, self.belief.state, self._goal, self._universe, MODEL_VERSION)
-
-    def _ground_check(self, snapshot: StateSnapshot, call: GroundedSkillCall):
-        """§19.1 item 5: grounding-vs-universe BEFORE symbolic applicability."""
-        known_agents = {a.agent_id for a in snapshot.agents}
-        known_boxes = {b.box_id for b in snapshot.boxes}
-        for agent in call.agents:
-            if agent not in known_agents:
-                return UngroundedCall(reason=f"unknown agent {agent} in {call}", call=call)
-        if call.box is not None and call.box not in known_boxes:
-            return UngroundedCall(reason=f"unknown box {call.box} in {call}", call=call)
-        if call.zone is not None and call.zone != self.task.zone:
-            return UngroundedCall(
-                reason=f"zone identity mismatch: {call.zone} is not the task zone in {call}",
-                call=call,
-            )
-        return None
+    def _plan(self, snapshot: StateSnapshot) -> PlannerResult:
+        """The domain's plan channel for the current belief (the synced snapshot travels
+        with it so the domain can fix its grounding universe)."""
+        return self.domain.plan(self.belief.state, snapshot)
 
     def _monitor(self, pre_symbolic, result: ExecutionResult):
         """§19.1 items 3-4: belief in, ValueError wrapped out."""
         try:
-            return monitor_execution(
-                DOMAIN_IR, PROJECTION, project, pre_symbolic, result,
-                self.task.zone, MODEL_VERSION,
-            ), None
+            return self.domain.monitor(pre_symbolic, result), None
         except ValueError as error:
             return (), InfrastructureFault(
                 kind=FaultKind.EXECUTOR_MONITOR_PROTOCOL_FAILURE,
@@ -200,7 +215,7 @@ class ExecutiveLoopManager:
     def _entry(self, step: int, snapshot: StateSnapshot, **kw) -> TraceEntry:
         entry = TraceEntry(
             executive_step=step, task=self.task, pre_state=snapshot,
-            model_version=MODEL_VERSION, provenance=self.provenance, **kw,
+            model_version=self.domain.model_version, provenance=self.provenance, **kw,
         )
         self.history.append(entry)
         return entry
@@ -276,7 +291,7 @@ class ExecutiveLoopManager:
 
     def _run_cycle(self, step: int, snapshot: StateSnapshot) -> Optional[EpisodeResult]:
         # plan (recovery advice, when standing, pre-empts the head — same gates apply)
-        planner_result = self._plan()
+        planner_result = self._plan(snapshot)
         if isinstance(planner_result, PlannerFailure):
             fault = planner_result.to_infrastructure_fault()   # :156 — infrastructure, typed
             self._entry(step, snapshot, symbolic_result=planner_result, faults=(fault,))
@@ -311,9 +326,9 @@ class ExecutiveLoopManager:
                 acquired = True
             nl_proposal = cached_proposal if request.nl_proposal else None
             comparison = (
-                self._comparator.compare(self._compared_call(preliminary), nl_proposal)
-                if nl_proposal is not None else None
-            )
+                self.comparator.compare(self._compared_call(preliminary), nl_proposal)
+                if nl_proposal is not None and self.comparator is not None else None
+            )                                   # the None arm is unreachable: see __init__
             decision = self.policy.decide(OrchestrationContext(
                 preliminary=preliminary, nl_proposal=nl_proposal, comparison=comparison,
             ))
@@ -350,7 +365,7 @@ class ExecutiveLoopManager:
                     )
                     self._entry(step, snapshot, symbolic_result=planner_result, faults=(fault,))
                     return self._maybe_fault_halt(fault)
-                planner_result = self._plan()
+                planner_result = self._plan(snapshot)
                 if isinstance(planner_result, PlannerFailure):
                     fault = planner_result.to_infrastructure_fault()
                     self._entry(step, snapshot, symbolic_result=planner_result, faults=(fault,))
@@ -361,14 +376,16 @@ class ExecutiveLoopManager:
         call = decision.call
         from_recovery = bool(self._pending_recovery) and call == self._pending_recovery[0]
         # ── grounding gate, then symbolic gate (§19.1 item 5 ordering) ────────────
-        ungrounded = self._ground_check(snapshot, call)
+        # Both verdicts are the DOMAIN's: identities against the authoritative snapshot
+        # first, then symbolic applicability — the loop only routes the typed answers.
+        ungrounded = self.domain.ground(snapshot, call)
         if ungrounded is not None:
             fault = ungrounded.to_infrastructure_fault()
             self._entry(step, snapshot, symbolic_result=planner_result,
                         selected_call=call, validation=ungrounded, faults=(fault,))
             self._pending_recovery = ()
             return self._maybe_fault_halt(fault)
-        verdict = evaluate(DOMAIN_IR, self.belief.state, call)
+        verdict = self.domain.evaluate(self.belief.state, call)
         if isinstance(verdict, SymbolicallyInapplicable):
             # recovery advice can be stale — drop it and record the typed rejection
             self._entry(step, snapshot, symbolic_result=planner_result,
@@ -382,12 +399,9 @@ class ExecutiveLoopManager:
         # Decision 13.6 both-bases predictions, RECORDED for the monitor/trace — computed after
         # the decision, never consulted by it (clause 9: a predictor consulted before choosing
         # is the forbidden oracle; here the choice is already made)
-        predicted = predict_symbolic(DOMAIN_IR, pre_symbolic, call)
-        predicted_symbolic_key = (
-            PROJECTION.monitored_key(predicted) if predicted is not None else None
-        )
-        candidates = predict_world_candidates(snapshot, call, self.task.zone)
-        predicted_world_key = candidates[0].world_key() if candidates else None
+        prediction = self.domain.predict(pre_symbolic, snapshot, call)
+        predicted_symbolic_key = prediction.symbolic_key
+        predicted_world_key = prediction.world_key
         # R3: the proposal and comparison were produced BEFORE the decision (acquisition in
         # the selection loop above); the executed entry records that same evidence.
         divergences = comparison.divergences if comparison is not None else ()
@@ -518,8 +532,8 @@ class ExecutiveLoopManager:
         head_validation = None
         failure_count = 0
         if isinstance(planner_result, PlanFound) and planner_result.plan:
-            head_validation = evaluate(
-                DOMAIN_IR, self.belief.state, planner_result.plan[0]
+            head_validation = self.domain.evaluate(
+                self.belief.state, planner_result.plan[0]
             )
             failure_count = self.history.failure_count(
                 snapshot, planner_result.plan[0]
@@ -544,11 +558,13 @@ class ExecutiveLoopManager:
         return None
 
     def _recovery_for(self, call: GroundedSkillCall) -> Tuple[GroundedSkillCall, ...]:
-        """ADVISORY_TWO_TRACK only: deterministic NL re-establishment advice over the LAST
-        discrepancy for this call (§19.1 item 1 — the livelock escape)."""
+        """On REQUEST_PROPOSAL: the injected provider's advice over the LAST discrepancy for
+        this call (§19.1 item 1 — the livelock escape). No provider, no advice."""
+        if self.recovery_provider is None:
+            return ()
         for discrepancy in reversed(self._all_discrepancies):
             if discrepancy.call == call:
-                return propose_recovery(discrepancy)
+                return tuple(self.recovery_provider(discrepancy))
         return ()
 
     def _advisory_proposal(self, request: TrackRequest):

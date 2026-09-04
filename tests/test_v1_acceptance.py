@@ -36,6 +36,7 @@ for _p in (_REPO_ROOT, _ENV_DIR):
 
 from box_push_v1_adapter import BoxPushV1Adapter
 
+from app.box_push_v1 import build_loop
 from domain.box_push_v1 import (
     AGENT_0,
     AGENT_1,
@@ -306,7 +307,7 @@ def build_traces() -> str:
     from shared.orchestration_config import OrchestrationConfig, OrchestrationPolicy
     from runtime.loop import ExecutiveLoopManager
     for policy in (OrchestrationPolicy.SYMBOLIC_PRIMARY, OrchestrationPolicy.ADVISORY_TWO_TRACK):
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH, OrchestrationConfig(policy=policy)
         )
         episode = loop.run()
@@ -561,7 +562,7 @@ class TestCase7ExecutiveLoop(unittest.TestCase):
         cls.loops = {}
         for policy in (OrchestrationPolicy.SYMBOLIC_PRIMARY,
                        OrchestrationPolicy.ADVISORY_TWO_TRACK):
-            loop = ExecutiveLoopManager(
+            loop = build_loop(
                 BoxPushV1Adapter(), TASK_DELIVER_BOTH, OrchestrationConfig(policy=policy)
             )
             cls.loops[policy] = loop

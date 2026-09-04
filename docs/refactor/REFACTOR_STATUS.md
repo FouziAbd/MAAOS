@@ -4,7 +4,7 @@
 
 Claude Code harness: **refreshed for post-P0-P4 refactoring**
 
-Current refactor phase: **R3 COMPLETE** (next: R4)
+Current refactor phase: **R4 COMPLETE** (next: R5)
 
 The completed Symbolic-Twin V1 implementation phases P0-P4 remain the frozen
 behavioral baseline.
@@ -17,7 +17,7 @@ behavioral baseline.
 | R1 | COMPLETE | Introduce narrow typed contracts without behavior change |
 | R2 | COMPLETE | Extract orchestration policies |
 | R3 | COMPLETE | Correct proposal-comparison lifecycle |
-| R4 | PENDING | Make domain composition explicit |
+| R4 | COMPLETE | Make domain composition explicit |
 | R5 | PENDING | Prove runtime substitutability with a test-only probe domain |
 | R6 | PENDING | Correctness, typing, CI, dependency and legacy hygiene |
 
@@ -34,7 +34,7 @@ phase adds or removes tests.
 
 ## Baseline evidence
 
-Current offline suite: 713 tests, deterministic and offline
+Current offline suite: 744 tests, deterministic and offline
 
 Frozen pristine baseline: commit
 `116d1fdde7b54f5e2f44f98f9f36304c92569162`, captured 2026-09-04 in
