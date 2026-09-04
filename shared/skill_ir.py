@@ -170,11 +170,12 @@ class SkillIR:
             )
 
         declared = set(self.parameters)
-        for p in self.preconditions:
-            unknown = set(p.args) - declared
+        for precondition in self.preconditions:
+            unknown = set(precondition.args) - declared
             if unknown:
                 raise ValueError(
-                    f"{self.name}: precondition {p} references undeclared parameters {sorted(unknown)}"
+                    f"{self.name}: precondition {precondition} references undeclared "
+                    f"parameters {sorted(unknown)}"
                 )
         for e in self.effects:
             unknown = set(e.predicate.args) - declared

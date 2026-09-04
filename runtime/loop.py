@@ -30,48 +30,57 @@ through the injected `DomainServices`, the symbolic belief through the injected
 contracts. The loop names no domain concept: it never reads an agent, box, or zone. The
 BoxPush application is assembled in the composition root `app/box_push_v1.py`; the import
 boundary is enforced by `tests/test_r4_composition.py`.
+
+R6 (report Phase 6 acceptance "core contracts, runtime ... pass static type checking"): the
+loop is generic in the five domain-owned types it handles — authoritative state, symbolic
+state, call, task, advisory proposal — bounded by the structural value protocols
+(`shared/value_contracts.py`) where it reads members, and every injected collaborator is
+typed at those parameters. The composition root fixes them
+(`ExecutiveLoopManager[StateSnapshot, SymbolicState, GroundedSkillCall, Task, NLProposal]`);
+the R5 probe fixes its own. The loop names no concrete type of any domain.
 """
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
-from shared.backend_contract import V1Environment
-from shared.discrepancy import ExecutionDiscrepancy
-from shared.execution import ExecutionResult
 from shared.contracts import (
+    AdvisoryProposal,
     DomainServices,
+    Environment,
     Halt,
     OrchestrationContext,
     OrchestrationPolicyContract,
-    PolicyDecision,
     PreliminaryContext,
     ProposalComparator,
+    ReasoningTrack,
     RecoveryProvider,
     Replan,
     RequestProposal,
+    RuntimeCall,
+    RuntimeState,
     SymbolicTrack,
+    TaskContract,
     TrackRequest,
 )
+from shared.discrepancy import ExecutionDiscrepancy
+from shared.execution import ExecutionOutcome, ExecutionResult
 from shared.faults import InfrastructureFault, InfrastructureFaultError, FaultKind
 from shared.orchestration_config import ExecutiveDecision, OrchestrationConfig
 from shared.planner_result import PlanFound, PlannerFailure, PlannerResult
 from shared.skills import (
-    GroundedSkillCall,
     MalformedCall,
     SymbolicallyInapplicable,
     UngroundedCall,
     ValidatedCall,
 )
-from shared.state_snapshot import StateSnapshot
-from shared.task import Task
 from shared.trace_schema import TraceEntry
 from shared.versioning import Provenance
 
 from runtime.executive_history import ExecutiveHistory
-from runtime.executor import execute
+from runtime.executor import ExecutionAttempt, execute
 from runtime.policies import build_policy
 
 _CASE_C_KEY = re.compile(r"primitive_steps_before_failure=(\d+)")
@@ -86,15 +95,21 @@ class EpisodeOutcome(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class EpisodeResult:
+class EpisodeResult[StateT: RuntimeState, CallT: RuntimeCall, TaskT: TaskContract]:
     outcome: EpisodeOutcome
     reason: str
-    history: ExecutiveHistory
-    discrepancies: Tuple[ExecutionDiscrepancy, ...] = field(default_factory=tuple)
+    history: ExecutiveHistory[StateT, CallT, TaskT]
+    discrepancies: Tuple[ExecutionDiscrepancy[CallT], ...] = field(default_factory=tuple)
 
 
-class ExecutiveLoopManager:
-    """Deterministic sequential V1 executive loop over an injected `V1Environment`.
+class ExecutiveLoopManager[
+    StateT: RuntimeState,
+    SymbolicStateT,
+    CallT: RuntimeCall,
+    TaskT: TaskContract,
+    ProposalT: AdvisoryProposal,
+]:
+    """Deterministic sequential V1 executive loop over an injected `Environment`.
 
     Every variable component arrives by INJECTION (R4 completes what R2 began):
 
@@ -130,17 +145,17 @@ class ExecutiveLoopManager:
 
     def __init__(
         self,
-        env: V1Environment,
-        task: Task,
+        env: Environment[StateT, CallT, ExecutionAttempt[StateT, CallT], object],
+        task: TaskT,
         config: Optional[OrchestrationConfig] = None,
-        nl_track=None,
+        nl_track: Optional[ReasoningTrack[StateT, TaskT, ProposalT]] = None,
         provenance: Optional[Provenance] = None,
-        policy: Optional[OrchestrationPolicyContract] = None,
+        policy: Optional[OrchestrationPolicyContract[StateT, CallT, ProposalT]] = None,
         *,
-        domain: DomainServices,
-        symbolic_track: SymbolicTrack,
-        comparator: Optional[ProposalComparator] = None,
-        recovery_provider: Optional[RecoveryProvider] = None,
+        domain: DomainServices[StateT, SymbolicStateT, CallT],
+        symbolic_track: SymbolicTrack[StateT, SymbolicStateT],
+        comparator: Optional[ProposalComparator[CallT, ProposalT]] = None,
+        recovery_provider: Optional[RecoveryProvider[CallT]] = None,
     ) -> None:
         if nl_track is not None and comparator is None:
             raise TypeError(
@@ -155,7 +170,7 @@ class ExecutiveLoopManager:
         self.comparator = comparator
         self.recovery_provider = recovery_provider
         self.nl_track = nl_track
-        self.history = ExecutiveHistory()
+        self.history: ExecutiveHistory[StateT, CallT, TaskT] = ExecutiveHistory()
         self.belief = symbolic_track
         self.provenance = provenance or Provenance(
             source="runtime/loop.py::ExecutiveLoopManager",
@@ -164,8 +179,8 @@ class ExecutiveLoopManager:
         # case-(c) charges live OUTSIDE the recorded accounting (see module docstring)
         self._extra_executive = 0
         self._extra_primitive = 0
-        self._pending_recovery: Tuple[GroundedSkillCall, ...] = ()
-        self._all_discrepancies: list = []
+        self._pending_recovery: Tuple[CallT, ...] = ()
+        self._all_discrepancies: List[ExecutionDiscrepancy[CallT]] = []
         self._zero_progress_cycles = 0
 
     # ── budgets (recorded sums + case-(c) charges) ────────────────────────────────
@@ -185,17 +200,19 @@ class ExecutiveLoopManager:
         return None
 
     # ── wiring helpers ────────────────────────────────────────────────────────────
-    def _sync(self) -> StateSnapshot:
+    def _sync(self) -> StateT:
         snapshot = self.env.export_full_state()
         self.belief.sync(snapshot)
         return snapshot
 
-    def _plan(self, snapshot: StateSnapshot) -> PlannerResult:
+    def _plan(self, snapshot: StateT) -> PlannerResult:
         """The domain's plan channel for the current belief (the synced snapshot travels
         with it so the domain can fix its grounding universe)."""
         return self.domain.plan(self.belief.state, snapshot)
 
-    def _monitor(self, pre_symbolic, result: ExecutionResult):
+    def _monitor(
+        self, pre_symbolic: SymbolicStateT, result: ExecutionResult[StateT, CallT]
+    ) -> Tuple[Tuple[ExecutionDiscrepancy[CallT], ...], Optional[InfrastructureFault]]:
         """§19.1 items 3-4: belief in, ValueError wrapped out."""
         try:
             return self.domain.monitor(pre_symbolic, result), None
@@ -212,8 +229,8 @@ class ExecutiveLoopManager:
             self._extra_executive += 1
             self._extra_primitive += int(match.group(1))
 
-    def _entry(self, step: int, snapshot: StateSnapshot, **kw) -> TraceEntry:
-        entry = TraceEntry(
+    def _entry(self, step: int, snapshot: StateT, **kw: Any) -> TraceEntry[StateT, CallT, TaskT]:
+        entry: TraceEntry[StateT, CallT, TaskT] = TraceEntry(
             executive_step=step, task=self.task, pre_state=snapshot,
             model_version=self.domain.model_version, provenance=self.provenance, **kw,
         )
@@ -221,7 +238,7 @@ class ExecutiveLoopManager:
         return entry
 
     # ── the loop ──────────────────────────────────────────────────────────────────
-    def run(self, *, seed: Optional[int] = None) -> EpisodeResult:
+    def run(self, *, seed: Optional[int] = None) -> EpisodeResult[StateT, CallT, TaskT]:
         self.env.reset(seed=seed)
         step = 0
         first = True
@@ -289,7 +306,9 @@ class ExecutiveLoopManager:
             else:
                 self._zero_progress_cycles = 0
 
-    def _run_cycle(self, step: int, snapshot: StateSnapshot) -> Optional[EpisodeResult]:
+    def _run_cycle(
+        self, step: int, snapshot: StateT
+    ) -> Optional[EpisodeResult[StateT, CallT, TaskT]]:
         # plan (recovery advice, when standing, pre-empts the head — same gates apply)
         planner_result = self._plan(snapshot)
         if isinstance(planner_result, PlannerFailure):
@@ -299,7 +318,7 @@ class ExecutiveLoopManager:
 
         rejections = 0
         acquired = False                        # one acquisition per cycle, policy-requested
-        cached_proposal = None
+        cached_proposal: Optional[ProposalT] = None
         while True:
             preliminary = self._preliminary(planner_result, snapshot)
             # ── R3 lifecycle (report Phase 3 item 7): ask the policy which track inputs it
@@ -410,7 +429,8 @@ class ExecutiveLoopManager:
         # comparator has nothing to raise. Recovery provenance keeps priority on nl_proposal
         # (the enacted NL advice IS the proposal); otherwise the advisory call is recorded.
         # Evidence only — nothing here feeds a decision (symbolic-primary unchanged).
-        nl_call_column = call if from_recovery else (
+        # Typed on the RuntimeCall protocol: the advisory call type is track-owned.
+        nl_call_column: Optional[RuntimeCall] = call if from_recovery else (
             nl_proposal.call if nl_proposal is not None else None
         )
         nl_coverage = nl_proposal.coverage if nl_proposal is not None else None
@@ -434,7 +454,7 @@ class ExecutiveLoopManager:
                 # it rather than re-exporting (same instant by construction, not argument)
                 self.belief.sync(error.result.post_state)
                 self.belief.record_outcome(error.result)
-                extra_faults = ()
+                extra_faults: Tuple[InfrastructureFault, ...] = ()
                 try:
                     self._observe(
                         error.result.post_state, str(call.skill), error.result.outcome
@@ -520,8 +540,8 @@ class ExecutiveLoopManager:
 
     # ── selection helpers ─────────────────────────────────────────────────────────
     def _preliminary(
-        self, planner_result: PlannerResult, snapshot: StateSnapshot
-    ) -> PreliminaryContext[StateSnapshot, GroundedSkillCall]:
+        self, planner_result: PlannerResult, snapshot: StateT
+    ) -> PreliminaryContext[StateT, CallT]:
         """Build the immutable pre-acquisition decision situation (R2/R3): the same
         context feeds `required_inputs()`, the comparison, and `decide()`."""
         if self._pending_recovery:
@@ -543,10 +563,9 @@ class ExecutiveLoopManager:
             head_validation=head_validation, failure_count=failure_count,
         )
 
-    @staticmethod
     def _compared_call(
-        preliminary: PreliminaryContext[StateSnapshot, GroundedSkillCall],
-    ) -> Optional[GroundedSkillCall]:
+        self, preliminary: PreliminaryContext[StateT, CallT]
+    ) -> Optional[CallT]:
         """The symbolic side of the R3 pre-decision comparison: the call an Execute
         decision would enact — standing recovery advice when standing, else the plan
         head. This keeps executed-entry divergence evidence computed against THAT
@@ -557,7 +576,7 @@ class ExecutiveLoopManager:
             return preliminary.planner_result.plan[0]
         return None
 
-    def _recovery_for(self, call: GroundedSkillCall) -> Tuple[GroundedSkillCall, ...]:
+    def _recovery_for(self, call: CallT) -> Tuple[CallT, ...]:
         """On REQUEST_PROPOSAL: the injected provider's advice over the LAST discrepancy for
         this call (§19.1 item 1 — the livelock escape). No provider, no advice."""
         if self.recovery_provider is None:
@@ -567,7 +586,7 @@ class ExecutiveLoopManager:
                 return tuple(self.recovery_provider(discrepancy))
         return ()
 
-    def _advisory_proposal(self, request: TrackRequest):
+    def _advisory_proposal(self, request: TrackRequest) -> Optional[ProposalT]:
         if self.nl_track is None or not request.nl_proposal:
             return None
         try:
@@ -588,7 +607,12 @@ class ExecutiveLoopManager:
                 stage="propose",
             )) from error
 
-    def _observe(self, snapshot: StateSnapshot, skill=None, outcome=None) -> None:
+    def _observe(
+        self,
+        snapshot: StateT,
+        skill: Optional[str] = None,
+        outcome: Optional[ExecutionOutcome] = None,
+    ) -> None:
         """WARN-1: the SINGLE typed boundary for `nl_track.observe()` — same principle as
         `_advisory_proposal` (an exception escaping the NL track is infrastructure, never
         reasoning content), but the LIFECYCLE POSITION differs per call site: before any
@@ -616,14 +640,18 @@ class ExecutiveLoopManager:
                 stage="observe",
             )) from error
 
-    def _maybe_fault_halt(self, fault: InfrastructureFault) -> Optional[EpisodeResult]:
+    def _maybe_fault_halt(
+        self, fault: InfrastructureFault
+    ) -> Optional[EpisodeResult[StateT, CallT, TaskT]]:
         """:163 — the fault has already short-circuited the CURRENT cycle (the caller returns
         without executing further). Whether the EPISODE continues is configuration."""
         if self.config.halt_on_infrastructure_fault:
             return self._finish(EpisodeOutcome.FAULTED, f"{fault.kind}: {fault.message}")
         return None
 
-    def _finish(self, outcome: EpisodeOutcome, reason: str) -> EpisodeResult:
+    def _finish(
+        self, outcome: EpisodeOutcome, reason: str
+    ) -> EpisodeResult[StateT, CallT, TaskT]:
         return EpisodeResult(
             outcome=outcome, reason=reason, history=self.history,
             discrepancies=tuple(self._all_discrepancies),

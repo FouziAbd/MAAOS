@@ -7,6 +7,10 @@ The repeated-failure key is `(pre-attempt StateSnapshot, grounded skill)` exactl
 requires, using `StateSnapshot.world_key()` (episode bookkeeping excluded) and
 `GroundedSkillCall.key()`. :118 warns this must not become a hidden symbolic feasibility
 predicate, which is why it lives here and not in `shared/`.
+
+R6: generic in the domain-owned state, call, and task types the entries carry; the key is
+computed through the structural `RuntimeState.world_key()` / `RuntimeCall.key()` members,
+which is all the bookkeeping ever read.
 """
 from __future__ import annotations
 
@@ -14,20 +18,19 @@ from typing import Dict, List, Tuple
 
 from shared.execution import ExecutionOutcome
 from shared.faults import InfrastructureFault
-from shared.skills import GroundedSkillCall
-from shared.state_snapshot import StateSnapshot
 from shared.trace_schema import TraceEntry
+from shared.value_contracts import RuntimeCall, RuntimeState, TaskContract
 
 
-class ExecutiveHistory:
+class ExecutiveHistory[StateT: RuntimeState, CallT: RuntimeCall, TaskT: TaskContract]:
     """Ordered trace plus repeated-failure bookkeeping (:118)."""
 
     def __init__(self) -> None:
-        self._entries: List[TraceEntry] = []
+        self._entries: List[TraceEntry[StateT, CallT, TaskT]] = []
         self._failure_counts: Dict[Tuple[str, str], int] = {}
 
     # ── trace ──────────────────────────────────────────────────────────────────────
-    def append(self, entry: TraceEntry) -> None:
+    def append(self, entry: TraceEntry[StateT, CallT, TaskT]) -> None:
         self._entries.append(entry)
         ex = entry.execution
         if ex is not None:
@@ -40,7 +43,7 @@ class ExecutiveHistory:
                 self._failure_counts[key] = self._failure_counts.get(key, 0) + 1
 
     @property
-    def entries(self) -> Tuple[TraceEntry, ...]:
+    def entries(self) -> Tuple[TraceEntry[StateT, CallT, TaskT], ...]:
         return tuple(self._entries)
 
     def __len__(self) -> int:
@@ -62,10 +65,10 @@ class ExecutiveHistory:
 
     # ── repeated-failure bookkeeping ───────────────────────────────────────────────
     @staticmethod
-    def failure_key(pre_state: StateSnapshot, call: GroundedSkillCall) -> Tuple[str, str]:
+    def failure_key(pre_state: RuntimeState, call: RuntimeCall) -> Tuple[str, str]:
         return (pre_state.world_key(), call.key())
 
-    def failure_count(self, pre_state: StateSnapshot, call: GroundedSkillCall) -> int:
+    def failure_count(self, pre_state: StateT, call: CallT) -> int:
         return self._failure_counts.get(self.failure_key(pre_state, call), 0)
 
     def faults_since(self, executive_step: int) -> Tuple[InfrastructureFault, ...]:

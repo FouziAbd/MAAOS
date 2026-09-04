@@ -20,17 +20,23 @@ bound 0 — and says so.
 """
 from __future__ import annotations
 
-from typing import Union
-
-from shared.backend_contract import V1Environment
+from shared.contracts import Environment
 from shared.execution import ExecutionResult
 from shared.faults import FaultKind, InfrastructureFault, InfrastructureFaultError
-from shared.skills import GroundedSkillCall, MalformedCall, UngroundedCall
+from shared.skills import MalformedCall, UngroundedCall
+from shared.value_contracts import RuntimeCall, RuntimeState
+
+#: The typed outcome union an environment's `execute_skill` returns (R1 `Environment`
+#: contract, R6 typed on the domain-owned state/call): a realized result or a typed
+#: pre-execution rejection. Symbolic applicability verdicts are deliberately absent.
+type ExecutionAttempt[StateT: RuntimeState, CallT: RuntimeCall] = (
+    ExecutionResult[StateT, CallT] | MalformedCall | UngroundedCall[CallT]
+)
 
 
-def execute(
-    env: V1Environment, call: GroundedSkillCall
-) -> Union[ExecutionResult, MalformedCall, UngroundedCall]:
+def execute[StateT: RuntimeState, CallT: RuntimeCall](
+    env: Environment[StateT, CallT, ExecutionAttempt[StateT, CallT], object], call: CallT
+) -> ExecutionAttempt[StateT, CallT]:
     """One executive attempt against the authoritative backend.
 
     Returns the environment's typed result verbatim; `InfrastructureFaultError` propagates to

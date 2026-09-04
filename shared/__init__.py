@@ -90,6 +90,7 @@ from shared.orchestration_config import (
     ExecutiveDecision,
 )
 from shared.backend_contract import V1Environment
+from shared.value_contracts import AdvisoryProposal, RuntimeCall, RuntimeState, TaskContract
 
 __all__ = [
     "ModelVersion", "Provenance", "ModelPatch",
@@ -115,4 +116,7 @@ __all__ = [
     "TraceEntry",
     "OrchestrationConfig", "OrchestrationPolicy", "ExecutiveDecision",
     "PredicateDecl", "V1Environment",
+    # R5/R6 structural contracts for the domain-owned value types (also exported from
+    # `shared.contracts`); R6 moved their definitions to the leaf `shared.value_contracts`
+    "RuntimeState", "RuntimeCall", "TaskContract", "AdvisoryProposal",
 ]

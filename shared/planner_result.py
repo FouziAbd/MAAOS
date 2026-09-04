@@ -12,11 +12,11 @@ different values of one field, so the distinction cannot be lost by accident.
 """
 from __future__ import annotations
 
-from abc import ABC
-from dataclasses import dataclass, field
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
-from shared.skills import GroundedSkillCall
+from shared.value_contracts import RuntimeCall
 from shared.versioning import ModelVersion
 
 
@@ -49,10 +49,16 @@ class PlannerResult(ABC):
     def is_failure(self) -> bool:
         return isinstance(self, PlannerFailure)
 
+    @abstractmethod
+    def canonical(self) -> Dict[str, Any]:
+        """Every concrete result serializes (the trace records the plan channel)."""
+
 
 @dataclass(frozen=True, slots=True)
-class PlanFound(PlannerResult):
-    plan: Tuple[GroundedSkillCall, ...]
+class PlanFound[CallT: RuntimeCall](PlannerResult):
+    """R6: generic in the domain-owned call type (bounded by `RuntimeCall` for `cost` and
+    `canonical`); V1 holds `PlanFound[GroundedSkillCall]`."""
+    plan: Tuple[CallT, ...]
     model_version: Optional[ModelVersion] = None
 
     def __post_init__(self) -> None:

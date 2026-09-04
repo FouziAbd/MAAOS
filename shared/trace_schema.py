@@ -10,11 +10,19 @@ repeated-failure bookkeeping and budget totals lives in `runtime/executive_histo
 That separation is also the guard :118 asks for: repeated-failure bookkeeping must NOT become a
 hidden symbolic feasibility predicate. `tests/test_no_backend_imports.py` forbids the symbolic
 side from importing `runtime`, so applicability cannot reach the history at all.
+
+R6: `TraceEntry` is generic in the domain-owned state, call, and task types, bounded by the
+structural protocols `canonical()` reads. V1 holds
+`TraceEntry[StateSnapshot, GroundedSkillCall, Task]`; the serialized form is unchanged. The
+one column typed on the protocol rather than the parameter is `nl_proposal`: the advisory
+proposal type is track-owned and its call type cannot be tied to the loop's call parameter
+(a type-parameter bound cannot name another parameter), so the runtime records what the
+`AdvisoryProposal` contract guarantees — a `RuntimeCall`.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from shared.comparison_keys import SymbolicKey, WorldKey
 from shared.discrepancy import ExecutionDiscrepancy
@@ -24,31 +32,30 @@ from shared.faults import InfrastructureFault
 from shared.orchestration_config import ExecutiveDecision
 from shared.planner_result import PlannerResult
 from shared.reports import ConfidenceReport, CoverageReport
-from shared.skills import CallValidation, GroundedSkillCall
-from shared.state_snapshot import StateSnapshot
-from shared.task import Task
+from shared.skills import CallValidation
+from shared.value_contracts import RuntimeCall, RuntimeState, TaskContract
 from shared.versioning import ModelVersion, Provenance
 
 
 @dataclass(frozen=True, slots=True)
-class TraceEntry:
+class TraceEntry[StateT: RuntimeState, CallT: RuntimeCall, TaskT: TaskContract]:
     """One executive step's complete record."""
     executive_step: int
-    task: Task
-    pre_state: StateSnapshot
+    task: TaskT
+    pre_state: StateT
     model_version: ModelVersion
     provenance: Provenance
 
     # reasoning
     symbolic_result: Optional[PlannerResult] = None
-    symbolic_proposal: Optional[GroundedSkillCall] = None
-    nl_proposal: Optional[GroundedSkillCall] = None
+    symbolic_proposal: Optional[CallT] = None
+    nl_proposal: Optional[RuntimeCall] = None
     coverage: Optional[CoverageReport] = None
     confidence: Tuple[ConfidenceReport, ...] = field(default_factory=tuple)
 
     # decision
     decision: Optional[ExecutiveDecision] = None
-    selected_call: Optional[GroundedSkillCall] = None
+    selected_call: Optional[CallT] = None
     #: The typed validation VERDICT on `selected_call`. Named `validation`, not `rejection`,
     #: because on the execution path it legitimately holds a `ValidatedCall` — a field called
     #: `rejection` holding an acceptance is exactly the ambiguity Decision 7 exists to remove.
@@ -57,11 +64,11 @@ class TraceEntry:
     # prediction vs execution — both Decision 13 bases, never conflated
     predicted_world_key: Optional[WorldKey] = None     # grounded deterministic world effect
     predicted_symbolic_key: Optional[SymbolicKey] = None  # ProjectionContract.monitored_key
-    execution: Optional[ExecutionResult] = None
-    post_state: Optional[StateSnapshot] = None
+    execution: Optional[ExecutionResult[StateT, CallT]] = None
+    post_state: Optional[StateT] = None
 
     # typed report channels — kept strictly separate
-    discrepancies: Tuple[ExecutionDiscrepancy, ...] = field(default_factory=tuple)
+    discrepancies: Tuple[ExecutionDiscrepancy[CallT], ...] = field(default_factory=tuple)
     divergences: Tuple[TrackDivergence, ...] = field(default_factory=tuple)
     faults: Tuple[InfrastructureFault, ...] = field(default_factory=tuple)
 

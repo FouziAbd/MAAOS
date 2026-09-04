@@ -25,10 +25,15 @@ policy is a new registry entry or a directly injected object, never an enum/cent
 Reason strings are frozen baseline surface: the R0 characterization transcripts pin the
 HALTED_REPEATED_FAILURE reason verbatim (docs/refactor/baseline/demo_symbolic_primary.txt).
 Do not reword them.
+
+R6: the policies are generic in the domain-owned call type as well as state and proposal —
+the routing reads only the typed plan channel, the head verdict, the failure count, and the
+standing advice, none of which is BoxPush-specific (the R5 probe ran both policies over a
+foreign call type; the annotation now says so).
 """
 from __future__ import annotations
 
-from typing import Callable, Dict, Generic, TypeVar
+from typing import Callable, Dict
 
 from shared.contracts import (
     Execute,
@@ -43,13 +48,10 @@ from shared.contracts import (
 )
 from shared.orchestration_config import OrchestrationConfig, OrchestrationPolicy
 from shared.planner_result import NoPlan, PlanFound
-from shared.skills import GroundedSkillCall, SymbolicallyInapplicable
-
-StateT = TypeVar("StateT")
-ProposalT = TypeVar("ProposalT")
+from shared.skills import SymbolicallyInapplicable
 
 
-class _PlanHeadPolicy(Generic[StateT, ProposalT]):
+class _PlanHeadPolicy[StateT, CallT, ProposalT]:
     """The shared V1 plan-head routing. Subclasses supply only the repeated-failure escape —
     the one place the two frozen policies genuinely differ."""
 
@@ -59,18 +61,18 @@ class _PlanHeadPolicy(Generic[StateT, ProposalT]):
         self.repeated_failure_threshold = repeated_failure_threshold
 
     def required_inputs(
-        self, context: PreliminaryContext[StateT, GroundedSkillCall], /
+        self, context: PreliminaryContext[StateT, CallT], /
     ) -> TrackRequest:
         raise NotImplementedError
 
     def _repeated_failure_escape(
-        self, head: GroundedSkillCall, failure_count: int
-    ) -> PolicyDecision[GroundedSkillCall]:
+        self, head: CallT, failure_count: int
+    ) -> PolicyDecision[CallT]:
         raise NotImplementedError
 
     def decide(
-        self, context: OrchestrationContext[StateT, GroundedSkillCall, ProposalT], /
-    ) -> PolicyDecision[GroundedSkillCall]:
+        self, context: OrchestrationContext[StateT, CallT, ProposalT], /
+    ) -> PolicyDecision[CallT]:
         """The frozen V1 policies decide from the PRELIMINARY situation alone: the R3
         comparison report in `context.comparison` reaches them before deciding (the R3
         lifecycle guarantee) but by frozen design does not alter V1 decisions — advisory
@@ -78,8 +80,8 @@ class _PlanHeadPolicy(Generic[StateT, ProposalT]):
         return self._route(context.preliminary)
 
     def _route(
-        self, preliminary: PreliminaryContext[StateT, GroundedSkillCall], /
-    ) -> PolicyDecision[GroundedSkillCall]:
+        self, preliminary: PreliminaryContext[StateT, CallT], /
+    ) -> PolicyDecision[CallT]:
         if preliminary.standing_recovery is not None:
             return Execute(
                 call=preliminary.standing_recovery,
@@ -111,18 +113,18 @@ class _PlanHeadPolicy(Generic[StateT, ProposalT]):
         return Execute(call=head)
 
 
-class SymbolicPrimaryPolicy(_PlanHeadPolicy[StateT, ProposalT]):
+class SymbolicPrimaryPolicy[StateT, CallT, ProposalT](_PlanHeadPolicy[StateT, CallT, ProposalT]):
     """:248 — the NL track is never consulted; repeated failure of one (pre-state, call)
     pair halts with the discrepancy history."""
 
     def required_inputs(
-        self, context: PreliminaryContext[StateT, GroundedSkillCall], /
+        self, context: PreliminaryContext[StateT, CallT], /
     ) -> TrackRequest:
         return TrackRequest(nl_proposal=False)
 
     def _repeated_failure_escape(
-        self, head: GroundedSkillCall, failure_count: int
-    ) -> PolicyDecision[GroundedSkillCall]:
+        self, head: CallT, failure_count: int
+    ) -> PolicyDecision[CallT]:
         return Halt(
             call=head,
             reason=f"(pre-state, call) failed {failure_count}x under SYMBOLIC_PRIMARY — "
@@ -130,12 +132,12 @@ class SymbolicPrimaryPolicy(_PlanHeadPolicy[StateT, ProposalT]):
         )
 
 
-class AdvisoryTwoTrackPolicy(_PlanHeadPolicy[StateT, ProposalT]):
+class AdvisoryTwoTrackPolicy[StateT, CallT, ProposalT](_PlanHeadPolicy[StateT, CallT, ProposalT]):
     """:249 — the advisory proposal is a required track input on enacting cycles, and
     repeated failure escapes to the NL RecoveryProposer instead of halting."""
 
     def required_inputs(
-        self, context: PreliminaryContext[StateT, GroundedSkillCall], /
+        self, context: PreliminaryContext[StateT, CallT], /
     ) -> TrackRequest:
         """V1 advisory's information need: NL evidence beside every call it ENACTS —
         exactly the accepted per-execution consultation, declared instead of enum-gated.
@@ -145,8 +147,8 @@ class AdvisoryTwoTrackPolicy(_PlanHeadPolicy[StateT, ProposalT]):
         return TrackRequest(nl_proposal=isinstance(self._route(context), Execute))
 
     def _repeated_failure_escape(
-        self, head: GroundedSkillCall, failure_count: int
-    ) -> PolicyDecision[GroundedSkillCall]:
+        self, head: CallT, failure_count: int
+    ) -> PolicyDecision[CallT]:
         return RequestProposal(
             call=head,
             reason=f"(pre-state, call) failed {failure_count}x — consulting the NL "

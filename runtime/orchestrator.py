@@ -50,7 +50,9 @@ def decide(
     `state` is not part of this legacy signature and no shipped policy reads it; callers
     that need state-aware policies hold a policy object and pass a full context instead."""
     policy = build_policy(config)
-    preliminary: PreliminaryContext = PreliminaryContext(
+    # R6: the legacy surface carries no state, so its context is typed on `None` — an
+    # explicit statement that no shipped policy reads the state field, not an `Any`.
+    preliminary: PreliminaryContext[None, GroundedSkillCall] = PreliminaryContext(
         state=None,
         planner_result=planner_result,
         head_validation=head_validation,

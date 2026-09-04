@@ -34,7 +34,7 @@ phase adds or removes tests.
 
 ## Baseline evidence
 
-Current offline suite: 818 tests, deterministic and offline
+Current offline suite: 826 tests, deterministic and offline
 
 Frozen pristine baseline: commit
 `116d1fdde7b54f5e2f44f98f9f36304c92569162`, captured 2026-09-04 in

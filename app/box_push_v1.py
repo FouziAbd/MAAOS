@@ -40,12 +40,15 @@ from domain.box_push_v1 import (
     project,
 )
 from nl.recovery import propose_recovery
+from nl.track import NLProposal
 from runtime.loop import ExecutiveLoopManager
+from shared.backend_contract import V1Environment
 from shared.contracts import (
     DomainServices,
     OrchestrationPolicyContract,
     Prediction,
     ProposalComparator,
+    ReasoningTrack,
     RecoveryProvider,
     SymbolicTrack,
 )
@@ -62,6 +65,16 @@ from symbolic import ExactSymbolicBelief, Universe, evaluate, monitor_execution,
 from symbolic.predictor import predict_symbolic, predict_world_candidates
 
 from app.comparator import BoxPushActionComparator
+
+# R6: the V1 parameterization of the generic runtime — the one place the five domain-owned
+# types are named together. Every V1 collaborator below is typed at these parameters.
+V1Loop = ExecutiveLoopManager[StateSnapshot, SymbolicState, GroundedSkillCall, Task, NLProposal]
+V1DomainServices = DomainServices[StateSnapshot, SymbolicState, GroundedSkillCall]
+V1SymbolicTrack = SymbolicTrack[StateSnapshot, SymbolicState]
+V1ReasoningTrack = ReasoningTrack[StateSnapshot, Task, NLProposal]
+V1Comparator = ProposalComparator[GroundedSkillCall, NLProposal]
+V1RecoveryProvider = RecoveryProvider[GroundedSkillCall]
+V1Policy = OrchestrationPolicyContract[StateSnapshot, GroundedSkillCall, NLProposal]
 
 
 class BoxPushDomainServices:
@@ -90,7 +103,7 @@ class BoxPushDomainServices:
 
     def ground(
         self, state: StateSnapshot, call: GroundedSkillCall, /
-    ) -> Optional[UngroundedCall]:
+    ) -> Optional[UngroundedCall[GroundedSkillCall]]:
         """§19.1 item 5: grounding-vs-universe BEFORE symbolic applicability. Identities are
         checked against the authoritative snapshot so a ghost call routes as the typed
         `UngroundedCall -> MISSING_GROUNDING` fault (Decision 7), never as a quiet symbolic
@@ -126,8 +139,8 @@ class BoxPushDomainServices:
         )
 
     def monitor(
-        self, pre_symbolic: SymbolicState, result: ExecutionResult, /
-    ) -> Tuple[ExecutionDiscrepancy, ...]:
+        self, pre_symbolic: SymbolicState, result: ExecutionResult[StateSnapshot, GroundedSkillCall], /
+    ) -> Tuple[ExecutionDiscrepancy[GroundedSkillCall], ...]:
         """May raise the predictor's bare `ValueError` on a zone-identity wiring error; the
         loop owns converting that escape into the typed infrastructure fault."""
         return monitor_execution(
@@ -139,10 +152,10 @@ class BoxPushDomainServices:
 @dataclass(frozen=True, slots=True)
 class BoxPushComponents:
     """The injected component set for one loop, as `compose` assembles it."""
-    domain: DomainServices
-    symbolic_track: SymbolicTrack
-    comparator: ProposalComparator
-    recovery_provider: RecoveryProvider
+    domain: V1DomainServices
+    symbolic_track: V1SymbolicTrack
+    comparator: V1Comparator
+    recovery_provider: V1RecoveryProvider
 
 
 def compose(task: Task) -> BoxPushComponents:
@@ -159,19 +172,19 @@ def compose(task: Task) -> BoxPushComponents:
 
 
 def build_loop(
-    env,
+    env: V1Environment,
     task: Task,
     config: Optional[OrchestrationConfig] = None,
-    nl_track=None,
+    nl_track: Optional[V1ReasoningTrack] = None,
     provenance: Optional[Provenance] = None,
-    policy: Optional[OrchestrationPolicyContract] = None,
+    policy: Optional[V1Policy] = None,
     *,
-    loop_class: Type[ExecutiveLoopManager] = ExecutiveLoopManager,
-    domain: Optional[DomainServices] = None,
-    symbolic_track: Optional[SymbolicTrack] = None,
-    comparator: Optional[ProposalComparator] = None,
-    recovery_provider: Optional[RecoveryProvider] = None,
-) -> ExecutiveLoopManager:
+    loop_class: Type[V1Loop] = ExecutiveLoopManager,
+    domain: Optional[V1DomainServices] = None,
+    symbolic_track: Optional[V1SymbolicTrack] = None,
+    comparator: Optional[V1Comparator] = None,
+    recovery_provider: Optional[V1RecoveryProvider] = None,
+) -> V1Loop:
     """Assemble one V1 executive loop over a caller-constructed environment.
 
     Positional parameters mirror the pre-R4 `ExecutiveLoopManager` signature so callers
@@ -197,6 +210,7 @@ def build_loop(
 __all__ = [
     "BoxPushComponents",
     "BoxPushDomainServices",
+    "V1Loop",
     "build_loop",
     "compose",
 ]
