@@ -27,6 +27,7 @@ from domain.box_push_v1 import (
     TASK_DELIVER_BOTH,
 )
 from nl.track import NLProposal
+from shared.contracts import TrackRequest
 from shared.divergence import DivergenceKind
 from shared.execution import ExecutionOutcome
 from shared.faults import FaultKind, InfrastructureFault, InfrastructureFaultError
@@ -798,7 +799,7 @@ class TestAdvisoryComparatorThroughTheLoop(unittest.TestCase):
             nl_track=_ExplodingNLTrack(original),
         )
         with self.assertRaises(InfrastructureFaultError) as ctx:
-            loop._advisory_proposal()
+            loop._advisory_proposal(TrackRequest(nl_proposal=True))
         self.assertIs(ctx.exception.__cause__, original)
         self.assertIsNone(ctx.exception.result)                # no attempt ever occurred
         self.assertIs(ctx.exception.fault.kind, FaultKind.NL_TRACK_FAILURE)
@@ -933,7 +934,7 @@ class TestObserveFaultBoundary(unittest.TestCase):
         ))
         loop = self._advisory(BoxPushV1Adapter(), _ExplodingNLTrack(typed))
         with self.assertRaises(InfrastructureFaultError) as ctx:
-            loop._advisory_proposal()
+            loop._advisory_proposal(TrackRequest(nl_proposal=True))
         self.assertIs(ctx.exception, typed)
         loop = self._advisory(
             BoxPushV1Adapter(), _ObserveExplodingTrack([], fail_from=1, error=typed)

@@ -159,19 +159,118 @@ Warnings/deferred:
 
 ## R2 — Extract orchestration policies
 
-Status: PENDING
+Status: COMPLETE (2026-09-04)
 
 Implementation:
-- Pending.
+- New `runtime/policies.py`:
+  - `SymbolicPrimaryPolicy` / `AdvisoryTwoTrackPolicy` — the two former
+    `decide()` branches as `OrchestrationPolicyContract` implementations over
+    a shared `_PlanHeadPolicy` base (standing recovery pre-empts, `NoPlan`
+    halts, typed `TypeError` refusal of `PlannerFailure`, empty plan halts,
+    inapplicable head replans, applicable head executes); subclasses supply
+    only the repeated-failure escape (halt-with-history vs REQUEST_PROPOSAL)
+    and `required_inputs()` (primary declares no track inputs, advisory
+    requests the NL proposal). Pure: constructor takes only
+    `repeated_failure_threshold`; no environment surface exists in any input.
+    All reason strings preserved verbatim (R0 transcripts pin them).
+  - Open registry `POLICY_FACTORIES: dict[str, PolicyFactory]` +
+    `build_policy(config)` — dispatch is by configuration NAME, not enum
+    identity; unknown names are refused with `LookupError`. The frozen
+    `OrchestrationConfig`/`OrchestrationPolicy` enum is untouched as data.
+- `runtime/loop.py` — `ExecutiveLoopManager(..., policy=None)` accepts an
+  injected policy object (default: `build_policy(self.config)`); `_select`
+  builds the immutable `PreliminaryContext`/`OrchestrationContext` and calls
+  `self.policy.decide(...)`, returning the context with the decision; the
+  cycle branches on the typed variants (`Halt`/`RequestProposal`/`Replan`,
+  else `Execute`); `_advisory_proposal(request)` is gated by
+  `self.policy.required_inputs(preliminary)` instead of the policy enum
+  (report Phase 2 item 5). Acquisition still happens after the decision —
+  moving it before is R3's lifecycle change, deliberately not taken.
+- `runtime/orchestrator.py` — now a compatibility shim: `CycleDecision` and
+  the `decide()` signature/routing/reason strings are preserved exactly,
+  delegating through `build_policy` + `policy.decide` (one implementation,
+  two surfaces). The enum branch is gone.
+- `shared/contracts/policy.py` — docstring phase-note updated (R2 done);
+  no contract change.
 
 Tests/evidence:
-- Pending.
+- `tests/test_r2_policies.py` (23 tests; suite 665 -> 688, pin updated in
+  the same change set): contract conformance of both shipped policies
+  (runtime + static witnesses `symbolic_primary_policy_conforms`/
+  `advisory_two_track_policy_conforms` added to
+  `tests/contract_conformance.py`); the full pure decision table on bare
+  contexts (`state=None` proves state is never read), including verbatim
+  frozen reason strings and determinism/statelessness; `required_inputs`
+  declarations plus a loop-level proof that SYMBOLIC_PRIMARY never calls
+  `propose()` (exploding track) while `observe()` still feeds; a
+  mutation-discriminating test where the injected policy's declaration
+  DISAGREES with `config.policy` in both directions (added for the
+  test-reviewer's WARN — verified to kill both loop mutations that survived
+  the earlier suite: regressing the gate to the enum check, and rebuilding
+  the policy from config instead of honoring the injected object); registry
+  name-dispatch, openness (new entry, no central edit), and loud refusal;
+  a novel test-only policy injected into an unmodified `ExecutiveLoopManager`
+  drives a real episode (Phase 2 acceptance "no edits to runtime/loop.py");
+  AST import scan pins `runtime/policies.py` to stdlib+`shared`.
+- `tests/test_p4_runtime.py`: two direct private calls
+  `loop._advisory_proposal()` adapted to the new explicit signature
+  (`TrackRequest(nl_proposal=True)`); assertions unchanged.
+  `TestOrchestratorRouting` passes unchanged against the shim.
+- Full suite: 687 tests, OK (skipped=1). Both headless demos byte-identical
+  to `docs/refactor/baseline/demo_*.txt`. R0 characterization (exact
+  decision sequences, three designed discrepancies) green under both
+  policies. Scoped mypy (`python -m mypy shared runtime
+  --ignore-missing-imports`) 49 -> 41 errors (typed-variant narrowing fixed
+  eight pre-existing `GroundedSkillCall | None` complaints; nothing new);
+  conformance witness file mypy-clean.
+- Reviews: test-reviewer 0 FAIL (its main WARN — the `required_inputs` loop
+  wiring survived two mutations — was closed by adding the
+  policy-vs-config-disagreement test and re-verifying both mutations now
+  fail; its registry-key overclaim was fixed with an exact-type assertion);
+  architecture-reviewer 0 FAIL (its W6 shim-fidelity question was closed by
+  an exhaustive 20-case old-vs-new `decide()` comparison against
+  `HEAD:runtime/orchestrator.py` — byte-identical decisions/calls/reasons,
+  including the inapplicable-head/threshold ordering probe and `TypeError`
+  parity; remaining WARNs recorded below).
 
 Compatibility notes:
-- Pending.
+- `runtime.orchestrator.decide`/`CycleDecision` imports, the
+  `ExecutiveLoopManager` constructor (new parameter is optional, appended
+  last), CLI behavior, and the trace format are unchanged. The legacy
+  `decide()` surface passes `state=None` into `PreliminaryContext` (its
+  signature never carried state; no shipped policy reads it) — callers
+  needing state-aware policies hold a policy object.
+- The `policy` parameter wins over `config.policy` when both are supplied;
+  `config.policy` is then only the registry default that was not consulted.
 
 Warnings/deferred:
-- Pending.
+- WARN (accepted): `_advisory_proposal`'s gate now trusts the injected
+  policy's `required_inputs()`; a custom policy raising from
+  `required_inputs()` propagates untyped out of `run()` (same trust level as
+  the R1 contract's purity assumption; the R4 composition root owns
+  boundary hardening if the report requires it).
+- WARN (accepted, reviewer W3/W5): with an injected `policy`, `config.policy`
+  becomes an inert default (documented precedence; no trace contradiction —
+  `TraceEntry` does not serialize the config policy); the loop's mapping of
+  any call-carrying `Halt` to `HALTED_REPEATED_FAILURE` is a pre-R2
+  convention now inherited by injected-policy authors (pinned in
+  `tests/test_r2_policies.py`). The R4 composition root makes the single
+  policy source explicit.
+- WARN (accepted, reviewer): the static conformance witnesses are only
+  checked when mypy runs on `tests/contract_conformance.py`; wiring that
+  into the default/CI job is R6-owned.
+- `docs/implementation/p4_mutation_harness.py` annotated as frozen against
+  the P4-era orchestrator source (its O1-O4 snippets no longer apply; their
+  kill-coverage now lives in `tests/test_r2_policies.py`).
+- DEFERRED(R3): acquisition/comparison before the final policy decision;
+  structured comparison report in `OrchestrationContext`; comparator
+  scoping/equivalence/threshold work.
+- DEFERRED(R4): `runtime/loop.py` still imports `domain.box_push_v1`,
+  concrete `symbolic`/`nl` functions and the concrete comparator; explicit
+  composition root; import-boundary enforcement for the whole runtime.
+- DEFERRED(R6): mypy debt (41 remaining scoped errors), AST-scan hardening,
+  porting mutation-harness O1-O4 to `runtime/policies.py`, typing the legacy
+  shim's `state=None` (`runtime/orchestrator.py`).
 
 ---
 

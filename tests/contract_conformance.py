@@ -39,6 +39,7 @@ from shared.task import Task
 from nl.recovery import propose_recovery
 from nl.track import NLProposal, NLTrack
 from runtime.comparator import compare_tracks
+from runtime.policies import AdvisoryTwoTrackPolicy, SymbolicPrimaryPolicy
 from symbolic import ExactSymbolicBelief
 
 # The V1 execution-outcome union `V1Environment.execute_skill` already returns.
@@ -71,10 +72,22 @@ comparator_conforms: ProposalComparator[GroundedSkillCall, NLProposal] = compare
 recovery_conforms: RecoveryProvider[GroundedSkillCall] = propose_recovery
 
 
+def symbolic_primary_policy_conforms(
+    policy: SymbolicPrimaryPolicy[StateSnapshot, NLProposal],
+) -> V1PolicyContract:
+    """R2: the shipped extracted policies satisfy the R1 policy contract statically."""
+    return policy
+
+
+def advisory_two_track_policy_conforms(
+    policy: AdvisoryTwoTrackPolicy[StateSnapshot, NLProposal],
+) -> V1PolicyContract:
+    return policy
+
+
 class MinimalHaltPolicy:
-    """Test-local conformance witness for the policy contract. R2 supplies the real
-    SymbolicPrimaryPolicy/AdvisoryTwoTrackPolicy classes; until then this proves the
-    contract is implementable with the current typed channels — nothing more."""
+    """Test-local conformance witness for the policy contract, kept from R1: it proves the
+    contract is implementable without inheriting anything from the shipped R2 policies."""
 
     def required_inputs(
         self, context: PreliminaryContext[StateSnapshot, GroundedSkillCall]

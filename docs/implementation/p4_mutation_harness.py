@@ -1,5 +1,9 @@
 # CHECKED-IN PROCESS EVIDENCE, not part of the test suite (it MUTATES product files and
 # restores them). Run manually from the repo root:  python -B docs/implementation/p4_mutation_harness.py
+# FROZEN against the P4-era sources: the O1-O4 snippets target the pre-R2
+# runtime/orchestrator.py (its decide() branches moved to runtime/policies.py in R2, where
+# tests/test_r2_policies.py now carries that kill-coverage as direct unit tests); porting
+# O1-O4 is R6 hygiene.
 # Every mutation must be KILLED; a survivor is a coverage gap. Bytecode is disabled and
 # __pycache__ cleared before every run so same-length edits cannot reuse stale .pyc.
 """P4 runtime mutation harness."""

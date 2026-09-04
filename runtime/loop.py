@@ -32,8 +32,18 @@ from typing import Optional, Tuple
 from shared.backend_contract import V1Environment
 from shared.discrepancy import ExecutionDiscrepancy
 from shared.execution import ExecutionResult
+from shared.contracts import (
+    Halt,
+    OrchestrationContext,
+    OrchestrationPolicyContract,
+    PolicyDecision,
+    PreliminaryContext,
+    Replan,
+    RequestProposal,
+    TrackRequest,
+)
 from shared.faults import InfrastructureFault, InfrastructureFaultError, FaultKind
-from shared.orchestration_config import ExecutiveDecision, OrchestrationConfig, OrchestrationPolicy
+from shared.orchestration_config import ExecutiveDecision, OrchestrationConfig
 from shared.planner_result import PlanFound, PlannerFailure, PlannerResult
 from shared.skills import (
     GroundedSkillCall,
@@ -53,7 +63,7 @@ from nl.recovery import propose_recovery
 from runtime.comparator import compare_tracks
 from runtime.executive_history import ExecutiveHistory
 from runtime.executor import execute
-from runtime.orchestrator import CycleDecision, decide
+from runtime.policies import build_policy
 from symbolic import ExactSymbolicBelief, Universe, evaluate, monitor_execution, plan
 from symbolic.predictor import predict_symbolic, predict_world_candidates
 
@@ -81,10 +91,14 @@ class ExecutiveLoopManager:
 
     The environment arrives by INJECTION: this package cannot import the backend (the
     fail-closed import guard), which structurally separates the loop from any concrete
-    environment. For the optional `nl_track`, only `propose()` is policy-gated to
-    ADVISORY_TWO_TRACK; `observe()` feeds the attached track under ANY policy (data flows
-    loop->NL only, LM-free), and an observe() failure is an infrastructure fault — so a
-    SYMBOLIC_PRIMARY episode with an attached track can legitimately FAULT on it.
+    environment. The orchestration POLICY arrives the same way (R2): pass any
+    `OrchestrationPolicyContract` object, or omit it and the registry in
+    `runtime/policies.py` builds the one named by `config.policy` — the loop itself never
+    dispatches on the policy enum. For the optional `nl_track`, `propose()` is consulted
+    only when the policy's `required_inputs()` requests the advisory proposal; `observe()`
+    feeds the attached track under ANY policy (data flows loop->NL only, LM-free), and an
+    observe() failure is an infrastructure fault — so a SYMBOLIC_PRIMARY episode with an
+    attached track can legitimately FAULT on it.
     """
 
     def __init__(
@@ -94,10 +108,12 @@ class ExecutiveLoopManager:
         config: Optional[OrchestrationConfig] = None,
         nl_track=None,
         provenance: Optional[Provenance] = None,
+        policy: Optional[OrchestrationPolicyContract] = None,
     ) -> None:
         self.env = env
         self.task = task
         self.config = config or OrchestrationConfig()
+        self.policy = policy if policy is not None else build_policy(self.config)
         self.nl_track = nl_track
         self.history = ExecutiveHistory()
         self.belief = ExactSymbolicBelief(DOMAIN_IR, PROJECTION, project)
@@ -265,14 +281,14 @@ class ExecutiveLoopManager:
 
         rejections = 0
         while True:
-            decision = self._select(planner_result, snapshot)
-            if decision.decision is ExecutiveDecision.HALT:
+            decision, preliminary = self._select(planner_result, snapshot)
+            if isinstance(decision, Halt):
                 kind = (EpisodeOutcome.HALTED_REPEATED_FAILURE if decision.call is not None
                         else EpisodeOutcome.HALTED_NO_PLAN)
                 self._entry(step, snapshot, symbolic_result=planner_result,
                             decision=decision.decision, selected_call=decision.call)
                 return self._finish(kind, decision.reason)
-            if decision.decision is ExecutiveDecision.REQUEST_PROPOSAL:
+            if isinstance(decision, RequestProposal):
                 # the decision itself is part of the record (:70 traces include decisions;
                 # acceptance record: "orchestrator decision/recovery when P4 exists")
                 self._entry(step, snapshot, symbolic_result=planner_result,
@@ -287,7 +303,7 @@ class ExecutiveLoopManager:
                         decision.reason + " — no recovery advice available",
                     )
                 continue                        # re-select with the recovery call standing
-            if decision.decision is ExecutiveDecision.REPLAN:
+            if isinstance(decision, Replan):
                 rejections += 1
                 if rejections > self.config.max_rejections_per_cycle:
                     fault = InfrastructureFault(
@@ -338,7 +354,11 @@ class ExecutiveLoopManager:
         candidates = predict_world_candidates(snapshot, call, self.task.zone)
         predicted_world_key = candidates[0].world_key() if candidates else None
         try:
-            nl_proposal = self._advisory_proposal()
+            # R2: the POLICY declares its track inputs (`required_inputs`, report Phase 2
+            # item 5) against the same preliminary context its EXECUTE decision came from —
+            # symbolic-primary declares none, so the NL model is never consulted for it.
+            # R3 owns moving this acquisition (and the comparison) BEFORE the decision.
+            nl_proposal = self._advisory_proposal(self.policy.required_inputs(preliminary))
         except InfrastructureFaultError as error:
             # NL_TRACK_FAILURE is a PRE-EXECUTOR infrastructure fault (:163, H8): the
             # advisory consultation precedes execute(), so the cycle short-circuits with the
@@ -468,17 +488,36 @@ class ExecutiveLoopManager:
         return None
 
     # ── selection helpers ─────────────────────────────────────────────────────────
-    def _select(self, planner_result: PlannerResult, snapshot: StateSnapshot) -> CycleDecision:
+    def _select(
+        self, planner_result: PlannerResult, snapshot: StateSnapshot
+    ) -> Tuple[
+        PolicyDecision[GroundedSkillCall],
+        PreliminaryContext[StateSnapshot, GroundedSkillCall],
+    ]:
+        """Build the immutable decision context and ask the injected policy (R2). The
+        preliminary context is returned with the decision so the cycle can honor the
+        policy's `required_inputs()` against the SAME situation it decided from."""
         if self._pending_recovery:
-            return decide(self.config, planner_result, None, 0,
-                          standing_recovery=self._pending_recovery[0])
-        head_validation = None
-        if isinstance(planner_result, PlanFound) and planner_result.plan:
-            head_validation = evaluate(DOMAIN_IR, self.belief.state, planner_result.plan[0])
-        failure_count = 0
-        if isinstance(planner_result, PlanFound) and planner_result.plan:
-            failure_count = self.history.failure_count(snapshot, planner_result.plan[0])
-        return decide(self.config, planner_result, head_validation, failure_count)
+            preliminary = PreliminaryContext(
+                state=snapshot, planner_result=planner_result,
+                standing_recovery=self._pending_recovery[0],
+            )
+        else:
+            head_validation = None
+            failure_count = 0
+            if isinstance(planner_result, PlanFound) and planner_result.plan:
+                head_validation = evaluate(
+                    DOMAIN_IR, self.belief.state, planner_result.plan[0]
+                )
+                failure_count = self.history.failure_count(
+                    snapshot, planner_result.plan[0]
+                )
+            preliminary = PreliminaryContext(
+                state=snapshot, planner_result=planner_result,
+                head_validation=head_validation, failure_count=failure_count,
+            )
+        decision = self.policy.decide(OrchestrationContext(preliminary=preliminary))
+        return decision, preliminary
 
     def _recovery_for(self, call: GroundedSkillCall) -> Tuple[GroundedSkillCall, ...]:
         """ADVISORY_TWO_TRACK only: deterministic NL re-establishment advice over the LAST
@@ -488,11 +527,8 @@ class ExecutiveLoopManager:
                 return propose_recovery(discrepancy)
         return ()
 
-    def _advisory_proposal(self):
-        if (
-            self.nl_track is None
-            or self.config.policy is not OrchestrationPolicy.ADVISORY_TWO_TRACK
-        ):
+    def _advisory_proposal(self, request: TrackRequest):
+        if self.nl_track is None or not request.nl_proposal:
             return None
         try:
             return self.nl_track.propose(self.task)

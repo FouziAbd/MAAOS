@@ -12,10 +12,9 @@ head verdicts are the shared `CallValidation`, comparison evidence is the shared
 state, call, and the advisory proposal.
 
 Phase ownership (do not implement early):
-- R2 supplies the concrete `SymbolicPrimaryPolicy`/`AdvisoryTwoTrackPolicy` classes and
-  makes the loop accept a policy object; until then the shipped `runtime.orchestrator.decide`
-  free function remains the live implementation and this contract's only in-tree conformance
-  witness is test-local.
+- R2 (done) supplies the concrete `SymbolicPrimaryPolicy`/`AdvisoryTwoTrackPolicy` classes
+  in `runtime/policies.py` and makes the loop accept a policy object;
+  `runtime.orchestrator.decide` remains as a compatibility shim over the same policies.
 - R3 makes requested comparison evidence exist before the final decision and upgrades the
   divergence tuple to a structured comparison report.
 
