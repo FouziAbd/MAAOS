@@ -435,11 +435,15 @@ class TestLegacyRunnerCitationDiscipline(unittest.TestCase):
 class TestHandoffCountsAreMechanical(unittest.TestCase):
     """Consistency rounds kept catching stale test counts in section18.md (three FAILs across
     P3/P4). Same cure as the citation guard: make the property mechanical. The current-truth
-    suite-count row must equal what unittest discovery actually collects."""
+    suite-count row must equal what unittest discovery actually collects.
+
+    Since /refactor-preflight the live pin lives in docs/refactor/REFACTOR_STATUS.md;
+    section18.md keeps the historical P0-P4 freeze count (641) annotated so it no
+    longer matches the pin regex."""
 
     def test_the_documented_suite_count_equals_discovery(self):
         repo = pathlib.Path(__file__).resolve().parents[1]
-        text = (repo / "docs" / "handoff" / "section18.md").read_text(encoding="utf-8")
+        text = (repo / "docs" / "refactor" / "REFACTOR_STATUS.md").read_text(encoding="utf-8")
         matches = re.findall(r"(\d+) tests, deterministic and offline", text)
         self.assertEqual(
             len(matches), 1,

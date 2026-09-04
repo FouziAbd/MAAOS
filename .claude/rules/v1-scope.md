@@ -1,21 +1,31 @@
-# V1 Scope Rules
+# V1 and Refactor Scope Rules
 
-Current implementation scope is **P0-P4 only**.
+The historical Symbolic-Twin implementation milestone **P0-P4 is complete**.
 
-V1 is deliberately:
+The current work is the behavior-preserving architectural refactor **R0-R6**.
 
-- classical
-- deterministic at the symbolic level
-- fully observable for the symbolic track
-- sequential at the executive level
-- text/typed-data only for the NL track
-- non-concurrent
-- non-probabilistic
+`R5` means "Refactor Phase 5"; it does not mean product/supervisor phase P5.
 
-Do not implement stochastic DBNs, learned structure, Julia MDP/POMDP compilation, asynchronous concurrency, duration distributions, VLM image inputs, or P5+ research features unless explicitly requested.
+The accepted V1 semantics remain deliberately:
 
-The V1 data structures should remain extensible for later milestones, but future capability must not complicate or replace the simple V1 semantics.
+- classical;
+- deterministic at the symbolic level;
+- fully observable for the symbolic track;
+- sequential at the executive level;
+- text/typed-data based for the NL track;
+- non-concurrent;
+- non-probabilistic.
 
-If the existing environment is partially observable, preserve that code and add a V1 adapter/export path for exact canonical state. Do not delete later-useful POMDP functionality.
+R0-R6 may improve extensibility without adding future semantic machinery.
 
-If multiple agents exist, expose a deterministic sequential executive rule for V1. A high-level skill may internally coordinate multiple agents, but asynchronous executive overlap is out of scope.
+Do not implement stochastic DBNs, learned structure, Julia MDP/POMDP
+compilation, asynchronous executive concurrency, duration distributions,
+production partial-observation belief reconciliation, calibrated uncertainty,
+VLM image inputs, or other future research semantics unless explicitly
+requested for a real next domain.
+
+The R5 synthetic counter domain is permitted only as a test fixture proving
+architectural substitutability. It must not become production functionality.
+
+Preserve later-useful legacy/POMDP research code unless an assigned hygiene
+change explicitly quarantines it.

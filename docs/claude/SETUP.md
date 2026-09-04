@@ -1,5 +1,7 @@
 # Claude Code Setup for MAAOS P0-P4
 
+> **Retired.** This describes the P0-P4 implementation setup. The current Claude Code harness for the R0-R6 refactor is documented in `CLAUDE.md`; start with `/refactor-preflight`, then `/refactor-phase R0`.
+
 ## 1. Start from the correct code
 
 Use the branch containing the current BoxPush high-level skill work (`middleware_layer`) as the source baseline. Prefer creating a dedicated implementation branch, for example:

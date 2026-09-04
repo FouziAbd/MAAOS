@@ -1,52 +1,56 @@
 ---
 paths:
-  - "orchestration/**/*"
-  - "monitoring/**/*"
   - "runtime/**/*"
-  - "shared/trace_schema.py"
   - "shared/**/*fault*"
   - "shared/**/*divergence*"
+  - "shared/**/*report*"
+  - "shared/**/*trace*"
+  - "tests/**/*orchestrat*"
+  - "tests/**/*runtime*"
 ---
 
 # Orchestration, Monitoring, and Runtime Rules
 
-Keep the **track orchestrator** separate in responsibility from the **executive loop manager**.
+Keep policy, runtime progression, execution, monitoring, and evidence channels
+separate.
 
-The orchestrator combines proposals/evidence and returns an executive decision. It does not directly call the backend or advance time.
+## Permanent responsibilities
 
-The executive loop owns runtime progression, current-cycle fault short-circuiting, step budget, repeated-failure bookkeeping, state synchronization, and trace/history updates.
+The policy/orchestrator decides. It does not directly call the backend or
+advance physical time.
 
-## Three distinct report channels
+The executor/backend path performs validated physical execution and remains
+policy-independent.
 
-### ExecutionDiscrepancy
-Model/prediction versus authoritative execution, including:
+The loop owns runtime progression, synchronization, step budget,
+current-cycle fault routing, failure history, and trace/history assembly.
 
-- unexpected outcome
-- state effect mismatch
-- duration anomaly later
-- execution failure of a symbolically applicable skill
+Preserve the three distinct evidence channels:
 
-### TrackDivergence
-NL/VLM versus symbolic track disagreement/representation issues, including:
+- `ExecutionDiscrepancy`: symbolic prediction/model vs authoritative execution;
+- `TrackDivergence`: NL vs symbolic proposal/representation evidence;
+- `InfrastructureFault`: runtime/interface/backend/protocol failure.
 
-- contradiction
-- coverage gap
-- translation residual
-- confidence mismatch
-- benign abstraction mismatch
+Do not convert one channel into another merely to simplify control flow.
 
-### InfrastructureFault
-Interface/runtime failures such as:
+A newly raised current-cycle infrastructure fault follows the existing
+fail-closed short-circuit behavior.
 
-- malformed backend result
-- serialization failure
-- backend/API exception
-- missing grounding
-- executor/monitor protocol failure
-- `PlannerFailure`
+Repeated-failure bookkeeping must not become a hidden symbolic feasibility
+predicate.
 
-A newly raised `InfrastructureFault` short-circuits the normal current cycle. Do not pass it as a third competing current-cycle track proposal. Log it and expose recent fault history on the following cycle after state re-synchronization as needed.
+## Phase-owned changes
 
-## Repeated failures
+R2 owns extraction of policy strategies and policy input requirements.
 
-Key repeated failed grounded skills by canonical pre-attempt `StateSnapshot` plus grounded skill call. Do not turn this bookkeeping into a hidden symbolic feasibility predicate.
+R3 owns comparison-before-final-decision for policies that request both tracks.
+
+R4 owns removal of BoxPush/concrete-track knowledge from the generic runtime and
+application-level composition/injection.
+
+Before those phases, known existing coupling is scheduled debt, not permission
+to implement all later work early.
+
+Policies must remain pure transformations of immutable context into typed
+decisions. Illegal decision states should be unrepresentable once the assigned
+phase introduces typed variants.

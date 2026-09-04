@@ -3,39 +3,68 @@ paths:
   - "tests/**/*"
   - "**/test_*.py"
   - "**/*_test.py"
-  - "pytest.ini"
   - "pyproject.toml"
+  - "pytest.ini"
+  - ".github/workflows/**/*"
 ---
 
-# P0-P4 Testing Rules
+# V1 Regression and R0-R6 Testing Rules
 
-Tests are part of the implementation, not optional cleanup.
+Tests are part of the implementation.
 
-Default P0-P4 tests must be deterministic and offline. They must not require Ollama, Claude, OpenAI, or another live LM.
+The default test job must remain deterministic and offline. It must not require
+Ollama, Claude, OpenAI, another live LM, or network access.
 
-Required regression properties:
+Never weaken/delete an existing test merely to make a refactor pass.
 
-- every grounded executive skill has aligned argument types across registry/model/backend;
-- successful deterministic skill execution matches symbolic predicted normalized `StateSnapshot`;
-- backend rejection of an optimistic but symbolically applicable skill records the correct failure plus `ExecutionDiscrepancy`;
-- invalid/malformed NL calls are rejected or repaired before executor invocation;
-- orchestration policy changes decisions, not executor semantics;
-- `ExecutionDiscrepancy`, `TrackDivergence`, and `InfrastructureFault` remain separate;
-- traces include task, state snapshots, proposals, decision, prediction, execution, discrepancies/divergence/fault history, provenance, and model version;
-- representative tasks terminate as expected;
-- no hidden backend feasibility oracle is introduced to make the optimistic-plan test pass;
-- planner explicitly exercises `PlanFound`, `NoPlan`, and `PlannerFailure` paths;
-- new current-cycle `InfrastructureFault` short-circuits normal execution;
-- NL default tests use stub/mock/recorded responses.
+## Permanent V1 regression properties
 
-Acceptance tests must record for failed skills:
+Continue to protect:
 
-- pre-attempt state
-- grounded skill
-- symbolic applicability/prediction
-- backend result label
-- post-attempt state
-- unchanged/partial/rejected classification
-- primitive steps if tracked
-- executive-step consumption
-- resulting report/orchestrator behavior
+- typed skill/model/backend alignment;
+- canonical normalized state equality where required;
+- successful predicted-vs-observed transitions;
+- optimistic symbolic applicability with backend failure producing the correct
+  typed execution discrepancy;
+- no hidden backend feasibility oracle;
+- true failure post-state and executive-step semantics;
+- malformed call validation before execution;
+- `PlanFound` / `NoPlan` / `PlannerFailure` distinction;
+- planner/runtime infrastructure-fault routing;
+- separate execution/divergence/fault channels;
+- executor independence from policy;
+- deterministic offline NL seams;
+- accepted end-to-end task outcomes and designed discrepancies.
+
+## Phase-specific architecture tests
+
+Add these when their owning phase is assigned:
+
+### R0
+Characterize both current policies, accepted outcome, executive
+decision/action order, and designed physical discrepancies.
+
+### R1-R4
+Add contract tests for injected protocols/contexts/typed decisions, policy
+purity, requested-input acquisition, comparator lifecycle, and import
+boundaries as the corresponding mechanisms are introduced.
+
+### R5
+Add a test-only non-BoxPush immutable counter/probe domain and prove the same
+runtime loop can execute it without BoxPush imports/conditionals. Preserve
+unknown domain evidence unchanged.
+
+### R6
+Add observation alias/mutation tests, malformed-backend-return typed-fault
+tests, static type checks for the refactored core, offline CI/import checks, and
+dependency reproducibility checks required by the report.
+
+Do not demand an R5/R6 test while implementing R0 unless it already exists as a
+regression.
+
+## Review quality
+
+Challenge tests that mock away the behavior they claim to verify.
+
+For every changed architectural seam, test observable contracts rather than
+private implementation details where practical.

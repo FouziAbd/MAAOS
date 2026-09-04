@@ -209,3 +209,8 @@ __marimo__/
 
 #logs
 *log.txt
+
+# Claude Code per-developer files
+.claude/ENABLE_COMPLETION_TEST_HOOK
+.claude/test-command.txt
+.claude/settings.local.json

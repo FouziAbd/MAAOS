@@ -32,8 +32,18 @@ from typing import Optional, Tuple
 from shared.backend_contract import V1Environment
 from shared.discrepancy import ExecutionDiscrepancy
 from shared.execution import ExecutionResult
+from shared.contracts import (
+    Halt,
+    OrchestrationContext,
+    OrchestrationPolicyContract,
+    PolicyDecision,
+    PreliminaryContext,
+    Replan,
+    RequestProposal,
+    TrackRequest,
+)
 from shared.faults import InfrastructureFault, InfrastructureFaultError, FaultKind
-from shared.orchestration_config import ExecutiveDecision, OrchestrationConfig, OrchestrationPolicy
+from shared.orchestration_config import ExecutiveDecision, OrchestrationConfig
 from shared.planner_result import PlanFound, PlannerFailure, PlannerResult
 from shared.skills import (
     GroundedSkillCall,
@@ -50,10 +60,10 @@ from shared.versioning import ModelVersion, Provenance
 
 from domain.box_push_v1 import DOMAIN_IR, MODEL_VERSION, PROJECTION, project
 from nl.recovery import propose_recovery
-from runtime.comparator import compare_tracks
+from runtime.comparator import DEFAULT_COMPARATOR
 from runtime.executive_history import ExecutiveHistory
 from runtime.executor import execute
-from runtime.orchestrator import CycleDecision, decide
+from runtime.policies import build_policy
 from symbolic import ExactSymbolicBelief, Universe, evaluate, monitor_execution, plan
 from symbolic.predictor import predict_symbolic, predict_world_candidates
 
@@ -81,10 +91,14 @@ class ExecutiveLoopManager:
 
     The environment arrives by INJECTION: this package cannot import the backend (the
     fail-closed import guard), which structurally separates the loop from any concrete
-    environment. For the optional `nl_track`, only `propose()` is policy-gated to
-    ADVISORY_TWO_TRACK; `observe()` feeds the attached track under ANY policy (data flows
-    loop->NL only, LM-free), and an observe() failure is an infrastructure fault — so a
-    SYMBOLIC_PRIMARY episode with an attached track can legitimately FAULT on it.
+    environment. The orchestration POLICY arrives the same way (R2): pass any
+    `OrchestrationPolicyContract` object, or omit it and the registry in
+    `runtime/policies.py` builds the one named by `config.policy` — the loop itself never
+    dispatches on the policy enum. For the optional `nl_track`, `propose()` is consulted
+    only when the policy's `required_inputs()` requests the advisory proposal; `observe()`
+    feeds the attached track under ANY policy (data flows loop->NL only, LM-free), and an
+    observe() failure is an infrastructure fault — so a SYMBOLIC_PRIMARY episode with an
+    attached track can legitimately FAULT on it.
     """
 
     def __init__(
@@ -94,10 +108,15 @@ class ExecutiveLoopManager:
         config: Optional[OrchestrationConfig] = None,
         nl_track=None,
         provenance: Optional[Provenance] = None,
+        policy: Optional[OrchestrationPolicyContract] = None,
     ) -> None:
         self.env = env
         self.task = task
         self.config = config or OrchestrationConfig()
+        self.policy = policy if policy is not None else build_policy(self.config)
+        # DEFERRED(R4): the composition root owns injecting the comparator; until then the
+        # loop composes the default (domain equivalence + documented threshold) itself.
+        self._comparator = DEFAULT_COMPARATOR
         self.nl_track = nl_track
         self.history = ExecutiveHistory()
         self.belief = ExactSymbolicBelief(DOMAIN_IR, PROJECTION, project)
@@ -264,15 +283,47 @@ class ExecutiveLoopManager:
             return self._maybe_fault_halt(fault)
 
         rejections = 0
+        acquired = False                        # one acquisition per cycle, policy-requested
+        cached_proposal = None
         while True:
-            decision = self._select(planner_result, snapshot)
-            if decision.decision is ExecutiveDecision.HALT:
+            preliminary = self._preliminary(planner_result, snapshot)
+            # ── R3 lifecycle (report Phase 3 item 7): ask the policy which track inputs it
+            # requires, acquire them, and build the comparison BEFORE the final decision.
+            # The compared symbolic side is the call an Execute decision would enact
+            # (standing recovery, else the plan head), so executed-entry divergence
+            # evidence keeps its accepted meaning (review X3: "against THAT cycle's
+            # selected call"). Predictions stay AFTER the decision — the forbidden oracle
+            # is a predictor consulted before choosing, and none is (clause 9).
+            request = self.policy.required_inputs(preliminary)
+            if request.nl_proposal and not acquired:
+                try:
+                    cached_proposal = self._advisory_proposal(request)
+                except InfrastructureFaultError as error:
+                    # NL_TRACK_FAILURE at ACQUISITION — now pre-decision by the R3 order
+                    # (:163, H8): the cycle short-circuits fail-closed with the world
+                    # untouched, zero steps charged, no decision made, no gates run, and
+                    # NO manufactured divergence (divergences compare track CONTENT, and
+                    # there is none).
+                    fault = error.fault
+                    self._entry(step, snapshot, symbolic_result=planner_result,
+                                faults=(fault,))
+                    return self._maybe_fault_halt(fault)
+                acquired = True
+            nl_proposal = cached_proposal if request.nl_proposal else None
+            comparison = (
+                self._comparator.compare(self._compared_call(preliminary), nl_proposal)
+                if nl_proposal is not None else None
+            )
+            decision = self.policy.decide(OrchestrationContext(
+                preliminary=preliminary, nl_proposal=nl_proposal, comparison=comparison,
+            ))
+            if isinstance(decision, Halt):
                 kind = (EpisodeOutcome.HALTED_REPEATED_FAILURE if decision.call is not None
                         else EpisodeOutcome.HALTED_NO_PLAN)
                 self._entry(step, snapshot, symbolic_result=planner_result,
                             decision=decision.decision, selected_call=decision.call)
                 return self._finish(kind, decision.reason)
-            if decision.decision is ExecutiveDecision.REQUEST_PROPOSAL:
+            if isinstance(decision, RequestProposal):
                 # the decision itself is part of the record (:70 traces include decisions;
                 # acceptance record: "orchestrator decision/recovery when P4 exists")
                 self._entry(step, snapshot, symbolic_result=planner_result,
@@ -287,7 +338,7 @@ class ExecutiveLoopManager:
                         decision.reason + " — no recovery advice available",
                     )
                 continue                        # re-select with the recovery call standing
-            if decision.decision is ExecutiveDecision.REPLAN:
+            if isinstance(decision, Replan):
                 rejections += 1
                 if rejections > self.config.max_rejections_per_cycle:
                     fault = InfrastructureFault(
@@ -337,23 +388,9 @@ class ExecutiveLoopManager:
         )
         candidates = predict_world_candidates(snapshot, call, self.task.zone)
         predicted_world_key = candidates[0].world_key() if candidates else None
-        try:
-            nl_proposal = self._advisory_proposal()
-        except InfrastructureFaultError as error:
-            # NL_TRACK_FAILURE is a PRE-EXECUTOR infrastructure fault (:163, H8): the
-            # advisory consultation precedes execute(), so the cycle short-circuits with the
-            # world untouched, zero executive/primitive steps charged, no ExecutionResult —
-            # and NO manufactured divergence: divergences compare track CONTENT, and there
-            # is none. The entry keeps everything already established this cycle.
-            fault = error.fault
-            self._entry(step, snapshot, symbolic_result=planner_result,
-                        selected_call=call, validation=verdict,
-                        decision=ExecutiveDecision.EXECUTE,
-                        predicted_symbolic_key=predicted_symbolic_key,
-                        predicted_world_key=predicted_world_key,
-                        faults=(fault,))
-            return self._maybe_fault_halt(fault)
-        divergences = compare_tracks(call, nl_proposal)
+        # R3: the proposal and comparison were produced BEFORE the decision (acquisition in
+        # the selection loop above); the executed entry records that same evidence.
+        divergences = comparison.divergences if comparison is not None else ()
         # P3 EVIDENCE PRESERVATION (consistency-all W1): the frozen schema reserves proposal
         # columns, and an AGREEING advisory proposal must not vanish just because the
         # comparator has nothing to raise. Recovery provenance keeps priority on nl_proposal
@@ -468,17 +505,43 @@ class ExecutiveLoopManager:
         return None
 
     # ── selection helpers ─────────────────────────────────────────────────────────
-    def _select(self, planner_result: PlannerResult, snapshot: StateSnapshot) -> CycleDecision:
+    def _preliminary(
+        self, planner_result: PlannerResult, snapshot: StateSnapshot
+    ) -> PreliminaryContext[StateSnapshot, GroundedSkillCall]:
+        """Build the immutable pre-acquisition decision situation (R2/R3): the same
+        context feeds `required_inputs()`, the comparison, and `decide()`."""
         if self._pending_recovery:
-            return decide(self.config, planner_result, None, 0,
-                          standing_recovery=self._pending_recovery[0])
+            return PreliminaryContext(
+                state=snapshot, planner_result=planner_result,
+                standing_recovery=self._pending_recovery[0],
+            )
         head_validation = None
-        if isinstance(planner_result, PlanFound) and planner_result.plan:
-            head_validation = evaluate(DOMAIN_IR, self.belief.state, planner_result.plan[0])
         failure_count = 0
         if isinstance(planner_result, PlanFound) and planner_result.plan:
-            failure_count = self.history.failure_count(snapshot, planner_result.plan[0])
-        return decide(self.config, planner_result, head_validation, failure_count)
+            head_validation = evaluate(
+                DOMAIN_IR, self.belief.state, planner_result.plan[0]
+            )
+            failure_count = self.history.failure_count(
+                snapshot, planner_result.plan[0]
+            )
+        return PreliminaryContext(
+            state=snapshot, planner_result=planner_result,
+            head_validation=head_validation, failure_count=failure_count,
+        )
+
+    @staticmethod
+    def _compared_call(
+        preliminary: PreliminaryContext[StateSnapshot, GroundedSkillCall],
+    ) -> Optional[GroundedSkillCall]:
+        """The symbolic side of the R3 pre-decision comparison: the call an Execute
+        decision would enact — standing recovery advice when standing, else the plan
+        head. This keeps executed-entry divergence evidence computed against THAT
+        cycle's selected call (review X3), exactly as accepted."""
+        if preliminary.standing_recovery is not None:
+            return preliminary.standing_recovery
+        if isinstance(preliminary.planner_result, PlanFound) and preliminary.planner_result.plan:
+            return preliminary.planner_result.plan[0]
+        return None
 
     def _recovery_for(self, call: GroundedSkillCall) -> Tuple[GroundedSkillCall, ...]:
         """ADVISORY_TWO_TRACK only: deterministic NL re-establishment advice over the LAST
@@ -488,11 +551,8 @@ class ExecutiveLoopManager:
                 return propose_recovery(discrepancy)
         return ()
 
-    def _advisory_proposal(self):
-        if (
-            self.nl_track is None
-            or self.config.policy is not OrchestrationPolicy.ADVISORY_TWO_TRACK
-        ):
+    def _advisory_proposal(self, request: TrackRequest):
+        if self.nl_track is None or not request.nl_proposal:
             return None
         try:
             return self.nl_track.propose(self.task)

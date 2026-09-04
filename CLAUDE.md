@@ -1,186 +1,251 @@
 # MAAOS — Claude Code Project Instructions
 
-## Current objective
+## Project status
 
-Implement the supervisor's **Symbolic-Twin BoxPush V1** architecture.
+MAAOS Symbolic-Twin BoxPush V1 implementation phases **P0-P4 are complete**.
 
-**Current scope is P0-P4 only.** Do not implement P5-P9 unless the user explicitly asks.
+The current work is a **behavior-preserving architectural refactor**, named
+**Refactor R0-R6**.
 
-The original specification is stored at:
-`docs/supervisor/Symbolic_Twin_BoxPush_Implementation_Plan_Self_Contained_v5.docx`
+Do not confuse these names:
 
-The working P0-P4 extraction is:
-`docs/supervisor/SUPERVISOR_P0_P4_CONTRACT.md`
+- `P0-P4` = the completed/frozen Symbolic-Twin V1 implementation milestone.
+- `R0-R6` = the current refactoring phases from the supervisor/Codex review.
+- Future product/research phases such as `P5+` remain out of scope unless the
+  project owner explicitly requests them.
 
-Section 18 handoff evidence is maintained in:
-`docs/handoff/section18.md`
+Current refactor status is tracked in:
 
-## Authority and source of truth
+`docs/refactor/REFACTOR_STATUS.md`
 
-1. Existing BoxPush environment/backend code is authoritative for **actual low-level execution behavior**.
-2. The supervisor specification is authoritative for the **executive architecture and V1 semantics**.
-3. `docs/handoff/section18.md` is the semantic contract mapping the existing code to that architecture.
-4. Never invent domain behavior when the code or specification does not establish it. Mark it unresolved.
+Current architectural refactor authority:
 
-## Current repository baseline
+`docs/supervisor/MAAOS_code_review_and_refactoring_report.md`
 
-The active BoxPush/skill work is on the `middleware_layer` branch. The existing repository uses:
+## Active implementation
 
-- `functional_layer/` — PettingZoo/custom environments
-- `middleware_layer/` — observation/belief processing
-- `model_layer/` — DSPy/LLM planning
-- `utils/` — logging/support
+The supported Symbolic-Twin V1 runtime is the code under:
 
-The current architecture is a useful baseline, not the target P0-P4 architecture.
+- `shared/`
+- `domain/`
+- `symbolic/`
+- `nl/`
+- `runtime/`
+- `functional_layer/custom_env/box_push/env/box_push_v1_adapter.py`
+- `functional_layer/custom_env/box_push/env/box_push_v1_run.py`
 
-### Current BoxPush entry point
-
-Run from its own directory because the repository currently uses bare imports/path insertion:
+The active BoxPush V1 runner is:
 
 ```bash
 cd functional_layer/custom_env/box_push/env
-python box_push_centralized.py
+python box_push_v1_run.py
 ```
 
-Do not perform a broad package/import refactor while implementing P0-P4 unless it is necessary and separately justified.
+Symbolic-primary demo:
 
-## Required V1 architecture
+```bash
+cd functional_layer/custom_env/box_push/env
+python box_push_v1_run.py --policy symbolic_primary
+```
 
-Keep these responsibilities conceptually separate even if small adapters share files initially:
+Live local-LM execution is opt-in only:
 
-- environment/backend wrapper
-- executor
-- symbolic track
-- NL track
-- translator
-- symbolic predictor
-- monitor
-- track comparator
-- track orchestrator
-- executive loop manager
-- guards
-- trace/history/model versioning contracts
+```bash
+cd functional_layer/custom_env/box_push/env
+python box_push_v1_run.py --nl live
+```
 
-The orchestrator decides between tracks. The executor is policy-independent.
+Default offline regression suite:
 
-## Critical V1 rule: intentionally optimistic symbolic model
+```bash
+python -B -m unittest discover -s tests -t .
+```
 
-The symbolic model is deliberately a simple high-level classical abstraction.
+Do not hard-code a permanent expected test count. R0-R6 may add tests.
 
-**Never add backend BFS, reachability, pathfinding, collision feasibility, or another procedural environment oracle to symbolic applicability/planning merely to make plans executable.**
+## Authority and source of truth
 
-A grounded skill may be symbolically applicable and still fail in the authoritative backend. That must be observable as an `ExecutionDiscrepancy`, especially `ExecutionFailure`, and routed through the orchestrator.
+Use this precedence when reasoning about the refactor:
 
-Do not silently strengthen the symbolic model after such a failure.
+1. Existing authoritative backend/environment implementation establishes
+   realized low-level physical execution behavior.
+2. `docs/decisions/P0_V1_DECISIONS.md` defines frozen V1 semantic decisions.
+3. `docs/supervisor/SUPERVISOR_P0_P4_CONTRACT.md` defines the accepted P0-P4
+   Symbolic-Twin V1 behavior and architectural invariants.
+4. `docs/supervisor/MAAOS_code_review_and_refactoring_report.md` defines the
+   current R0-R6 architectural refactoring objective.
+5. Existing tests, acceptance traces, and implementation documentation
+   characterize the accepted implementation and provide regression evidence.
 
-## Executive skill abstraction
+The R0-R6 report may change internal composition, interfaces, dependency
+direction, and lifecycle organization. It does **not** silently override frozen
+V1 behavior.
 
-The executive operates on **high-level grounded skills**.
+If a requested refactor conflicts materially with a frozen V1 semantic
+decision, stop and explain the conflict rather than changing the frozen
+behavior.
 
-Primitive actions may be composed internally by a backend skill implementation. Do not expose primitive turns/moves as executive planning actions unless the frozen V1 domain explicitly defines them as executive skills.
+Never invent domain behavior when code/specification does not establish it.
 
-For every executive skill, establish:
+## Central refactoring rule
 
-- stable name
-- typed arguments
-- backend implementation mapping
-- symbolic preconditions
-- deterministic success effects
-- success/failure labels
-- true backend feasibility differences
-- failure state semantics
-- executive-step consumption semantics
+Generalize mechanisms and extension points now; generalize domain semantics
+only when a real domain requires them.
 
-## Failure semantics
+This is an incremental extraction, not a rewrite.
 
-Never assume a failed skill is a no-op.
+Keep state/action/result types typed and domain-owned. Do not replace them with
+a universal `dict[str, Any]` framework.
 
-For every important failure mode determine whether the backend:
+Do not implement speculative future machinery merely to make the architecture
+look general.
 
-1. leaves world state unchanged,
-2. partially executes and returns with changed state, or
-3. rejects before any transition.
+## Permanent V1 invariants
 
-Also record whether the failed **executive skill attempt** consumes an executive step.
+These must remain true throughout R0-R6:
 
-Distinguish:
+- The backend remains the sole authority for physical execution success.
+- The symbolic model remains deliberately optimistic.
+- Do not add backend BFS, reachability, collision feasibility, hidden rollout,
+  or another procedural environment oracle to symbolic applicability/planning.
+- A symbolically applicable grounded skill may fail in the backend, and that
+  failure remains visible as typed evidence.
+- `ExecutionDiscrepancy`, `TrackDivergence`, and `InfrastructureFault` remain
+  separate typed evidence channels.
+- A current-cycle infrastructure fault follows the established fail-closed
+  routing and must not be turned into a normal competing proposal.
+- Recovery calls pass through the same validation and execution path as normal
+  selected calls.
+- The executor remains policy-independent.
+- Default tests remain deterministic and offline.
+- Live LM/Ollama/DSPy execution remains opt-in.
+- Do not weaken or delete existing tests merely to make a refactor pass.
+- Preserve existing CLI/import/serialized-trace compatibility where practical;
+  adapt around incompatibilities rather than silently changing external
+  formats.
 
-- `primitive_step`: one low-level environment transition/action cycle
-- `executive_step`: one attempted high-level grounded skill at an executive decision boundary
+## R0-R6 execution discipline
 
-Do not infer one from the other without an explicit contract.
+Implement exactly **one refactor phase at a time**.
 
-## V1 assumptions
+Before editing for a phase:
 
-For P0-P4 use:
+1. Read the exact phase in
+   `docs/supervisor/MAAOS_code_review_and_refactoring_report.md`.
+2. Read `docs/decisions/P0_V1_DECISIONS.md`.
+3. Read `docs/supervisor/SUPERVISOR_P0_P4_CONTRACT.md`.
+4. Read the applicable `.claude/rules/`.
+5. Inspect the current implementation and relevant tests.
+6. Check git status and preserve unrelated user changes.
 
-- deterministic dynamics at the symbolic level
-- fully observable exact symbolic state
-- canonical typed `StateSnapshot`
-- no probabilistic belief requirement
-- no asynchronous skill overlap
-- deterministic sequential executive decisions
-- text/typed NL input only
-- no VLM/rendered-image input
-- skill cost 1 unless the domain contract says otherwise
+Do not implement acceptance criteria belonging only to later R-phases unless
+the current phase explicitly requires a prerequisite.
 
-Keep existing partial-observation/POMDP code for later work; use an adapter/mode for classical V1 rather than deleting it.
+Known architectural debt scheduled for a later R-phase is `DEFERRED`, not a
+reason to expand the current phase.
 
-## Required typed distinctions
+After each coherent behavior-sensitive change:
 
-Never conflate:
+```bash
+python -B -m unittest discover -s tests -t .
+```
 
-- `PlanFound(plan)`
-- `NoPlan(reason)`
-- `PlannerFailure(error_or_timeout)`
+Also run focused tests/static checks required by the assigned phase.
 
-Never conflate:
+At phase completion report:
 
-- `ExecutionDiscrepancy` — symbolic prediction/model vs authoritative execution
-- `TrackDivergence` — NL track vs symbolic track disagreement/coverage/translation issue
-- `InfrastructureFault` — API/backend/serialization/protocol/runtime fault
+- files changed;
+- tests added/changed;
+- commands run;
+- full/focused results;
+- behavior differences, if any;
+- remaining known debt and which later R-phase owns it;
+- whether the assigned phase acceptance criteria are satisfied.
 
-A current `InfrastructureFault` short-circuits the normal current cycle. `PlannerFailure` becomes `InfrastructureFault`; `NoPlan` is a legitimate symbolic result for the orchestrator.
+## Current target architecture
 
-## Change policy
+The final R0-R6 direction is:
 
-Before changing existing environment behavior:
+```text
+concrete BoxPush/domain implementations
+            |
+            v
+    narrow shared contracts
+            |
+            v
+       runtime core
+            |
+            v
+authoritative environment/backend
+```
 
-1. inspect and document the current behavior;
-2. identify the precise architectural mismatch;
-3. prefer a wrapper/adapter;
-4. preserve backend execution semantics where possible;
-5. change backend semantics only when explicitly necessary.
+The generic runtime target must not interpret BoxPush vocabulary such as agent,
+box, zone, or geometry semantics.
 
-Do not modify code simply to make a symbolic test pass if the test is exposing a legitimate execution discrepancy.
+Expected variable components are injected through narrow typed contracts,
+including tracks, comparator, recovery provider, policy, environment/domain
+services as introduced by the assigned R-phase.
 
-## NL/DSPy policy
+Policies decide; they do not execute the backend.
 
-The V1 NL track is a peer reasoning track, not the sole executive planner.
+Comparators report evidence; they do not select or execute actions.
 
-Prefer small typed modules over one monolithic prompt. Default P0-P4 tests must not require a live LM. Provide deterministic stub/recorded responses; live calls belong in separately marked integration tests.
+Track proposal, recovery proposal, and orchestration authority are distinct
+concepts.
 
-Malformed NL skill calls must be typed validation/repair/rejection cases. Do not silently convert malformed output into an unrelated valid skill such as `explore`.
+When a policy requests both proposals, R3 establishes comparison before the
+final policy decision. Do not force this lifecycle change before its assigned
+phase.
 
-## Documentation and evidence
+## Out of scope
 
-When claiming a requirement is satisfied, point to exact files/classes/functions/tests.
+Unless explicitly requested as a new domain requirement, do not implement:
 
-Do not document intended behavior as implemented behavior.
+- belief reconciliation;
+- probabilistic/stochastic transitions;
+- calibrated uncertainty machinery;
+- partial-observation production semantics;
+- temporal reasoning/duration models;
+- asynchronous/concurrent executive track execution;
+- VLM/rendered-image input;
+- dynamic third-party plugin discovery for the runtime;
+- speculative universal abstractions for future domains.
 
-Keep `docs/handoff/section18.md` and the final implementation document synchronized with actual code.
+A test-only synthetic probe domain in R5 is allowed because it validates
+architectural substitutability; it is not production semantic functionality.
 
-## Testing
+## Legacy code
 
-Every P0-P4 architectural addition requires tests.
+`middleware_layer/`, `model_layer/`, and pre-V1 runners are research/reference
+material, not alternative supported Symbolic-Twin runtimes.
 
-Required acceptance coverage includes:
+Do not use legacy structure as architectural precedent for R0-R6.
 
-- normal successful execution
-- symbolically applicable but backend-infeasible skill
-- symbolically inapplicable call
-- malformed call
-- `NoPlan` case when available
-- explicit failure state and executive-step-consumption evidence
+Do not move/delete large legacy package trees during the refactor unless the
+assigned phase explicitly calls for a separate reviewable hygiene change.
 
-Use `/handoff-audit`, `/implement-phase`, `/consistency-check`, `/acceptance-test`, and `/final-audit` as the primary project workflows.
+## Documentation
+
+Documentation must describe actual implemented behavior.
+
+Keep the supervisor's refactoring report unchanged as a source artifact.
+
+Do not rewrite the historical
+`docs/implementation/P0_P4_IMPLEMENTATION.md` as if R0-R6 were part of the
+original P0-P4 implementation. Record R0-R6 work in:
+
+`docs/refactor/REFACTORING_IMPLEMENTATION.md`
+
+## Primary manual workflows
+
+Use these project skills when appropriate:
+
+- `/refactor-preflight` (once, before R0)
+- `/refactor-phase R0` ... `/refactor-phase R6`
+- `/v1-regression`
+- `/consistency-check v1|refactor|all`
+- `/refactor-doc`
+- `/refactor-audit`
+- `/run-v1`
+
+The old P0-P4 implementation workflows are retired.

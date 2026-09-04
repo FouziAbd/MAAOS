@@ -1,0 +1,45 @@
+{
+  "hooks": {
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/task_completed_tests.py\""
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Read",
+      "Grep",
+      "Glob",
+      "Bash(python -B -m unittest discover -s tests -t .*)",
+      "Bash(python -m unittest *)",
+      "Bash(python -B -m unittest *)",
+      "Bash(python -m mypy *)",
+      "Bash(mypy *)",
+      "Bash(ruff *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch*)",
+      "Bash(git rev-parse*)",
+      "Bash(python box_push_v1_run.py --headless*)",
+      "Bash(python box_push_v1_run.py --help*)"
+    ],
+    "deny": [
+      "Bash(git push*)",
+      "Bash(git reset --hard*)",
+      "Bash(git checkout -- *)",
+      "Bash(git clean*)",
+      "Bash(rm -rf*)",
+      "Bash(python box_push_v1_run.py --nl live*)",
+      "Bash(pip install*)",
+      "WebFetch"
+    ]
+  }
+}

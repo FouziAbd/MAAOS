@@ -373,3 +373,22 @@ def project(state: StateSnapshot) -> SymbolicState:
                     GroundedLiteral(P_DIFFERENT, (a.agent_id.value, other.agent_id.value))
                 )
     return SymbolicState.of(literals)
+
+
+# ── action equivalence (R3 — report Phase 3 item 3) ──────────────────────────────────────
+class BoxPushActionEquivalence:
+    """The BoxPush abstraction-equivalence rule, extracted from the runtime comparator so
+    the generic side holds no agent/box/zone rule: two DIFFERENT grounded calls that share
+    skill/box/zone and differ only in agent binding are symbolically equivalent, because
+    `in_pose` is intentionally non-exclusive (Decision 6) — either binding satisfies the
+    same optimistic preconditions. Identity is handled by the caller, not here."""
+
+    def benign_equivalence(self, proposed, selected, /):
+        if (proposed.skill, proposed.box, proposed.zone) == (
+            selected.skill, selected.box, selected.zone
+        ):
+            return (
+                "same skill/box/zone, different agent binding — symbolically "
+                "equivalent under non-exclusive optimism (Decision 6)"
+            )
+        return None

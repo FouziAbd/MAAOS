@@ -1,46 +1,54 @@
 ---
 paths:
   - "nl/**/*"
-  - "model_layer/planner/**/*"
-  - "middleware_layer/belief_updaters/**/*"
-  - "**/*dspy*"
-  - "**/*DSPy*"
+  - "runtime/**/*comparator*"
+  - "runtime/**/*orchestrator*"
+  - "tests/**/*nl*"
+  - "tests/**/*track*"
 ---
 
 # NL / DSPy Track Rules
 
-The NL track is a peer reasoning track. In V1 it is **not** the sole authoritative planner/executor.
+The NL track is a peer reasoning source. It is never the physical execution
+authority.
 
-Prefer small typed modules with narrow responsibilities, including the V1-relevant subset of:
+Keep these concepts distinct:
 
-- TaskInterpreter
-- ObservationInterpreter
-- SemanticBeliefUpdater
-- SkillSelector
-- AmbiguityDetector when needed
-- RepairSkillCall
-- Translator with explicit residual
-- RecoveryProposer
+1. a reasoning-track proposal;
+2. a recovery proposal;
+3. an orchestration policy deciding what authority proposals have.
 
-Reuse useful existing DSPy prompts/parsers only after fitting them behind typed interfaces.
+A proposal does not execute anything by itself.
 
-## V1 input
+## Deterministic baseline
 
-Use text and/or typed structured data. No rendered-image/VLM path is required in P0-P4.
+Default tests must work offline without a live LM.
 
-## Deterministic tests
+- use typed stub/recorded/fake outputs;
+- keep live Ollama/DSPy calls opt-in;
+- malformed or out-of-vocabulary output must be explicitly
+  validated/repaired/rejected;
+- never silently reinterpret malformed output as an unrelated valid skill.
 
-Default tests must work offline without a live LM:
+Raw confidence and its source may be preserved as evidence. Do not claim
+calibration unless calibration is actually implemented/tested.
 
-- pin DSPy/runtime dependency versions;
-- temperature 0 for the V1 baseline;
-- enable deterministic caching where appropriate;
-- provide recorded/mock LM fixtures;
-- provide a stub NL track with fixed typed outputs;
-- isolate live-model calls in marked integration tests.
+## Refactor lifecycle
 
-## Invalid outputs
+Do not implement R3 early.
 
-Malformed or out-of-vocabulary skill output must be validated, repaired, or rejected explicitly.
+When R3 is the assigned phase:
 
-Never silently reinterpret malformed output as an unrelated valid action/skill such as `explore`.
+- the generic proposal-comparator contract must remain domain-neutral;
+- the current implementation may be explicitly scoped as a BoxPush action
+  comparator;
+- BoxPush benign agent-binding equivalence belongs to a BoxPush/domain-owned
+  equivalence component;
+- configurable thresholds must not remain hidden module globals;
+- malformed proposals must not erase independent evidence that can still be
+  reported;
+- when a policy requests both proposals, comparison must be available before
+  its final decision.
+
+Belief-state/constraint/temporal comparators are not production requirements in
+the current milestone.

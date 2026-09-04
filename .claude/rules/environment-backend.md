@@ -1,50 +1,56 @@
 ---
 paths:
-  - "functional_layer/custom_env/box_push/**/*"
-  - "functional_layer/custom_env/shared_skills.py"
-  - "environment/**/*"
+  - "functional_layer/custom_env/box_push/env/**/*"
+  - "shared/backend_contract.py"
   - "shared/state_snapshot.py"
+  - "shared/symbolic_state.py"
+  - "tests/**/*adapter*"
+  - "tests/**/*backend*"
 ---
 
 # Environment and Backend Rules
 
-Existing BoxPush code is the source of truth for realized execution.
+The existing BoxPush backend/environment is the source of truth for realized
+physical execution behavior.
 
-Prefer introducing a V1 wrapper/adapter with a contract equivalent to:
+R0-R6 is primarily an architectural refactor around that behavior.
 
-- `reset()`
-- `observe()`
-- `execute_skill(call)`
-- `export_full_state()`
-- `is_terminal()`
-- optional `render()`
+Do not duplicate or reimplement backend behavior when the existing code already
+defines it.
 
-Do not duplicate/reimplement backend behavior when an existing function/class already defines it.
+## Executive boundary
 
-## High-level skills
+The executive sees grounded high-level skills/actions and typed terminal
+execution evidence. A skill may internally execute multiple primitive actions.
 
-The executive sees grounded high-level skills and terminal execution results. A skill may internally execute multiple primitive actions.
+Preserve:
 
-For every skill wrapper preserve and expose:
+- grounded arguments;
+- terminal/success/failure labels;
+- true pre/post state;
+- primitive-step information when tracked;
+- executive-attempt semantics;
+- raw/public observation vs debug/full-state distinctions.
 
-- grounded typed arguments
-- terminal label
-- state before/after
-- primitive step count if useful
-- executive attempt semantics
-- raw/public observation
-- debug/full-state data separately
+Never normalize all failures into unchanged state. A multi-step skill may
+partially execute before failure.
 
-## Failure
+Backend feasibility/pathfinding remains behind execution and must not become a
+symbolic applicability oracle.
 
-Never normalize all failure into an unchanged state without evidence.
+## R6-specific correctness work
 
-A multi-step skill may move/turn/push before later failing. Preserve the true post-failure state and label it as partial execution when appropriate.
+Observation immutability/defensive-copy changes and malformed-backend-return
+normalization belong to R6 unless an earlier assigned phase requires a minimal
+adapter for compatibility.
 
-Do not use backend BFS/pathfinding as a symbolic precondition. Backend pathfinding belongs behind execution.
+Do not change these semantics early just to satisfy the final R6 target.
 
-## StateSnapshot
+When R6 is assigned:
 
-Backend state must be normalized into a typed canonical `StateSnapshot` at the wrapper boundary.
+- returned observations must not alias authoritative mutable backend state;
+- unexpected backend return values must enter the established typed fault
+  channel instead of leaking raw attribute/type exceptions.
 
-Use normalized structural equality for predicted-vs-observed comparisons. Raw backend serialization is not the equality criterion.
+Preserve the established step-consumption semantics while making those
+boundaries safer.
