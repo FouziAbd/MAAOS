@@ -1,0 +1,91 @@
+"""R1 static-conformance witnesses: the shipped components satisfy `shared.contracts`.
+
+This module is the R1 acceptance evidence for "existing components satisfy the protocols
+under static checking". Check it with:
+
+    python -m mypy --ignore-missing-imports --follow-imports=silent tests/contract_conformance.py
+
+Every witness is a typed identity: if a shipped component stopped satisfying its contract,
+the annotated assignment/return below would fail mypy. `tests/test_r1_contracts.py` imports
+this module and calls the witnesses with real instances, so the same claims also hold at
+runtime (structurally, via the runtime_checkable protocols).
+
+Deliberately NOT test_-prefixed: it is a conformance surface, not a test case module.
+"""
+from __future__ import annotations
+
+from typing import Any, Mapping, Union
+
+from shared.backend_contract import V1Environment
+from shared.contracts import (
+    Environment,
+    Halt,
+    OrchestrationContext,
+    OrchestrationPolicyContract,
+    PolicyDecision,
+    PreliminaryContext,
+    ProposalComparator,
+    ReasoningTrack,
+    RecoveryProvider,
+    SymbolicTrack,
+    TrackRequest,
+)
+from shared.execution import ExecutionResult
+from shared.skills import GroundedSkillCall, MalformedCall, UngroundedCall
+from shared.state_snapshot import StateSnapshot
+from shared.symbolic_state import SymbolicState
+from shared.task import Task
+
+from nl.recovery import propose_recovery
+from nl.track import NLProposal, NLTrack
+from runtime.comparator import compare_tracks
+from symbolic import ExactSymbolicBelief
+
+# The V1 execution-outcome union `V1Environment.execute_skill` already returns.
+V1ExecutionOutcome = Union[ExecutionResult, MalformedCall, UngroundedCall]
+
+# The concrete V1 parameterizations of the generic contracts.
+V1EnvironmentContract = Environment[
+    StateSnapshot, GroundedSkillCall, V1ExecutionOutcome, Mapping[str, Any]
+]
+V1SymbolicTrackContract = SymbolicTrack[StateSnapshot, SymbolicState]
+V1ReasoningTrackContract = ReasoningTrack[StateSnapshot, Task, NLProposal]
+V1PolicyContract = OrchestrationPolicyContract[StateSnapshot, GroundedSkillCall, NLProposal]
+
+
+def environment_conforms(env: V1Environment) -> V1EnvironmentContract:
+    """Anything satisfying the frozen V1Environment (e.g. BoxPushV1Adapter) satisfies the
+    generic Environment contract at its V1 parameterization."""
+    return env
+
+
+def symbolic_track_conforms(belief: ExactSymbolicBelief) -> V1SymbolicTrackContract:
+    return belief
+
+
+def reasoning_track_conforms(track: NLTrack) -> V1ReasoningTrackContract:
+    return track
+
+
+comparator_conforms: ProposalComparator[GroundedSkillCall, NLProposal] = compare_tracks
+recovery_conforms: RecoveryProvider[GroundedSkillCall] = propose_recovery
+
+
+class MinimalHaltPolicy:
+    """Test-local conformance witness for the policy contract. R2 supplies the real
+    SymbolicPrimaryPolicy/AdvisoryTwoTrackPolicy classes; until then this proves the
+    contract is implementable with the current typed channels — nothing more."""
+
+    def required_inputs(
+        self, context: PreliminaryContext[StateSnapshot, GroundedSkillCall]
+    ) -> TrackRequest:
+        return TrackRequest()
+
+    def decide(
+        self, context: OrchestrationContext[StateSnapshot, GroundedSkillCall, NLProposal]
+    ) -> PolicyDecision[GroundedSkillCall]:
+        return Halt(reason="conformance witness policy always halts")
+
+
+def policy_conforms(policy: MinimalHaltPolicy) -> V1PolicyContract:
+    return policy
