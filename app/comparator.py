@@ -57,7 +57,7 @@ from shared.divergence import DivergenceKind, TrackDivergence
 from shared.skills import GroundedSkillCall, REGISTRY
 
 from domain.box_push_v1 import BoxPushActionEquivalence
-from nl.track import NLProposal
+from nl.track import MalformedProposal, NLProposal
 
 LOW_CONFIDENCE = 0.75          # the documented V1 default; configuration, not a hidden rule
 
@@ -95,7 +95,9 @@ class BoxPushActionComparator:
         symbolic_view = str(symbolic_call) if symbolic_call else "no symbolic selection"
         findings = []
 
-        if nl_proposal.malformed is not None:
+        if isinstance(nl_proposal, MalformedProposal):
+            # R6: the variant type narrows statically — below this branch `nl_proposal`
+            # is a GroundedProposal and `call` is a GroundedSkillCall, never None
             findings.append(_finding(
                 ComparedAspect.PROPOSAL_FORM, FindingSeverity.ATTENTION,
                 kind=DivergenceKind.COVERAGE_GAP,
@@ -153,7 +155,6 @@ class BoxPushActionComparator:
 
         if (
             symbolic_call is not None
-            and nl_proposal.confidence is not None
             and nl_proposal.confidence.confidence < self.low_confidence_threshold
         ):
             findings.append(_finding(

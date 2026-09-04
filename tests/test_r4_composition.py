@@ -46,7 +46,7 @@ from domain.box_push_v1 import (
     initial_state,
 )
 from nl.recovery import propose_recovery
-from nl.track import NLProposal
+from nl.track import GroundedProposal
 from runtime.loop import EpisodeOutcome, ExecutiveLoopManager
 from runtime.policies import AdvisoryTwoTrackPolicy
 from shared.contracts import (
@@ -80,11 +80,10 @@ PUSH = GroundedSkillCall(SkillName.PUSH, (AGENT_0,), BOX_LIGHT, DELIVERY_ZONE)
 
 
 def _proposal(call):
-    return NLProposal(
-        call=call, malformed=None,
+    return GroundedProposal(
+        call=call,
         coverage=CoverageReport(covered=("x",), residual=()),
         confidence=ConfidenceReport(source="nl", confidence=1.0),
-        repaired=False,
     )
 
 

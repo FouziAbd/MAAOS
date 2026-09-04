@@ -3,7 +3,13 @@
 One `propose()` cycle: interpret the task → update the semantic belief from the canonical
 snapshot → ask the SkillSelector through the seam → one repair attempt if malformed →
 translate with residual. The result is a typed `NLProposal` for the P4 orchestrator/track
-comparator: a call (or a standing MalformedCall) plus the coverage and confidence evidence.
+comparator — since R6 (report Phase 6 item 3) a DISCRIMINATED union of two variants:
+`GroundedProposal` (a call with the coverage and confidence evidence of its translation) or
+`MalformedProposal` (the standing MalformedCall with the task-interpretation coverage). Static
+typing proves which one a consumer holds after an `isinstance` check; the former single class
+encoded the same invariant as two mutually-exclusive optional fields checked only at runtime.
+Both variants keep the read surface the runtime's `AdvisoryProposal` contract records
+(`call` / `coverage` / `confidence`), so the trace columns are unchanged.
 
 Structural guarantees, not conventions:
   - this package cannot import the backend, the adapter, dspy, or `runtime`
@@ -14,7 +20,7 @@ Structural guarantees, not conventions:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, TypeAlias
 
 from shared.execution import ExecutionOutcome
 from shared.reports import ConfidenceReport, CoverageReport
@@ -31,17 +37,64 @@ from nl.translator import translate_proposal
 
 
 @dataclass(frozen=True, slots=True)
-class NLProposal:
-    """The NL track's answer for one executive cycle."""
-    call: Optional[GroundedSkillCall]
-    malformed: Optional[MalformedCall]
+class GroundedProposal:
+    """The NL track's answer for one executive cycle when it produced a well-formed call:
+    the call, the merged task-interpretation + translation coverage, the translation's
+    confidence evidence, and whether the one repair attempt was needed."""
+    call: GroundedSkillCall
     coverage: CoverageReport
-    confidence: Optional[ConfidenceReport]
-    repaired: bool
+    confidence: ConfidenceReport
+    repaired: bool = False
 
     def __post_init__(self) -> None:
-        if (self.call is None) == (self.malformed is None):
-            raise ValueError("an NLProposal carries exactly one of call | malformed")
+        if not isinstance(self.call, GroundedSkillCall):
+            raise TypeError(
+                f"GroundedProposal requires a GroundedSkillCall, got "
+                f"{type(self.call).__name__}; a proposal without a call is a MalformedProposal"
+            )
+        if not isinstance(self.coverage, CoverageReport):
+            raise TypeError("GroundedProposal requires a CoverageReport")
+        if not isinstance(self.confidence, ConfidenceReport):
+            raise TypeError("GroundedProposal requires a ConfidenceReport")
+
+    @property
+    def malformed(self) -> None:
+        """A grounded proposal carries no standing malformed call (typed None)."""
+        return None
+
+
+@dataclass(frozen=True, slots=True)
+class MalformedProposal:
+    """The NL track's answer when the model's output stayed malformed after the one repair
+    attempt: the standing `MalformedCall` (never rewritten into another skill) plus the
+    task-interpretation coverage, which is evidence independent of the call and is still
+    reported by the comparator (R3 item 6)."""
+    malformed: MalformedCall
+    coverage: CoverageReport
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.malformed, MalformedCall):
+            raise TypeError(
+                f"MalformedProposal requires a MalformedCall, got "
+                f"{type(self.malformed).__name__}"
+            )
+        if not isinstance(self.coverage, CoverageReport):
+            raise TypeError("MalformedProposal requires a CoverageReport")
+
+    @property
+    def call(self) -> None:
+        """No well-formed call this cycle (typed None — the runtime's proposal column)."""
+        return None
+
+    @property
+    def confidence(self) -> None:
+        """Nothing was translated, so there is no translation confidence (typed None)."""
+        return None
+
+
+#: The NL track's proposal type: exactly one of the two variants. `isinstance` against either
+#: variant narrows statically; `isinstance(x, NLProposal)` also works at runtime (PEP 604).
+NLProposal: TypeAlias = GroundedProposal | MalformedProposal
 
 
 class NLTrack:
@@ -72,17 +125,14 @@ class NLTrack:
             proposed = self._repair.repair(proposed)
             repaired = not isinstance(proposed, MalformedCall)
         if isinstance(proposed, MalformedCall):
-            return NLProposal(
-                call=None, malformed=proposed,
-                coverage=interpreted.coverage, confidence=None, repaired=False,
-            )
+            return MalformedProposal(malformed=proposed, coverage=interpreted.coverage)
         translated = translate_proposal(proposed)
         coverage = CoverageReport(
             covered=interpreted.coverage.covered + translated.coverage.covered,
             residual=interpreted.coverage.residual + translated.coverage.residual,
             note="task interpretation + proposal translation",
         )
-        return NLProposal(
-            call=proposed, malformed=None,
-            coverage=coverage, confidence=translated.confidence, repaired=repaired,
+        return GroundedProposal(
+            call=proposed, coverage=coverage, confidence=translated.confidence,
+            repaired=repaired,
         )

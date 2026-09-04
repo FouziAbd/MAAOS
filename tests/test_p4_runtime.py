@@ -26,7 +26,7 @@ from domain.box_push_v1 import (
     DELIVERY_ZONE,
     TASK_DELIVER_BOTH,
 )
-from nl.track import NLProposal
+from nl.track import GroundedProposal, MalformedProposal
 from shared.contracts import TrackRequest
 from shared.divergence import DivergenceKind
 from shared.execution import ExecutionOutcome
@@ -58,11 +58,12 @@ WAIT = GroundedSkillCall(SkillName.WAIT, (AGENT_0,))
 
 
 def _proposal(call=None, malformed=None, residual=(), confidence=1.0):
-    return NLProposal(
-        call=call, malformed=malformed,
-        coverage=CoverageReport(covered=("x",), residual=tuple(residual)),
-        confidence=ConfidenceReport(source="nl", confidence=confidence) if call else None,
-        repaired=False,
+    coverage = CoverageReport(covered=("x",), residual=tuple(residual))
+    if malformed is not None:                       # R6: the two proposal variants
+        return MalformedProposal(malformed=malformed, coverage=coverage)
+    return GroundedProposal(
+        call=call, coverage=coverage,
+        confidence=ConfidenceReport(source="nl", confidence=confidence),
     )
 
 
@@ -786,7 +787,7 @@ class TestAdvisoryComparatorThroughTheLoop(unittest.TestCase):
 
     def test_malformed_lm_output_is_still_coverage_gap_evidence_not_a_fault(self):
         """The channel boundary, both directions: the LM RETURNING content the parser/repair
-        rejected is a typed NLProposal.malformed → COVERAGE_GAP through the comparator —
+        rejected is a typed MalformedProposal → COVERAGE_GAP through the comparator —
         never an infrastructure fault, and execution proceeds normally."""
         malformed = _proposal(malformed=MalformedCall("garbage from the LM", raw="x"))
         loop = build_loop(

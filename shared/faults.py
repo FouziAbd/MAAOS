@@ -37,7 +37,7 @@ class FaultKind(StrEnum):
 #: `NL_TRACK_FAILURE` belongs here because the advisory consultation precedes `execute()`:
 #: an exception ESCAPING `nl_track.propose()` (LM/seam/DSPy raise, missing recorded fixture)
 #: faults the cycle with the world untouched and zero steps consumed. It is infrastructure
-#: provenance, never comparator evidence — typed malformed LM OUTPUT stays `NLProposal.malformed`
+#: provenance, never comparator evidence — typed malformed LM OUTPUT stays a `MalformedProposal`
 #: → COVERAGE_GAP through the comparator, the only `TrackDivergence` constructor (H8).
 #: MEMBERSHIP IS STAGE-QUALIFIED (H8 WARN-1): the NL track has a second consultation stage —
 #: `observe()` — which may run AFTER a completed attempt, so an observe-stage fault legally

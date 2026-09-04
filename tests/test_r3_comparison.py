@@ -42,7 +42,7 @@ from domain.box_push_v1 import (
     TASK_DELIVER_BOTH,
     BoxPushActionEquivalence,
 )
-from nl.track import NLProposal
+from nl.track import GroundedProposal, MalformedProposal
 from shared.contracts import (
     ComparedAspect,
     ComparisonReport,
@@ -73,11 +73,12 @@ WAIT = GroundedSkillCall(SkillName.WAIT, (AGENT_0,))
 
 
 def _proposal(call=None, malformed=None, residual=(), confidence=1.0):
-    return NLProposal(
-        call=call, malformed=malformed,
-        coverage=CoverageReport(covered=("x",), residual=tuple(residual)),
-        confidence=ConfidenceReport(source="nl", confidence=confidence) if call else None,
-        repaired=False,
+    coverage = CoverageReport(covered=("x",), residual=tuple(residual))
+    if malformed is not None:                       # R6: the two proposal variants
+        return MalformedProposal(malformed=malformed, coverage=coverage)
+    return GroundedProposal(
+        call=call, coverage=coverage,
+        confidence=ConfidenceReport(source="nl", confidence=confidence),
     )
 
 

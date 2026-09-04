@@ -38,7 +38,7 @@ from shared.symbolic_state import SymbolicState
 from shared.task import Task
 
 from nl.recovery import propose_recovery
-from nl.track import NLProposal, NLTrack
+from nl.track import MalformedProposal, NLProposal, NLTrack
 from app.box_push_v1 import BoxPushDomainServices
 from app.comparator import DEFAULT_COMPARATOR, BoxPushActionComparator
 from runtime.policies import AdvisoryTwoTrackPolicy, SymbolicPrimaryPolicy
@@ -120,3 +120,13 @@ class MinimalHaltPolicy:
 
 def policy_conforms(policy: MinimalHaltPolicy) -> V1PolicyContract:
     return policy
+
+
+def proposal_narrows_statically(proposal: NLProposal) -> Union[GroundedSkillCall, MalformedCall]:
+    """R6 (report Phase 6 item 3): `NLProposal` is a discriminated union, so ONE isinstance
+    check proves to mypy which payload is present — `proposal.call` below is a
+    `GroundedSkillCall`, never an Optional to unwrap. The pre-R6 single class with two
+    optional fields could not make this function type-check without a runtime assert."""
+    if isinstance(proposal, MalformedProposal):
+        return proposal.malformed
+    return proposal.call

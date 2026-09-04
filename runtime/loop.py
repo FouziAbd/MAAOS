@@ -579,7 +579,7 @@ class ExecutiveLoopManager:
             # not reasoning content — the earlier rewrite into a standing MalformedCall
             # manufactured COVERAGE_GAP evidence with fault provenance. Typed malformed LM
             # OUTPUT (the model returned content the parser/repair rejected) still arrives as
-            # `NLProposal.malformed` from inside NLTrack and still becomes COVERAGE_GAP via
+            # a `MalformedProposal` from inside NLTrack and still becomes COVERAGE_GAP via
             # the comparator, the only TrackDivergence constructor. Only the RAISE is a fault.
             raise InfrastructureFaultError(InfrastructureFault(
                 kind=FaultKind.NL_TRACK_FAILURE,

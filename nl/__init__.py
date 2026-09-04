@@ -11,11 +11,12 @@ from nl.seam import LMSeam, NLRequest, RecordedLM, UnrecordedRequestError
 from nl.semantic_belief import SemanticBelief, update_belief
 from nl.skill_selector import FORMAT_INSTRUCTIONS, SkillSelector, skill_menu
 from nl.task_interpreter import InterpretedTask, interpret_task
-from nl.track import NLProposal, NLTrack
+from nl.track import GroundedProposal, MalformedProposal, NLProposal, NLTrack
 from nl.translator import TranslatedProposal, translate_proposal
 
 __all__ = [
-    "FORMAT_INSTRUCTIONS", "InterpretedTask", "LMSeam", "NLProposal", "NLRequest",
+    "FORMAT_INSTRUCTIONS", "GroundedProposal", "InterpretedTask", "LMSeam",
+    "MalformedProposal", "NLProposal", "NLRequest",
     "NLRuntimeConfig", "NLTrack", "PINNED_V1_NL_RUNTIME", "RecordedLM", "RepairSkillCall",
     "SemanticBelief", "SkillSelector", "TranslatedProposal", "UnrecordedRequestError",
     "interpret_task", "parse_skill_call", "propose_recovery", "skill_menu",
