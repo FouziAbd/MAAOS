@@ -3,7 +3,8 @@
 The R1 protocols plus the immutable contexts and typed decision variants the target
 architecture composes against, consumed phase by phase: R2 policies, R3 the comparison
 lifecycle, R4 the domain-services bundle and constructor injection of every variable
-component into the generic runtime.
+component into the generic runtime, R5 the structural protocols for the domain-owned value
+types the runtime handles (state, call, task, proposal — `domain_types.py`).
 
 Rules embodied here:
 - generic only in the domain-owned types the report names (state, call/action, execution
@@ -25,6 +26,12 @@ from shared.contracts.comparison import (
     RecoveryProvider,
 )
 from shared.contracts.domain import DomainServices, Prediction
+from shared.contracts.domain_types import (
+    AdvisoryProposal,
+    RuntimeCall,
+    RuntimeState,
+    TaskContract,
+)
 from shared.contracts.environment import Environment
 from shared.contracts.policy import (
     Execute,
@@ -43,6 +50,10 @@ __all__ = [
     "Environment",
     "DomainServices",
     "Prediction",
+    "RuntimeState",
+    "RuntimeCall",
+    "TaskContract",
+    "AdvisoryProposal",
     "SymbolicTrack",
     "ReasoningTrack",
     "ActionEquivalence",
