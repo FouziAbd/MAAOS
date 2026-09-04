@@ -94,11 +94,14 @@ class TestShippedComponentsSatisfyTheProtocols(unittest.TestCase):
         self.assertIs(contract_conformance.reasoning_track_conforms(track), track)
 
     def test_the_comparator_and_recovery_functions_satisfy_their_contracts(self):
+        # R3 restructured the comparator seam: the report-shaped ProposalComparator is
+        # satisfied by the scoped BoxPushActionComparator instance (the legacy
+        # compare_tracks function remains only as a divergence-tuple wrapper over it).
         from nl.recovery import propose_recovery
-        from runtime.comparator import compare_tracks
-        self.assertIsInstance(compare_tracks, ProposalComparator)
+        from runtime.comparator import DEFAULT_COMPARATOR
+        self.assertIsInstance(DEFAULT_COMPARATOR, ProposalComparator)
         self.assertIsInstance(propose_recovery, RecoveryProvider)
-        self.assertIs(contract_conformance.comparator_conforms, compare_tracks)
+        self.assertIs(contract_conformance.comparator_conforms, DEFAULT_COMPARATOR)
         self.assertIs(contract_conformance.recovery_conforms, propose_recovery)
 
     def test_the_policy_contract_is_implementable_and_pure_shaped(self):
@@ -130,7 +133,9 @@ class TestContextsAreImmutableAndValidated(unittest.TestCase):
             preliminary=PreliminaryContext(state=_snapshot(), planner_result=_NOPLAN)
         )
         self.assertIsNone(context.nl_proposal)
-        self.assertEqual(context.divergences, ())
+        # R3: absence of a comparison is None (no proposal was compared), never a
+        # manufactured empty report
+        self.assertIsNone(context.comparison)
         with self.assertRaises(dataclasses.FrozenInstanceError):
             context.nl_proposal = object()
 
@@ -182,7 +187,8 @@ class TestContractSourceDiscipline(unittest.TestCase):
     _SPECULATIVE_TOKENS = (
         "belief", "probab", "stochastic", "temporal", "duration", "async", "concurrent",
     )
-    _ALLOWED_IMPORT_ROOTS = {"__future__", "typing", "dataclasses", "shared"}
+    # enum joined at R3: ComparedAspect/FindingSeverity are StrEnums, still stdlib-only
+    _ALLOWED_IMPORT_ROOTS = {"__future__", "typing", "dataclasses", "enum", "shared"}
 
     def _contract_sources(self):
         files = sorted(_CONTRACTS_DIR.glob("*.py"))

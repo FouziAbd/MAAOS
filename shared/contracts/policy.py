@@ -7,16 +7,19 @@ are immutable; decisions are typed variants in which illegal states are unrepres
 `Execute` cannot exist without an executable call.
 
 Fitted to the current typed channels: the planner channel is the shared `PlannerResult`,
-head verdicts are the shared `CallValidation`, comparison evidence is the shared
-`TrackDivergence` tuple. Only the three domain-owned types the report names are generic:
-state, call, and the advisory proposal.
+head verdicts are the shared `CallValidation`, comparison evidence is the structured
+`ComparisonReport` over frozen `TrackDivergence` payloads (R3). Only the three domain-owned
+types the report names are generic: state, call, and the advisory proposal.
 
-Phase ownership (do not implement early):
+Phase ownership:
 - R2 (done) supplies the concrete `SymbolicPrimaryPolicy`/`AdvisoryTwoTrackPolicy` classes
   in `runtime/policies.py` and makes the loop accept a policy object;
   `runtime.orchestrator.decide` remains as a compatibility shim over the same policies.
-- R3 makes requested comparison evidence exist before the final decision and upgrades the
-  divergence tuple to a structured comparison report.
+- R3 (done) makes requested comparison evidence exist before the final decision: the loop
+  acquires the policy's requested track inputs and builds the comparison BEFORE `decide()`,
+  and `OrchestrationContext` carries the structured `ComparisonReport` (whose frozen
+  `TrackDivergence` payloads still feed the unchanged trace channel) in place of the R1
+  divergence tuple.
 
 Decision variants carry their frozen `ExecutiveDecision` enum member so R2 can record
 decisions in the existing trace schema without changing the serialized format.
@@ -27,10 +30,10 @@ is nothing here through which a policy could reach the backend.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import ClassVar, Generic, Optional, Protocol, Tuple, TypeVar, Union, runtime_checkable
+from dataclasses import dataclass
+from typing import ClassVar, Generic, Optional, Protocol, TypeVar, Union, runtime_checkable
 
-from shared.divergence import TrackDivergence
+from shared.contracts.comparison import ComparisonReport
 from shared.orchestration_config import ExecutiveDecision
 from shared.planner_result import PlannerResult
 from shared.skills import CallValidation
@@ -70,10 +73,11 @@ class PreliminaryContext(Generic[StateT, CallT]):
 class OrchestrationContext(Generic[StateT, CallT, ProposalT]):
     """The complete decision situation: the preliminary context plus whatever the policy
     requested — the acquired advisory proposal (None when not requested or not available)
-    and the comparison evidence over it."""
+    and the structured comparison over it (None exactly when there was no proposal to
+    compare; an empty report means genuine agreement)."""
     preliminary: PreliminaryContext[StateT, CallT]
     nl_proposal: Optional[ProposalT] = None
-    divergences: Tuple[TrackDivergence, ...] = field(default_factory=tuple)
+    comparison: Optional[ComparisonReport] = None
 
 
 # ── typed decision variants ───────────────────────────────────────────────────────────

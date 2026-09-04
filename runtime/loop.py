@@ -60,7 +60,7 @@ from shared.versioning import ModelVersion, Provenance
 
 from domain.box_push_v1 import DOMAIN_IR, MODEL_VERSION, PROJECTION, project
 from nl.recovery import propose_recovery
-from runtime.comparator import compare_tracks
+from runtime.comparator import DEFAULT_COMPARATOR
 from runtime.executive_history import ExecutiveHistory
 from runtime.executor import execute
 from runtime.policies import build_policy
@@ -114,6 +114,9 @@ class ExecutiveLoopManager:
         self.task = task
         self.config = config or OrchestrationConfig()
         self.policy = policy if policy is not None else build_policy(self.config)
+        # DEFERRED(R4): the composition root owns injecting the comparator; until then the
+        # loop composes the default (domain equivalence + documented threshold) itself.
+        self._comparator = DEFAULT_COMPARATOR
         self.nl_track = nl_track
         self.history = ExecutiveHistory()
         self.belief = ExactSymbolicBelief(DOMAIN_IR, PROJECTION, project)
@@ -280,8 +283,40 @@ class ExecutiveLoopManager:
             return self._maybe_fault_halt(fault)
 
         rejections = 0
+        acquired = False                        # one acquisition per cycle, policy-requested
+        cached_proposal = None
         while True:
-            decision, preliminary = self._select(planner_result, snapshot)
+            preliminary = self._preliminary(planner_result, snapshot)
+            # ── R3 lifecycle (report Phase 3 item 7): ask the policy which track inputs it
+            # requires, acquire them, and build the comparison BEFORE the final decision.
+            # The compared symbolic side is the call an Execute decision would enact
+            # (standing recovery, else the plan head), so executed-entry divergence
+            # evidence keeps its accepted meaning (review X3: "against THAT cycle's
+            # selected call"). Predictions stay AFTER the decision — the forbidden oracle
+            # is a predictor consulted before choosing, and none is (clause 9).
+            request = self.policy.required_inputs(preliminary)
+            if request.nl_proposal and not acquired:
+                try:
+                    cached_proposal = self._advisory_proposal(request)
+                except InfrastructureFaultError as error:
+                    # NL_TRACK_FAILURE at ACQUISITION — now pre-decision by the R3 order
+                    # (:163, H8): the cycle short-circuits fail-closed with the world
+                    # untouched, zero steps charged, no decision made, no gates run, and
+                    # NO manufactured divergence (divergences compare track CONTENT, and
+                    # there is none).
+                    fault = error.fault
+                    self._entry(step, snapshot, symbolic_result=planner_result,
+                                faults=(fault,))
+                    return self._maybe_fault_halt(fault)
+                acquired = True
+            nl_proposal = cached_proposal if request.nl_proposal else None
+            comparison = (
+                self._comparator.compare(self._compared_call(preliminary), nl_proposal)
+                if nl_proposal is not None else None
+            )
+            decision = self.policy.decide(OrchestrationContext(
+                preliminary=preliminary, nl_proposal=nl_proposal, comparison=comparison,
+            ))
             if isinstance(decision, Halt):
                 kind = (EpisodeOutcome.HALTED_REPEATED_FAILURE if decision.call is not None
                         else EpisodeOutcome.HALTED_NO_PLAN)
@@ -353,27 +388,9 @@ class ExecutiveLoopManager:
         )
         candidates = predict_world_candidates(snapshot, call, self.task.zone)
         predicted_world_key = candidates[0].world_key() if candidates else None
-        try:
-            # R2: the POLICY declares its track inputs (`required_inputs`, report Phase 2
-            # item 5) against the same preliminary context its EXECUTE decision came from —
-            # symbolic-primary declares none, so the NL model is never consulted for it.
-            # R3 owns moving this acquisition (and the comparison) BEFORE the decision.
-            nl_proposal = self._advisory_proposal(self.policy.required_inputs(preliminary))
-        except InfrastructureFaultError as error:
-            # NL_TRACK_FAILURE is a PRE-EXECUTOR infrastructure fault (:163, H8): the
-            # advisory consultation precedes execute(), so the cycle short-circuits with the
-            # world untouched, zero executive/primitive steps charged, no ExecutionResult —
-            # and NO manufactured divergence: divergences compare track CONTENT, and there
-            # is none. The entry keeps everything already established this cycle.
-            fault = error.fault
-            self._entry(step, snapshot, symbolic_result=planner_result,
-                        selected_call=call, validation=verdict,
-                        decision=ExecutiveDecision.EXECUTE,
-                        predicted_symbolic_key=predicted_symbolic_key,
-                        predicted_world_key=predicted_world_key,
-                        faults=(fault,))
-            return self._maybe_fault_halt(fault)
-        divergences = compare_tracks(call, nl_proposal)
+        # R3: the proposal and comparison were produced BEFORE the decision (acquisition in
+        # the selection loop above); the executed entry records that same evidence.
+        divergences = comparison.divergences if comparison is not None else ()
         # P3 EVIDENCE PRESERVATION (consistency-all W1): the frozen schema reserves proposal
         # columns, and an AGREEING advisory proposal must not vanish just because the
         # comparator has nothing to raise. Recovery provenance keeps priority on nl_proposal
@@ -488,36 +505,43 @@ class ExecutiveLoopManager:
         return None
 
     # ── selection helpers ─────────────────────────────────────────────────────────
-    def _select(
+    def _preliminary(
         self, planner_result: PlannerResult, snapshot: StateSnapshot
-    ) -> Tuple[
-        PolicyDecision[GroundedSkillCall],
-        PreliminaryContext[StateSnapshot, GroundedSkillCall],
-    ]:
-        """Build the immutable decision context and ask the injected policy (R2). The
-        preliminary context is returned with the decision so the cycle can honor the
-        policy's `required_inputs()` against the SAME situation it decided from."""
+    ) -> PreliminaryContext[StateSnapshot, GroundedSkillCall]:
+        """Build the immutable pre-acquisition decision situation (R2/R3): the same
+        context feeds `required_inputs()`, the comparison, and `decide()`."""
         if self._pending_recovery:
-            preliminary = PreliminaryContext(
+            return PreliminaryContext(
                 state=snapshot, planner_result=planner_result,
                 standing_recovery=self._pending_recovery[0],
             )
-        else:
-            head_validation = None
-            failure_count = 0
-            if isinstance(planner_result, PlanFound) and planner_result.plan:
-                head_validation = evaluate(
-                    DOMAIN_IR, self.belief.state, planner_result.plan[0]
-                )
-                failure_count = self.history.failure_count(
-                    snapshot, planner_result.plan[0]
-                )
-            preliminary = PreliminaryContext(
-                state=snapshot, planner_result=planner_result,
-                head_validation=head_validation, failure_count=failure_count,
+        head_validation = None
+        failure_count = 0
+        if isinstance(planner_result, PlanFound) and planner_result.plan:
+            head_validation = evaluate(
+                DOMAIN_IR, self.belief.state, planner_result.plan[0]
             )
-        decision = self.policy.decide(OrchestrationContext(preliminary=preliminary))
-        return decision, preliminary
+            failure_count = self.history.failure_count(
+                snapshot, planner_result.plan[0]
+            )
+        return PreliminaryContext(
+            state=snapshot, planner_result=planner_result,
+            head_validation=head_validation, failure_count=failure_count,
+        )
+
+    @staticmethod
+    def _compared_call(
+        preliminary: PreliminaryContext[StateSnapshot, GroundedSkillCall],
+    ) -> Optional[GroundedSkillCall]:
+        """The symbolic side of the R3 pre-decision comparison: the call an Execute
+        decision would enact — standing recovery advice when standing, else the plan
+        head. This keeps executed-entry divergence evidence computed against THAT
+        cycle's selected call (review X3), exactly as accepted."""
+        if preliminary.standing_recovery is not None:
+            return preliminary.standing_recovery
+        if isinstance(preliminary.planner_result, PlanFound) and preliminary.planner_result.plan:
+            return preliminary.planner_result.plan[0]
+        return None
 
     def _recovery_for(self, call: GroundedSkillCall) -> Tuple[GroundedSkillCall, ...]:
         """ADVISORY_TWO_TRACK only: deterministic NL re-establishment advice over the LAST

@@ -38,7 +38,7 @@ from shared.task import Task
 
 from nl.recovery import propose_recovery
 from nl.track import NLProposal, NLTrack
-from runtime.comparator import compare_tracks
+from runtime.comparator import DEFAULT_COMPARATOR, BoxPushActionComparator
 from runtime.policies import AdvisoryTwoTrackPolicy, SymbolicPrimaryPolicy
 from symbolic import ExactSymbolicBelief
 
@@ -68,7 +68,17 @@ def reasoning_track_conforms(track: NLTrack) -> V1ReasoningTrackContract:
     return track
 
 
-comparator_conforms: ProposalComparator[GroundedSkillCall, NLProposal] = compare_tracks
+# R3: the report-shaped comparator contract is satisfied by the scoped comparator class
+# (compare_tracks survives only as a legacy divergence-tuple wrapper, no longer a witness).
+comparator_conforms: ProposalComparator[GroundedSkillCall, NLProposal] = DEFAULT_COMPARATOR
+
+
+def comparator_class_conforms(
+    comparator: BoxPushActionComparator,
+) -> ProposalComparator[GroundedSkillCall, NLProposal]:
+    return comparator
+
+
 recovery_conforms: RecoveryProvider[GroundedSkillCall] = propose_recovery
 
 

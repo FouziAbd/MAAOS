@@ -726,7 +726,12 @@ class TestAdvisoryComparatorThroughTheLoop(unittest.TestCase):
         """H8 closed, the loop-driven pin: an exception ESCAPING nl_track.propose() is a
         pre-executor NL_TRACK_FAILURE fault — the backend is never invoked, zero
         executive/primitive steps are charged, the world is untouched, and no
-        TrackDivergence is manufactured for it."""
+        TrackDivergence is manufactured for it.
+
+        R3 moved acquisition BEFORE the decision (report Phase 3 item 7), so the fault now
+        arrives pre-decision: the entry carries the cycle's planning record and the fault,
+        and — unlike the pre-R3 lifecycle — no decision, selection, validation, or
+        prediction had happened yet to record."""
         class _ExecCountingEnv:
             def __init__(self):
                 self._inner = BoxPushV1Adapter()
@@ -752,14 +757,16 @@ class TestAdvisoryComparatorThroughTheLoop(unittest.TestCase):
         self.assertIs(fault.kind, FaultKind.NL_TRACK_FAILURE)
         # classified PRE-EXECUTOR: detection precedes execute(), so no attempt occurred
         self.assertTrue(fault.arises_before_execution)
-        # the cycle's already-established record survives on the fault entry...
+        # the cycle's already-established record survives on the fault entry: planning had
+        # happened (R3: acquisition follows required_inputs, before decide/gates/predict)
         self.assertIsNotNone(entry.symbolic_result)
-        self.assertIsNotNone(entry.selected_call)
-        self.assertIsInstance(entry.validation, ValidatedCall)
-        self.assertIs(entry.decision, ExecutiveDecision.EXECUTE)
-        self.assertIsNotNone(entry.predicted_symbolic_key)
-        self.assertIsNotNone(entry.predicted_world_key)
-        # ...but nothing is manufactured: no proposal, no divergence, no execution
+        # ...and nothing later in the cycle is fabricated: no decision was made, nothing
+        # was selected/validated/predicted, no proposal, no divergence, no execution
+        self.assertIsNone(entry.decision)
+        self.assertIsNone(entry.selected_call)
+        self.assertIsNone(entry.validation)
+        self.assertIsNone(entry.predicted_symbolic_key)
+        self.assertIsNone(entry.predicted_world_key)
         self.assertIsNone(entry.nl_proposal)
         self.assertEqual(entry.divergences, ())
         self.assertIsNone(entry.execution)

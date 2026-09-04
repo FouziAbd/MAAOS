@@ -186,11 +186,19 @@ class TestRequiredInputsGovernNLAcquisition(unittest.TestCase):
             PreliminaryContext(state=None, planner_result=NoPlan(reason="x")))
         self.assertFalse(request.nl_proposal)
 
-    def test_advisory_two_track_requests_the_nl_proposal(self):
+    def test_advisory_two_track_requests_the_nl_proposal_when_it_would_enact(self):
+        """R3 refined the declaration: advisory's information need is NL evidence beside
+        every call it ENACTS — requested on would-execute preliminaries (plan head, and
+        standing recovery), declined where frozen V1 never consulted (a halting NoPlan)."""
         policy = AdvisoryTwoTrackPolicy(repeated_failure_threshold=3)
-        request = policy.required_inputs(
-            PreliminaryContext(state=None, planner_result=NoPlan(reason="x")))
-        self.assertTrue(request.nl_proposal)
+        self.assertTrue(policy.required_inputs(
+            PreliminaryContext(state=None, planner_result=PlanFound(plan=(_PUSH,)),
+                               head_validation=ValidatedCall(call=_PUSH))).nl_proposal)
+        self.assertTrue(policy.required_inputs(
+            PreliminaryContext(state=None, planner_result=PlanFound(plan=(_PUSH,)),
+                               standing_recovery=_GOTO)).nl_proposal)
+        self.assertFalse(policy.required_inputs(
+            PreliminaryContext(state=None, planner_result=NoPlan(reason="x"))).nl_proposal)
 
     def test_the_loop_never_calls_propose_when_the_policy_declares_no_inputs(self):
         """Report Phase 2 item 5: the enum gate is gone; the POLICY'S declaration is what

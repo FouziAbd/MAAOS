@@ -71,7 +71,15 @@ class _PlanHeadPolicy(Generic[StateT, ProposalT]):
     def decide(
         self, context: OrchestrationContext[StateT, GroundedSkillCall, ProposalT], /
     ) -> PolicyDecision[GroundedSkillCall]:
-        preliminary = context.preliminary
+        """The frozen V1 policies decide from the PRELIMINARY situation alone: the R3
+        comparison report in `context.comparison` reaches them before deciding (the R3
+        lifecycle guarantee) but by frozen design does not alter V1 decisions — advisory
+        evidence advises, it never selects. A non-V1 policy is free to read it."""
+        return self._route(context.preliminary)
+
+    def _route(
+        self, preliminary: PreliminaryContext[StateT, GroundedSkillCall], /
+    ) -> PolicyDecision[GroundedSkillCall]:
         if preliminary.standing_recovery is not None:
             return Execute(
                 call=preliminary.standing_recovery,
@@ -123,13 +131,18 @@ class SymbolicPrimaryPolicy(_PlanHeadPolicy[StateT, ProposalT]):
 
 
 class AdvisoryTwoTrackPolicy(_PlanHeadPolicy[StateT, ProposalT]):
-    """:249 — the advisory proposal is a required track input, and repeated failure escapes
-    to the NL RecoveryProposer instead of halting."""
+    """:249 — the advisory proposal is a required track input on enacting cycles, and
+    repeated failure escapes to the NL RecoveryProposer instead of halting."""
 
     def required_inputs(
         self, context: PreliminaryContext[StateT, GroundedSkillCall], /
     ) -> TrackRequest:
-        return TrackRequest(nl_proposal=True)
+        """V1 advisory's information need: NL evidence beside every call it ENACTS —
+        exactly the accepted per-execution consultation, declared instead of enum-gated.
+        The routing is pure, so the policy can see its own would-be decision from the
+        preliminary context and request the proposal only when that decision is Execute
+        (a halt/replan/escape needs no advisory evidence in frozen V1)."""
+        return TrackRequest(nl_proposal=isinstance(self._route(context), Execute))
 
     def _repeated_failure_escape(
         self, head: GroundedSkillCall, failure_count: int

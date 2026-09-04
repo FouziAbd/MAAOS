@@ -15,7 +15,15 @@ Rules embodied here:
 Static conformance of the shipped implementations is witnessed in
 `tests/contract_conformance.py` (mypy) and exercised by `tests/test_r1_contracts.py`.
 """
-from shared.contracts.comparison import ProposalComparator, RecoveryProvider
+from shared.contracts.comparison import (
+    ActionEquivalence,
+    ComparedAspect,
+    ComparisonFinding,
+    ComparisonReport,
+    FindingSeverity,
+    ProposalComparator,
+    RecoveryProvider,
+)
 from shared.contracts.environment import Environment
 from shared.contracts.policy import (
     Execute,
@@ -34,6 +42,11 @@ __all__ = [
     "Environment",
     "SymbolicTrack",
     "ReasoningTrack",
+    "ActionEquivalence",
+    "ComparedAspect",
+    "ComparisonFinding",
+    "ComparisonReport",
+    "FindingSeverity",
     "ProposalComparator",
     "RecoveryProvider",
     "OrchestrationPolicyContract",

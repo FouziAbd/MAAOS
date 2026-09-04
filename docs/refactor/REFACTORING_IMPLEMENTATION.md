@@ -276,19 +276,133 @@ Warnings/deferred:
 
 ## R3 — Correct the comparison lifecycle
 
-Status: PENDING
+Status: COMPLETE (2026-09-04)
 
 Implementation:
-- Pending.
+- `shared/contracts/comparison.py` (report Phase 3 items 1, 3, 5):
+  `ComparedAspect` (proposal_form/model_coverage/task_translation/
+  action_choice/confidence), `FindingSeverity` (benign/attention —
+  descriptive, never calibrated), `ComparisonFinding` (aspect + severity
+  wrapping the frozen `TrackDivergence` as the evidence payload:
+  kind = classification, message = human-readable summary),
+  `ComparisonReport` (findings + `divergences`/`contradicted`/`all_benign`),
+  `ActionEquivalence` protocol (domain-owned different-but-equivalent rule),
+  and `ProposalComparator` upgraded to `compare() -> ComparisonReport`.
+- `shared/contracts/policy.py`: `OrchestrationContext.comparison:
+  Optional[ComparisonReport]` replaces the R1 divergence tuple (None = no
+  proposal compared; empty report = genuine agreement).
+- `domain/box_push_v1.py` -> `BoxPushActionEquivalence` (item 3): the
+  Decision-6 agent-binding rule, extracted verbatim from the runtime
+  comparator; the comparator source no longer reads `.box`/`.zone`/`.agents`
+  (AST-pinned).
+- `runtime/comparator.py` -> `BoxPushActionComparator` (items 2, 4, 6):
+  injected `ActionEquivalence`; `low_confidence_threshold` constructor
+  configuration (default `LOW_CONFIDENCE` = 0.75, validated, exact
+  boundary preserved); malformed proposals no longer return early — the
+  independent task-translation residual finding is retained;
+  `DEFAULT_COMPARATOR` (domain equivalence + default threshold);
+  `compare_tracks` kept as the legacy divergence-tuple wrapper. All
+  pre-existing `TrackDivergence` payloads byte-identical.
+- `runtime/loop.py` (item 7 — the lifecycle correction): each selection
+  iteration now builds the `PreliminaryContext`, asks
+  `policy.required_inputs`, acquires the requested NL proposal (once per
+  cycle, same typed `_advisory_proposal` fault boundary), compares against
+  the call an Execute decision would enact (`_compared_call`: standing
+  recovery, else plan head), and only then calls `policy.decide` on the
+  full `OrchestrationContext` (proposal + report). Executed entries record
+  the pre-decision report's divergences — identical content to pre-R3
+  because the compared call equals the enacted call. Predictions remain
+  strictly post-decision (no oracle). An NL acquisition fault now fires
+  PRE-DECISION: its entry carries the planning record and the fault only.
+- `runtime/policies.py`: `_route` extracted from `decide` (shipped policies
+  receive the report before deciding, and by frozen V1 design do not let it
+  alter decisions); `AdvisoryTwoTrackPolicy.required_inputs` requests the
+  proposal exactly when its own route on the preliminary is Execute — the
+  accepted per-enactment consultation, declared instead of enum-gated.
 
 Tests/evidence:
-- Pending.
+- `tests/test_r3_comparison.py` (25 tests; suite 688 -> 713, pin updated in
+  the same change set): structured findings for every frozen classification
+  with byte-identical `canonical()` payloads; malformed+residual retention;
+  legacy-wrapper equivalence; configurable/validated threshold with the
+  exact accepted boundary; domain equivalence rule + substitution proof
+  (swapping the injected equivalence flips benign/contradiction);
+  comparator import allowlist and `.box`/`.zone`/`.agents` attribute scan;
+  report-at-decide-time through the real loop (recording policies pin that
+  enacting decisions see the report and that executed trace rows equal the
+  pre-decision report); a reactive test policy HALTs on contradiction
+  before any enactment (impossible pre-R3) while symbolic-primary never
+  has a report and the shipped advisory policy sees contradictions yet
+  decides identically.
+- Adapted (authorized R3 lifecycle/contract changes, assertions otherwise
+  preserved): `tests/test_r1_contracts.py` (comparison field; comparator
+  witness now `DEFAULT_COMPARATOR`; `enum` joined the contracts stdlib
+  allowlist), `tests/test_r2_policies.py` (advisory would-enact
+  declaration incl. standing recovery and NoPlan-decline),
+  `tests/test_p4_runtime.py::test_nl_track_exception_short_circuits_before_
+  the_backend` (fault entry is now pre-decision: decision/selection/
+  validation/prediction columns pinned None; the core invariants —
+  pre-executor classification, zero charges, zero executions, no
+  manufactured divergence — unchanged), `tests/contract_conformance.py`.
+- Full suite: 713 tests, OK (skipped=1). Both headless demos byte-identical
+  to `docs/refactor/baseline/demo_*.txt` (R0 characterization green under
+  both policies). Scoped mypy 41 -> 37 errors; conformance witness file
+  mypy-clean.
+- Reviews: test-reviewer 0 FAIL (six mutation probes all killed — lifecycle
+  regression, manufactured empty report, head-vs-recovery comparison,
+  reinlined equivalence, re-hardcoded threshold, restored early return; its
+  WARNs were closed in this change set: `TestAcquisitionAccounting` pins
+  once-per-enactment consultation, the one-consultation gated cycle with
+  its unrecorded evidence, and the once-per-cycle acquisition cache — the
+  cache-removal mutant it found surviving is verified killed; the vacuous
+  raw-confidence test now exercises the comparator; the zip length is
+  asserted). architecture-reviewer 0 FAIL (no oracle, channels separate,
+  fail-closed routing intact, `CompositeComparator` correctly absent per
+  the report's own R5 assignment; its W2/W3 documentation asks are folded
+  into the notes above and W4's status reconciliation is done in this
+  change set).
 
 Compatibility notes:
-- Pending.
+- Trace format unchanged: `TraceEntry.divergences` still carries the frozen
+  `TrackDivergence` tuple, byte-identical for identical inputs; findings
+  structure exists only in the in-memory report. `compare_tracks` import
+  surface preserved. CLI unchanged.
+- `OrchestrationContext.divergences` (an R1-introduced field with no
+  external consumers beyond the adapted R1 test) is replaced by
+  `comparison`; this is the exact upgrade R1 documented as R3-owned.
+- Observable lifecycle differences (attached-track episodes only; the
+  accepted no-track baseline is byte-identical): an exception escaping
+  `nl_track.propose()` now faults the cycle BEFORE any decision, selection,
+  validation, or prediction (previously after them), with the same
+  fail-closed routing and zero charges; a proposal can now be consumed on a
+  cycle whose selected call is subsequently gated out (acquisition precedes
+  the post-decision gates by construction of the corrected lifecycle) — in
+  live/recorded mode this means a `RecordedLM` fixture store recorded
+  against enacted-cycle requests only can now see a request (and raise its
+  typed fixture-miss fault) on a gated cycle that previously made no LM
+  request; malformed proposals with residual now yield the additional
+  translation-residual divergence (evidence gain, item 6).
 
 Warnings/deferred:
-- Pending.
+- WARN (accepted): a subclass overriding `decide()` but not
+  `required_inputs()` inherits requests matching the BASE route, not its
+  own decisions — mirrors the general R1/R2 policy-purity trust; the
+  reactive-policy test overrides both. The R4 composition-root
+  documentation must state that a policy overriding `decide` owns
+  re-declaring `required_inputs`.
+- WARN (accepted, reviewer W3): on a cycle whose enactment is gated out
+  after the decision, the already-computed comparison evidence is
+  deliberately NOT recorded — those trace entries stay exactly as pre-R3
+  (no proposal columns, no divergences). Recording gated-cycle divergence
+  evidence would be a trace-content change needing its own justification;
+  R4/R6 may decide deliberately.
+- DEFERRED(R4): the BoxPush-scoped comparator still lives under `runtime/`
+  and the loop composes `DEFAULT_COMPARATOR` itself; the composition root
+  owns comparator injection/relocation and whole-runtime import boundaries.
+- DEFERRED(R5): composite-comparator aggregation is exercised only by the
+  R5 probe work with fakes (report Phase 5 item 4); building production
+  aggregation now would be the forbidden speculative machinery.
+- DEFERRED(R6): remaining scoped mypy debt (37), AST-scan hardening.
 
 ---
 
