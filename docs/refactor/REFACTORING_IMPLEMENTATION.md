@@ -408,19 +408,202 @@ Warnings/deferred:
 
 ## R4 — Make domain composition explicit
 
-Status: PENDING
+Status: COMPLETE (2026-09-04)
 
 Implementation:
-- Pending.
+- `shared/contracts/domain.py` (report Phase 4 item 1) -> `DomainServices`
+  protocol: `model_version`, `plan(symbolic_state, state)`,
+  `ground(state, call)`, `evaluate(symbolic_state, call)`,
+  `predict(symbolic_state, state, call) -> Prediction`,
+  `monitor(pre_symbolic, result)` — exactly the domain operations one V1
+  cycle performs, in cycle order; nothing hypothetical. `Prediction` is a
+  frozen pair of the typed Decision-13 keys (`SymbolicKey`/`WorldKey`).
+  Exported from `shared.contracts`; no BoxPush vocabulary (the R1 AST scans
+  cover the new module unchanged).
+- `runtime/loop.py` (items 2, 3): the generic runtime core. Imports are now
+  stdlib + `shared` + `runtime` only — `domain.box_push_v1`, `symbolic`,
+  `nl.recovery`, and the comparator import are gone. Every domain operation
+  goes through the injected `domain` (`_plan(snapshot)` -> `domain.plan`;
+  the former inline `_ground_check` over agents/boxes/zone ->
+  `domain.ground`; `evaluate` -> `domain.evaluate` at both call sites;
+  the two-basis prediction -> `domain.predict`; `_monitor` -> `domain.monitor`
+  with the §19.1 item 4 `ValueError` wrap kept in the loop; trace/provenance
+  model version -> `domain.model_version`). The belief is the injected
+  `symbolic_track` (attribute name `belief` kept), the comparator and recovery
+  provider are injected through their R1/R3 contracts. Constructor:
+  positional `(env, task, config, nl_track, provenance, policy)` unchanged;
+  new keyword-only `domain` (required), `symbolic_track` (required),
+  `comparator` (required iff an `nl_track` is attached — refused with
+  `TypeError` at construction otherwise), `recovery_provider` (None = no
+  advice exists; REQUEST_PROPOSAL then halts with the existing
+  "no recovery advice available" reason). The universe is no longer loop
+  state (`_universe`/`_goal` fields removed).
+- `app/` (item 3) — the new application/composition package, above the
+  runtime in the report's dependency direction; backend-guarded like every
+  other package (discovered by `tests/test_no_backend_imports.py`) and the
+  only package permitted to import `runtime` besides `runtime` itself.
+  - `app/box_push_v1.py` -> `BoxPushDomainServices(task, universe=None)`:
+    the pre-R4 inline wiring verbatim (frozen `DOMAIN_IR`/`PROJECTION`/
+    `MODEL_VERSION`/`project` + `symbolic` planner/applicability/predictor/
+    monitor, the `delivered` goal literals from `task.goal_delivered`, the
+    §19.1 item 5 identity grounding); `Universe.from_snapshot` is derived
+    from the snapshot the loop passes with each plan request (identities are
+    constant within an episode, so the planner input is identical to the
+    first-sync universe the loop used to cache); the explicit `universe=`
+    override replaces the pre-R4 private-field assignment used for the
+    Decision-12 synthetic NoPlan instance. `compose(task)` -> frozen
+    `BoxPushComponents` (domain, fresh `ExactSymbolicBelief`,
+    `BoxPushActionComparator(BoxPushActionEquivalence())`, `propose_recovery`);
+    `build_loop(env, task, config, nl_track, provenance, policy, *,
+    loop_class, domain, symbolic_track, comparator, recovery_provider)`
+    assembles one loop over a CALLER-constructed environment, each keyword
+    overriding one composed component (`loop_class` admits the established
+    fault-injection seam of subclassing the loop).
+  - `app/comparator.py` <- `runtime/comparator.py` (git mv, content
+    unchanged except the docstring): the BoxPush-scoped comparator imports
+    the concrete domain equivalence and `nl.track.NLProposal`, which the
+    runtime core may not see.
+- `functional_layer/custom_env/box_push/env/box_push_v1_run.py` (item 3):
+  constructs the adapter and calls `build_loop`; CLI options and output
+  unchanged.
+- `tests/test_no_backend_imports.py`: `COMPOSITION_PACKAGES = {"app"}` is
+  excluded from the :118 "symbolic side must not import runtime" scan (it
+  sits above the runtime by construction) and asserted to remain discovered
+  and backend-guarded; `symbolic`/`nl`/`domain`/`shared` are now asserted
+  explicitly on the symbolic side. Because `app` imports `runtime`, the
+  symbolic side is forbidden from importing `app` too (transitive :118
+  reach; fail-closed temp-tree probe added), and `shared` is asserted to
+  import neither `runtime` nor `app`.
+- `.claude/rules/nl-track.md` path glob follows the comparator to
+  `app/**/*comparator*`. Contract docstrings (`shared/contracts/tracks.py`,
+  `policy.py`, `__init__.py`) updated to the R4 state.
 
 Tests/evidence:
-- Pending.
+- `tests/test_r4_composition.py` (31 tests; suite 713 -> 744 with the three
+  guard tests below, pin updated in the same change set):
+  - `TestRuntimeImportBoundary` (item 4): AST allowlist over EVERY
+    `runtime/**/*.py` (recursive — a `runtime/<sub>/` package cannot evade
+    it, pinned by a temp-tree probe; stdlib whitelist + `shared` + `runtime`;
+    explicit forbidden roots `domain`/`symbolic`/`nl`/`app`/backend/legacy/
+    adapter modules) with a non-vacuity probe, dynamic-import ban, and a
+    vocabulary scan (no `.agents/.box/.zone/...` attribute reads, no
+    domain/symbolic names) with its own non-vacuity probe.
+  - `TestDomainServicesContract` / `TestGroundingIsDomainOwned`: runtime and
+    static (`tests/contract_conformance.py::domain_services_conform`,
+    mypy-clean) conformance; the bundle's plan/evaluate/predict pinned equal
+    to the pre-R4 inline function applications on the initial state; the
+    `universe=` override yields `NoPlan` for the heavy-solo task; all three
+    §19.1 item 5 grounding rejections plus the grounded case; Decision 6 at
+    the new seam — `plan` reads the snapshot for identities only (every
+    agent/box moved, same identities -> identical `PlannerResult`); the
+    universe is derived from EACH plan call's snapshot, not cached from the
+    first (identity set changed between two calls on one instance, both
+    orders -> the second answer follows the second snapshot).
+  - `TestCompositionRoot` (acceptance 2): `compose` yields the concrete V1
+    components and a fresh belief per loop; `build_loop` injects them and
+    the config-named policy; overrides honored by identity; the loop refuses
+    construction without domain services and refuses an attached track
+    without a comparator; the runner's AST imports/calls `build_loop` and
+    never constructs `ExecutiveLoopManager`; `app` is backend-guarded; both
+    accepted outcomes and the three designed discrepancies hold through the
+    composition root.
+  - `TestInjectedSubstitution` (acceptance 3, no loop edit): a strict
+    `DomainServices` proxy (refuses any attribute outside the contract)
+    drives the full advisory episode and pins the WHOLE consultation sequence
+    (nine executed cycles, each exactly plan -> head verdict -> ground ->
+    evaluate -> predict -> monitor, so an evaluate-before-ground inversion or
+    a pre-decision predict fails it); trace entries carry the domain's model
+    version even under a foreign injected `Provenance`; a counting
+    `SymbolicTrack` wrapper is the one synced/fed; a canned comparator is the sole source of
+    divergence evidence and sees the enacted call; a substitute recovery
+    provider's advice is what REQUEST_PROPOSAL enacts through the executor,
+    an empty provider and an absent provider both halt with
+    "no recovery advice available".
+- Adapted (authorized R4 composition change, assertions preserved):
+  `tests/test_p4_runtime.py`, `test_r0_characterization.py`,
+  `test_r2_policies.py`, `test_r3_comparison.py`, `test_v1_acceptance.py`
+  construct through `build_loop` (subclass seams via `loop_class`;
+  `_plan(self, snapshot)`); the NoPlan universe test injects
+  `BoxPushDomainServices(task, universe=...)` instead of assigning the
+  loop's private field; `runtime.comparator` imports and the R3 AST-scan
+  paths moved to `app/comparator.py`; `tests/test_r1_contracts.py` and
+  `tests/contract_conformance.py` import the comparator from `app`.
+- Full suite: 739 tests, OK (skipped=1). Both headless demos byte-identical
+  to `docs/refactor/baseline/demo_*.txt` (R0 characterization green under
+  both policies). Scoped mypy (`python -m mypy shared runtime
+  --ignore-missing-imports`) 37 -> 4 errors (the concrete-import debt left
+  the runtime; the four remaining are pre-existing `shared/skill_ir.py`,
+  `shared/trace_schema.py`, and one `tuple[()]` narrowing in `loop.py`);
+  conformance witness file mypy-clean.
+- Reviews: test-reviewer 2 FAIL, both closed in this change set (F1: a
+  symbolic-side import of `app` reached `runtime` transitively — the guard
+  now forbids `app` on the symbolic side with a probe; F2: the R4 scans were
+  not recursive — now `rglob` with a subpackage probe) and its WARNs closed
+  (W1 full consultation sequence, W2 domain model-version stamp under a
+  foreign provenance, W5 counts, W6 adapter close/message checks); its 17
+  mutation probes on a scratch copy: 13 killed, and the 4 survivors (M9
+  evaluate-before-ground, M11/M12 `symbolic`/`shared` -> `app`, M16
+  provenance-stamped model version) are each now killed by the added tests.
+  architecture-reviewer 0 FAIL: its WARNs closed here (`plan` docstring
+  constraint + geometry-invariance test; dead `compose()` keywords removed;
+  loop error text no longer names the BoxPush composition root; stale
+  `tracks.py` sentence; rule-file path globs include `app/**`), its
+  owner-decision item is recorded under Compatibility notes below.
 
 Compatibility notes:
-- Pending.
+- `runtime.loop.ExecutiveLoopManager` name, import path, positional
+  parameter order, `EpisodeOutcome`/`EpisodeResult`, `runtime.orchestrator`
+  shim, CLI options, and trace serialization are unchanged.
+- DELIBERATE CHANGE (report Phase 4 default assumption "preserve ... where
+  practical"): the two-argument `ExecutiveLoopManager(env, task)` no longer
+  composes BoxPush by default — that default is precisely the BoxPush import
+  the phase removes, so a wrapper inside `runtime/` was not practical without
+  defeating the boundary. Construction without `domain=`/`symbolic_track=`
+  raises `TypeError`; every in-repo caller (runner + tests) goes through
+  `app.box_push_v1.build_loop`, whose positional signature mirrors the old
+  constructor. No out-of-repo caller exists.
+- DELIBERATE CHANGE: `runtime.comparator` import path removed (module moved
+  to `app.comparator`, same names: `BoxPushActionComparator`,
+  `DEFAULT_COMPARATOR`, `LOW_CONFIDENCE`, `compare_tracks`). A re-export shim
+  in `runtime/` would itself be the forbidden BoxPush/NL import. Only tests
+  imported it; the frozen historical
+  `docs/implementation/p4_mutation_harness.py` still names the old path and
+  no longer applies as-is (it was already annotated as frozen at R2).
+- OWNER DECISION (architecture-reviewer): the two changes above are exactly
+  the report's Phase 4 stop condition "preserving an existing public
+  constructor/import path conflicts materially with the clean boundary".
+  ACCEPTED by the project owner on 2026-09-04 and recorded, with the
+  `build_loop` migration, in `docs/decisions/R4_COMPOSITION_ROOT.md`. The
+  alternative — a BoxPush default inside `runtime/` — would abandon
+  acceptance criterion 1.
+- OWNER ITEM: `CLAUDE.md`'s "Active implementation" list does not yet name
+  `app/`; it now holds the comparator and the composition root and belongs
+  on that list. Not edited here (project instructions are the owner's).
+- Observable behavior: none. The universe derivation moved from
+  first-sync caching to per-plan derivation from the same snapshot family;
+  BoxPush identities never change within an episode, so every planner input
+  is identical (transcripts byte-identical, R0 characterization green).
 
 Warnings/deferred:
-- Pending.
+- WARN (accepted): `build_loop(..., loop_class=...)` exists for the
+  established fault-injection test seam (subclassing `_plan`/`_run_cycle`);
+  it is not a production extension point.
+- WARN (accepted): a `DomainServices.monitor` implementation raising
+  `ValueError` is wrapped by the loop into the typed fault exactly as before;
+  any other exception type escaping an injected bundle propagates untyped,
+  the same trust level as an injected policy (R2 note).
+- DEFERRED(R5): the loop still reads `call.skill` for the NL observe label,
+  `task.is_satisfied_by(state)` for the goal test, and
+  `runtime/executive_history.py` keys repeated failures on
+  `pre_state.world_key()`/`call.key()`; `TraceEntry` is typed to the shared
+  V1 state/task/call types. None is BoxPush vocabulary, but the probe domain
+  will surface which of them need a contract method versus a structural
+  protocol on the domain's own types; extend from that concrete requirement
+  (report: "extend the relevant contract based on concrete requirements").
+- DEFERRED(R5): composite-comparator aggregation (report Phase 5 item 4).
+- DEFERRED(R6): remaining scoped mypy debt (4), AST-scan hardening,
+  `app/` joining the mypy/CI scope, observation aliasing, malformed-backend
+  typed faults.
 
 ---
 

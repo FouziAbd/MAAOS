@@ -44,6 +44,12 @@ LEGACY_PACKAGES = frozenset({
 #: Runtime state the symbolic side must not reach (:118).
 RUNTIME_PACKAGES = frozenset({"runtime"})
 
+#: The application/composition layer (R4): the ONE guarded package that sits ABOVE the
+#: runtime and legitimately imports it (report Part II dependency direction). It is still
+#: guarded against the backend like every other package; it is only excluded from the
+#: :118 "symbolic side must not reach runtime" scan, where it does not belong.
+COMPOSITION_PACKAGES = frozenset({"app"})
+
 
 def discovered_guarded_packages(root: pathlib.Path = REPO_ROOT):
     """Every top-level package that is part of the V1 contract/symbolic side.
@@ -100,7 +106,9 @@ def forbidden_import_violations(packages, forbidden, root: pathlib.Path = REPO_R
 
 
 def runtime_violations(packages, root: pathlib.Path = REPO_ROOT):
-    return forbidden_import_violations(packages, RUNTIME_PACKAGES, root)
+    """:118 — and, since R4, the composition layer too: `app` imports `runtime`, so a
+    symbolic-side import of `app` would reach repeated-failure bookkeeping transitively."""
+    return forbidden_import_violations(packages, RUNTIME_PACKAGES | COMPOSITION_PACKAGES, root)
 
 
 def backend_violations(packages, root: pathlib.Path = REPO_ROOT):
@@ -163,13 +171,22 @@ class TestSymbolicSideCannotReachRuntimeState(unittest.TestCase):
         `symbolic/` or `planning/` package free to import `runtime.executive_history` — i.e. free
         to key applicability on repeated-failure bookkeeping, the exact hidden feasibility
         predicate :118 forbids — and the guard would still pass."""
-        return tuple(p for p in discovered_guarded_packages(root) if p not in RUNTIME_PACKAGES)
+        return tuple(
+            p for p in discovered_guarded_packages(root)
+            if p not in RUNTIME_PACKAGES and p not in COMPOSITION_PACKAGES
+        )
 
     def test_the_symbolic_side_is_derived_not_hardcoded(self):
         side = set(self.symbolic_side())
         self.assertIn("shared", side)
         self.assertIn("domain", side)
+        self.assertIn("symbolic", side)
+        self.assertIn("nl", side)
         self.assertNotIn("runtime", side)
+        # R4: the composition layer is above the runtime, so it is not "the symbolic side"
+        # — but it IS still discovered and backend-guarded like every other package
+        self.assertNotIn("app", side)
+        self.assertIn("app", discovered_guarded_packages())
 
     def test_the_real_tree_has_no_runtime_imports_on_the_symbolic_side(self):
         """Consistency-check P3 WARN 16: `runtime_violations` previously ran ONLY on throwaway
@@ -212,6 +229,17 @@ class TestSymbolicSideCannotReachRuntimeState(unittest.TestCase):
             self.assertTrue(
                 runtime_violations(self.symbolic_side(root), root),
                 "a runtime import in a newly discovered package went unnoticed",
+            )
+
+    def test_a_composition_import_on_the_symbolic_side_is_actually_caught(self):
+        """R4 (test-review F1): `app` imports `runtime`, so `symbolic -> app` would be
+        `symbolic -> runtime` by another name. The same scan must catch it."""
+        import contextlib
+        with contextlib.ExitStack() as stack:
+            root = self._probe_tree(stack, leak="app.box_push_v1")
+            self.assertTrue(
+                runtime_violations(self.symbolic_side(root), root),
+                "an app import in a newly discovered symbolic-side package went unnoticed",
             )
 
     def test_a_backend_import_in_a_new_package_is_actually_caught(self):
@@ -261,8 +289,10 @@ class TestSymbolicSideCannotReachRuntimeState(unittest.TestCase):
             for module, _ in imported_modules(path):
                 roots.add(module.split(".")[0])
         self.assertIn("shared", roots)
-        self.assertNotIn("runtime", {m.split(".")[0] for p in python_files("shared")
-                                     for m, _ in imported_modules(p)})
+        shared_roots = {m.split(".")[0] for p in python_files("shared")
+                        for m, _ in imported_modules(p)}
+        self.assertNotIn("runtime", shared_roots)
+        self.assertNotIn("app", shared_roots)          # R4: nor the layer above runtime
 
     #: The stdlib modules domain/ actually uses; a WHITELIST, so `domain -> nl` or
     #: `domain -> symbolic` fails here (the old body only excluded backend+runtime,

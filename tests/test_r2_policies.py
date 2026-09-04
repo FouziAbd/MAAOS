@@ -52,6 +52,7 @@ from shared.skills import (
     ValidatedCall,
 )
 
+from app.box_push_v1 import build_loop
 from runtime.policies import (
     POLICY_FACTORIES,
     AdvisoryTwoTrackPolicy,
@@ -219,7 +220,7 @@ class TestRequiredInputsGovernNLAcquisition(unittest.TestCase):
                 raise AssertionError("required_inputs() declared no NL proposal")
 
         track = _ProposeForbiddenTrack()
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.SYMBOLIC_PRIMARY),
             nl_track=track,
@@ -255,7 +256,7 @@ class TestRequiredInputsGovernNLAcquisition(unittest.TestCase):
                 return TrackRequest(nl_proposal=True)
 
         track = _CountingTrack()
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.SYMBOLIC_PRIMARY),
             nl_track=track,
@@ -276,7 +277,7 @@ class TestRequiredInputsGovernNLAcquisition(unittest.TestCase):
             def propose(self, task):
                 raise AssertionError("the injected policy declined the NL proposal")
 
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK),
             nl_track=_ProposeForbiddenTrack(),
@@ -342,7 +343,7 @@ class TestLoopAcceptsAnInjectedPolicyObject(unittest.TestCase):
                 return Halt(reason="r2 injected test policy halts on sight")
 
         policy = _HaltImmediatelyPolicy()
-        loop = ExecutiveLoopManager(BoxPushV1Adapter(), TASK_DELIVER_BOTH, policy=policy)
+        loop = build_loop(BoxPushV1Adapter(), TASK_DELIVER_BOTH, policy=policy)
         self.assertIs(loop.policy, policy)
         episode = loop.run()
         self.assertIs(episode.outcome, EpisodeOutcome.HALTED_NO_PLAN)
@@ -354,7 +355,7 @@ class TestLoopAcceptsAnInjectedPolicyObject(unittest.TestCase):
         from box_push_v1_adapter import BoxPushV1Adapter
         from domain.box_push_v1 import TASK_DELIVER_BOTH
         from runtime.loop import ExecutiveLoopManager
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK))
         self.assertIsInstance(loop.policy, AdvisoryTwoTrackPolicy)

@@ -37,9 +37,10 @@ Kind assignment (shared/divergence.py) — unchanged from the accepted V1 compar
   - CONFIDENCE_MISMATCH     — the NL confidence is below the configured threshold while the
                               symbolic track holds a plan.
 
-DEFERRED(R4): this BoxPush-scoped component still lives in `runtime/` and imports the
-concrete domain equivalence for its default; the composition root owns relocating and
-injecting it.
+R4 (report Phase 4): relocated from `runtime/comparator.py` to the BoxPush application
+package — it imports the concrete domain equivalence and the NL track's proposal type, which
+the generic runtime core may not see. The composition root (`app/box_push_v1.py`) builds
+and INJECTS it into the loop; the runtime holds only the `ProposalComparator` contract.
 """
 from __future__ import annotations
 

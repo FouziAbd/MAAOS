@@ -33,6 +33,7 @@ for _p in (_REPO_ROOT, _ENV_DIR):
 
 from box_push_v1_adapter import BoxPushV1Adapter
 
+from app.box_push_v1 import build_loop
 from domain.box_push_v1 import TASK_DELIVER_BOTH
 from runtime.loop import EpisodeOutcome, ExecutiveLoopManager
 from shared.discrepancy import DiscrepancyKind
@@ -55,7 +56,7 @@ _CACHE: dict[OrchestrationPolicy, tuple[ExecutiveLoopManager, object]] = {}
 
 def _episode(policy):
     if policy not in _CACHE:
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH, OrchestrationConfig(policy=policy)
         )
         _CACHE[policy] = (loop, loop.run())

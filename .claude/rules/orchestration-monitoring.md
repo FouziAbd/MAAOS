@@ -1,6 +1,7 @@
 ---
 paths:
   - "runtime/**/*"
+  - "app/**/*"
   - "shared/**/*fault*"
   - "shared/**/*divergence*"
   - "shared/**/*report*"

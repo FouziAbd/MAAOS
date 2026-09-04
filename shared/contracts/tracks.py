@@ -2,19 +2,20 @@
 
 Two track shapes exist in V1 and they are deliberately NOT forced into one protocol:
 
-- `SymbolicTrack` is the stateful symbolic component exactly as the runtime consumes it
-  today: authoritative-state synchronization in, symbolic state out, typed execution
-  results recorded. Planning, applicability, prediction, and monitoring currently reach
-  the runtime as separate domain-owned services; bundling them into one injected surface
-  is R4's `DomainBundle` (DEFERRED there), not this contract's job.
+- `SymbolicTrack` is the stateful symbolic component exactly as the runtime consumes it:
+  authoritative-state synchronization in, symbolic state out, typed execution results
+  recorded. Planning, grounding, applicability, prediction, and monitoring reach the
+  runtime through the separate stateless `DomainServices` bundle
+  (`shared/contracts/domain.py`, R4); the runtime holds one injected instance of each.
 
 - `ReasoningTrack` is the observe/propose shape of the report's advisory track, fitted to
   the shipped NL track: it observes typed situations and outcomes, and proposes against a
   task. Its proposal type is track-owned (`ProposalT_co`); the runtime never unpacks it
   except through the comparator contract.
 
-Aligning the symbolic side onto a propose() lifecycle is R3's comparison-lifecycle work;
-doing it here would change behavior, which R1 forbids.
+The symbolic side was deliberately NOT aligned onto a propose() lifecycle: R3 compares the
+call an Execute decision would enact (the loop's `_compared_call`) against the advisory
+proposal, so the symbolic plan channel stays what the planner returns.
 """
 from __future__ import annotations
 

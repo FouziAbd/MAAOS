@@ -20,6 +20,9 @@ Phase ownership:
   and `OrchestrationContext` carries the structured `ComparisonReport` (whose frozen
   `TrackDivergence` payloads still feed the unchanged trace channel) in place of the R1
   divergence tuple.
+- R4 (done) completes injection: the loop receives its domain services, symbolic track,
+  comparator, and recovery provider through constructor arguments assembled in the
+  composition root (`app/box_push_v1.py`), and imports nothing domain-specific.
 
 Decision variants carry their frozen `ExecutiveDecision` enum member so R2 can record
 decisions in the existing trace schema without changing the serialized format.

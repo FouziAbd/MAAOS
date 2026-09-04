@@ -56,7 +56,8 @@ from shared.orchestration_config import OrchestrationConfig, OrchestrationPolicy
 from shared.reports import ConfidenceReport, CoverageReport
 from shared.skills import GroundedSkillCall, MalformedCall, SkillName
 
-from runtime.comparator import (
+from app.box_push_v1 import build_loop
+from app.comparator import (
     DEFAULT_COMPARATOR,
     LOW_CONFIDENCE,
     BoxPushActionComparator,
@@ -260,12 +261,12 @@ class TestActionEquivalenceIsDomainOwned(unittest.TestCase):
         """Acceptance: the generic side's comparison rules mention no agents/boxes/zones.
         Mechanical form: the comparator source never reads a .box/.zone/.agents attribute
         (the extracted equivalence rule was exactly such a read)."""
-        source = pathlib.Path(_REPO_ROOT, "runtime", "comparator.py").read_text("utf-8")
+        source = pathlib.Path(_REPO_ROOT, "app", "comparator.py").read_text("utf-8")
         for node in ast.walk(ast.parse(source)):
             if isinstance(node, ast.Attribute):
                 self.assertNotIn(
                     node.attr, {"box", "zone", "agents"},
-                    f"runtime/comparator.py reads .{node.attr} — the domain equivalence "
+                    f"app/comparator.py reads .{node.attr} — the domain equivalence "
                     f"rule must own that vocabulary",
                 )
 
@@ -274,7 +275,7 @@ class TestComparatorScopeDiscipline(unittest.TestCase):
     """Acceptance: no direct backend calls; the comparator does not choose an action."""
 
     def test_comparator_imports_no_backend_executor_or_environment(self):
-        tree = ast.parse(pathlib.Path(_REPO_ROOT, "runtime", "comparator.py").read_text("utf-8"))
+        tree = ast.parse(pathlib.Path(_REPO_ROOT, "app", "comparator.py").read_text("utf-8"))
         allowed = {"__future__", "typing", "shared", "domain", "nl"}
         for node in ast.walk(tree):
             roots = []
@@ -285,7 +286,7 @@ class TestComparatorScopeDiscipline(unittest.TestCase):
             for root in roots:
                 self.assertIn(
                     root, allowed,
-                    f"runtime/comparator.py imports {root!r} — a comparator may see typed "
+                    f"app/comparator.py imports {root!r} — a comparator may see typed "
                     f"channels only, never the backend/executor/loop",
                 )
 
@@ -317,7 +318,7 @@ class TestComparisonReachesThePolicyBeforeTheDecision(unittest.TestCase):
 
         policy = _RecordingAdvisory(repeated_failure_threshold=3)
         contradicting = [_proposal(PUSH, confidence=0.4)] * 40
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK),
             nl_track=_StubTrack(contradicting), policy=policy,
@@ -354,7 +355,7 @@ class TestComparisonReachesThePolicyBeforeTheDecision(unittest.TestCase):
 
         policy = _RecordingPrimary(repeated_failure_threshold=3)
         track = _StubTrack([_proposal(PUSH)] * 40)
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.SYMBOLIC_PRIMARY),
             nl_track=track, policy=policy,
@@ -385,7 +386,7 @@ class TestPolicyReactionToContradiction(unittest.TestCase):
                     return Halt(reason="tracks contradict — reactive test policy stops")
                 return super().decide(context)
 
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK),
             nl_track=_StubTrack([_proposal(PUSH)] * 4),    # contradicts the first head
@@ -401,7 +402,7 @@ class TestPolicyReactionToContradiction(unittest.TestCase):
     def test_the_shipped_advisory_policy_still_treats_contradiction_as_evidence_only(self):
         from box_push_v1_adapter import BoxPushV1Adapter
         from runtime.loop import EpisodeOutcome, ExecutiveLoopManager
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK),
             nl_track=_StubTrack([_proposal(PUSH, confidence=0.4)] * 40),
@@ -419,7 +420,7 @@ class TestAcquisitionAccounting(unittest.TestCase):
         from box_push_v1_adapter import BoxPushV1Adapter
         from runtime.loop import EpisodeOutcome, ExecutiveLoopManager
         track = _StubTrack([])                  # falls back to a canned proposal each call
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK),
             nl_track=track,
@@ -442,7 +443,7 @@ class TestAcquisitionAccounting(unittest.TestCase):
         from runtime.loop import ExecutiveLoopManager
         from shared.orchestration_config import ExecutiveDecision
         track = _StubTrack([_proposal(GOTO)] * 4)
-        loop = ExecutiveLoopManager(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK),
             nl_track=track,
@@ -476,15 +477,16 @@ class TestAcquisitionAccounting(unittest.TestCase):
             SkillName.PUSH, (AGENT_0,), BOX_HEAVY, DELIVERY_ZONE)  # no pose -> inapplicable
 
         class _InapplicableHeadLoop(ExecutiveLoopManager):
-            def _plan(self):
+            def _plan(self, snapshot):
                 return PlanFound(plan=(inapplicable,))
 
         track = _StubTrack([_proposal(GOTO)] * 40)
-        loop = _InapplicableHeadLoop(
+        loop = build_loop(
             BoxPushV1Adapter(), TASK_DELIVER_BOTH,
             OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK),
             nl_track=track,
             policy=_AlwaysRequesting(repeated_failure_threshold=3),
+            loop_class=_InapplicableHeadLoop,
         )
         loop.env.reset()
         snapshot = loop._sync()
