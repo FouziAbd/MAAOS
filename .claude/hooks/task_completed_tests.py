@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
+
 """Optional Claude Code TaskCompleted hook for MAAOS.
 
 Disabled unless `.claude/ENABLE_COMPLETION_TEST_HOOK` exists.
+
 Reads `.claude/test-command.txt` and blocks task completion (exit 2)
 when the configured command fails.
 """
@@ -21,7 +23,9 @@ def main() -> int:
     except Exception:
         payload = {}
 
-    project_dir = Path(os.environ.get("CLAUDE_PROJECT_DIR") or payload.get("cwd") or os.getcwd()).resolve()
+    project_dir = Path(
+        os.environ.get("CLAUDE_PROJECT_DIR") or payload.get("cwd") or os.getcwd()
+    ).resolve()
     claude_dir = project_dir / ".claude"
 
     if not (claude_dir / "ENABLE_COMPLETION_TEST_HOOK").exists():
@@ -45,9 +49,11 @@ def main() -> int:
     print(f"[MAAOS] Running: {command}", file=sys.stderr)
 
     completed = subprocess.run(command, cwd=project_dir, shell=True)
+
     if completed.returncode != 0:
         print(
-            f"P0-P4 completion blocked: test command failed with exit code {completed.returncode}. "
+            "MAAOS task completion blocked: test command failed with "
+            f"exit code {completed.returncode}. "
             "Fix the failure or disable the marker intentionally.",
             file=sys.stderr,
         )
