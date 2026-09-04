@@ -1,7 +1,7 @@
 ---
 name: run-v1
 description: Run the supported Symbolic-Twin BoxPush V1 runner in default, symbolic-primary, live-local-LM, or help mode.
-argument-hint: default|symbolic|live|help
+argument-hint: default|symbolic|headless|live|help
 disable-model-invocation: true
 ---
 
@@ -48,6 +48,14 @@ python box_push_v1_run.py --help
 
 Do not run the pre-V1 `box_push_centralized.py` as the supported V1 runner.
 
-If graphical execution is unavailable in the current environment, do not
-invent headless flags. Inspect `--help`/runner code and report the limitation;
-use `/v1-regression` for deterministic non-GUI verification.
+### headless
+
+The runner already implements `--headless` (no pygame window). Use it for
+non-GUI verification and baseline capture:
+
+```bash
+SDL_VIDEODRIVER=dummy python box_push_v1_run.py --headless
+SDL_VIDEODRIVER=dummy python box_push_v1_run.py --headless --policy symbolic_primary
+```
+
+Do not invent other flags; check `--help` first.

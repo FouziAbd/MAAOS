@@ -240,6 +240,7 @@ original P0-P4 implementation. Record R0-R6 work in:
 
 Use these project skills when appropriate:
 
+- `/refactor-preflight` (once, before R0)
 - `/refactor-phase R0` ... `/refactor-phase R6`
 - `/v1-regression`
 - `/consistency-check v1|refactor|all`
