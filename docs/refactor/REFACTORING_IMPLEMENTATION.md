@@ -609,19 +609,282 @@ Warnings/deferred:
 
 ## R5 — Prove architectural substitutability
 
-Status: PENDING
+Status: COMPLETE (2026-09-04)
+
+Objective: prove that the R4 runtime core executes a non-BoxPush domain
+through the same `ExecutiveLoopManager`, same contracts, and same composition
+shape, with no BoxPush import or conditional — using a TEST-ONLY probe, not a
+second product domain (report Phase 5; `.claude/rules/v1-scope.md`).
 
 Implementation:
-- Pending.
+- `tests/probe_counter.py` (new; test fixture, not production) — the counter
+  probe, entirely under `tests/` per the report's default:
+  - `CounterState(counter_id, value, target, stopped, tick)` — immutable;
+    `world_key()`/`same_world()` over the canonical content, `tick` is the
+    environment's own attempt bookkeeping excluded from the key (the counter
+    analogue of the V1 snapshot's step counters, and the "unknown domain
+    content" the runtime must carry without reading).
+  - `CounterAction` — `Increment(amount)` / `Stop`, naming the counter it acts
+    on (the identity the grounding gate checks); `skill`/`cost`/`key()`/
+    `canonical()`.
+  - `CounterEnvironment` — deterministic, offline, external-dependency-free
+    fake backend implementing the R1 `Environment` seam
+    (`reset`/`observe`/`export_full_state`/`execute_skill`/`is_terminal`/
+    `render`); returns the shared typed `ExecutionResult` (no raw label) or
+    `MalformedCall`/`UngroundedCall`; refuses use-before-reset and
+    post-terminal execution with "refused:" infrastructure faults. The
+    injectable `sticky_at` value is the designed physical obstacle: an
+    `Increment(1)` there FAILS with the world unchanged (typed
+    FAILURE/UNCHANGED); any other stride succeeds. The symbolic model does not
+    know this rule — the frozen optimism/backend-authority relationship,
+    reproduced on integers.
+  - `CounterSymbolicTrack` (`SymbolicTrack`: exact projection on `sync`,
+    `record_outcome` = evidence intake only) and `CounterDomainServices`
+    (`DomainServices`: `plan` = Increment(1) to the target then Stop, `NoPlan`
+    when the value exceeds the target, empty plan once stopped; `ground` =
+    counter identity; `evaluate` = stays within target / at target, no
+    environment knowledge; `predict` = both Decision-13 keys from the
+    deterministic symbolic transition; `monitor` = non-success ->
+    `EXECUTION_FAILURE_OF_APPLICABLE_SKILL` on the typed outcome alone,
+    realized-vs-predicted key difference -> `STATE_EFFECT_MISMATCH` with the
+    differing pair(s), bare `ValueError` on a counter-identity wiring error so
+    the loop's §19.1 item 4 wrap is exercised on a foreign domain).
+  - `CounterProposal` (call/coverage/confidence + an OPAQUE `evidence` tuple
+    the runtime has no column for), `FakeReasoningTrack` (`ReasoningTrack`,
+    LM-free: scripted proposals or an "echo" of its last observation;
+    observe-before-propose precondition like the shipped track),
+    `CounterActionComparator` (`ProposalComparator`: evidence only —
+    COVERAGE_GAP for a call-less proposal, CONTRADICTION for a different call
+    with the proposal's evidence carried in `residual`, empty report on
+    agreement), `counter_recovery` (`RecoveryProvider`: advises a larger
+    stride after a failed Increment).
+  - `compose_probe` / `build_probe_loop` — the probe's composition root,
+    mirroring `app.box_push_v1.compose`/`build_loop` in shape and injecting
+    through the same `ExecutiveLoopManager` keyword seams. A TEST FIXTURE,
+    not a supported runtime (`.claude/rules/v1-scope.md`): `/run-v1`, the
+    BoxPush runner, and the CLI are unchanged and do not know it exists.
+  - Static conformance witnesses (mypy) for every `shared.contracts` protocol
+    at the probe's parameterization.
+- `shared/contracts/domain_types.py` (new; exported from `shared.contracts`)
+  — the answer to the question R4 deferred to R5 ("which of the loop's
+  remaining reads need a contract method versus a structural protocol on the
+  domain's own types"): none needs a `DomainServices` method; each is a
+  structural protocol on the value type, and the member sets are exactly the
+  runtime's reads (pinned by
+  `tests/test_r5_probe.py::TestDomainTypeContractsAreWhatTheRuntimeReads`):
+  `RuntimeState` (`world_key`, `same_world`), `RuntimeCall` (`skill`, `cost`,
+  `key`, `canonical`), `TaskContract` (`is_satisfied_by`, `canonical`),
+  `AdvisoryProposal` (`call: Optional[RuntimeCall]`, `coverage`,
+  `confidence`). `runtime_checkable`; `same_world` is typed on `Self`;
+  `RuntimeCall` documents the value-equality (`==`) the loop relies on for
+  standing-recovery and discrepancy matching. The frozen V1 types
+  (`StateSnapshot`, `GroundedSkillCall`, `Task`, `nl.track.NLProposal`)
+  satisfy them unchanged; no BoxPush vocabulary (the R1 contract-source
+  scans cover the new module unchanged). STATUS: declared and test-pinned
+  only — no production annotation adopts them yet (`runtime/loop.py`,
+  `runtime/executive_history.py`, and `shared/trace_schema.py` still name
+  `StateSnapshot`/`GroundedSkillCall`/`Task`); adopting them is the R6
+  typing migration, deliberately not done here.
+- No file under `runtime/`, `domain/`, `symbolic/`, `nl/`, `app/`, or
+  `functional_layer/` was edited. `shared/contracts/__init__.py` gained the
+  four exports and a docstring sentence; no other `shared/` module changed.
 
 Tests/evidence:
-- Pending.
+- `tests/test_r5_probe.py` (52 tests; suite 744 -> 796, pin updated in
+  `REFACTOR_STATUS.md` in the same change set):
+  - Acceptance 1 (`TestProbeFixtureIsBoxPushFree`): AST import allowlist over
+    the fixture (stdlib + `shared` + `runtime` only, explicit forbidden
+    roots), a whole-identifier BoxPush/geometry vocabulary scan with a
+    non-vacuity probe, a SUBPROCESS proof that a full probe episode under BOTH
+    shipped policies leaves no module rooted at the BoxPush DOMAIN PACKAGES
+    (`domain`/`symbolic`/`nl`/`app`/adapter/backend/legacy) in `sys.modules`
+    — any EXECUTED import of those surfaces; an import in a never-executed
+    branch is caught by the static R4 allowlist instead — and a scan that no
+    production module (`shared/`, `runtime/`, `app/`) names a probe/counter
+    concept (no special case). Honest scope: `shared` is allowed, so the
+    frozen V1 record modules (`shared.skills`, `shared.state_snapshot`,
+    `shared.task`, `shared.execution`, `shared.ids`) DO load during a probe
+    episode; acceptance 1 is a statement about `runtime/`, not about
+    `shared/` (see DEFERRED below).
+  - `TestProbeComponentsSatisfyTheContracts`: every probe component and value
+    type is a runtime instance of its contract; the V1 types satisfy the R5
+    structural protocols unchanged; probe values are frozen and the world key
+    excludes bookkeeping; the probe's `plan` reads the authoritative state for
+    identity only (different value/flag/tick -> identical `PlannerResult`, the
+    Decision-6 pin the BoxPush bundle also carries).
+  - `TestTheSameLoopRunsTheProbe` (the counter analogue of the R0
+    characterization, through the unmodified loop): SYMBOLIC_PRIMARY
+    `EXECUTE x5 + HALT` -> HALTED_REPEATED_FAILURE with exactly three
+    `execution_failure_of_applicable_skill` discrepancies on the failing
+    executed entries, world held at the sticky value by the backend, 5/5
+    steps charged; ADVISORY `EXECUTE x5 + REQUEST_PROPOSAL + EXECUTE x2` ->
+    GOAL_REACHED with the provider's `Increment(2)` enacted through the full
+    consultation order (strict `DomainServices` proxy: plan -> head verdict ->
+    ground -> evaluate -> predict -> monitor, seven times) and recorded as
+    typed recovery provenance; a smooth environment reaches the goal with
+    zero discrepancies and predictions equal to the realized keys on both
+    bases; `NoPlan` -> HALTED_NO_PLAN with no fault; executive budget ->
+    BUDGET_EXHAUSTED; a strict environment proxy proves the runtime uses only
+    `reset`/`export_full_state`/`execute_skill` (one export per cycle, no
+    re-export after an attempt); composition-root overrides honored by
+    identity.
+  - `TestAcquisitionOrderAndComparisonBeforeDecision`: one shared event log
+    across a recording track, comparator, and policy pins the EXACT whole-
+    episode order `[required_inputs, propose, compare, decide]` per enacting
+    cycle and `[required_inputs, decide, required_inputs, propose, compare,
+    decide]` for the escape cycle; the policy decides with the very objects
+    (identity) the track and comparator produced; the compared symbolic side
+    equals the enacted call (standing advice on the recovery cycle);
+    disagreement is recorded, not followed, by the shipped policy;
+    SYMBOLIC_PRIMARY never calls `propose()` while `observe()` is fed the
+    `RuntimeCall.skill` label and typed outcome; an acquisition fault is
+    pre-decision and fail-closed (no decision/selection/execution columns, no
+    manufactured divergence, world untouched).
+  - `TestTypedDecisionsDriveTheProbe`: a scripted pure policy drives each
+    variant — `Halt` with/without a call (two outcomes), `Replan` free and
+    bounded, `Execute` once per cycle, `RequestProposal` enacting the
+    provider's advice through the gates, halting with "no recovery advice
+    available" when no discrepancy evidence exists, and standing recovery
+    matched BY VALUE (an equal but distinct call object is still the recovery
+    enactment and consumes the advice — the `RuntimeCall` equality rule).
+  - `TestExecutionValidationGatesEveryCall`: an ungrounded recovery call that
+    is ALSO symbolically inapplicable faults `MISSING_GROUNDING` before the
+    executor at zero cost (the §19.1 item 5 ordering asserted on the routing
+    itself, not only on the consultation order); REQUEST_PROPOSAL hands the
+    provider the LAST discrepancy for THAT call (two Increment(1) failures at
+    different values plus a later failure of another call: the provider
+    receives the second Increment(1) discrepancy by identity — §19.1 item 1,
+    previously unpinned anywhere in the suite); an
+    inapplicable recovery call is REPLANned at zero cost, never executed, and
+    the stale advice is ended by the liveness guard; a policy's direct
+    `Execute` of an inapplicable/ungrounded call is gated identically; the
+    executor returns the environment's typed rejections verbatim; case-(c)
+    charging from `primitive_steps_before_failure`; case-(a) first-class
+    record; refusal before reset and after terminal; a monitor `ValueError`
+    wrapped into `EXECUTOR_MONITOR_PROTOCOL_FAILURE` with the attempt standing.
+  - `TestUnknownDomainEvidenceSurvives` (acceptance 3): state objects reach
+    the trace and the policy BY IDENTITY with the domain's `tick` intact;
+    domain discrepancy messages/model version recorded verbatim; proposal
+    `evidence` reaches the policy by identity and the divergence `residual`
+    and `canonical()` unchanged; a reactive test policy acts on that evidence
+    while an AST scan proves the runtime never reads `.evidence`; the trace
+    serializes the probe with the domain's own canonical forms, no adapter.
+  - `TestCompositeComparatorAggregation` (item 4): a TEST-LOCAL composite
+    concatenates fake components' findings in order (`contradicted`,
+    `all_benign`, empty = agreement), is injectable into the probe loop
+    beside the real probe comparator with the executed entries carrying
+    exactly the fakes' payloads, and an allowlist of every production class
+    implementing `compare` (`ProposalComparator`, `BoxPushActionComparator`
+    in `app/comparator.py`) pins that no production composite/merged/
+    aggregating comparator exists under any name.
+  - `TestDomainTypeContractsAreWhatTheRuntimeReads`: AST receiver scans of
+    `runtime/**` — bare-name receivers AND attribute chains
+    (`self.task.x`, `result.post_state.x`, `error.result.post_state.x`,
+    `decision.call.x`) — bound the reads on state/call/task/proposal
+    receivers to the protocol member sets, with non-vacuity pins including
+    the nested `self.task.is_satisfied_by`; a strict task proxy proves the
+    runtime reads only `is_satisfied_by`; the protocols declare exactly the
+    documented members and reject a bare object.
+- Full suite: `python -B -m unittest discover -s tests -t .` -> 796 tests,
+  OK (skipped=1: the pre-existing opt-in live-LM skip). Both headless demos
+  (`--headless --delay 0`, `SDL_VIDEODRIVER=dummy`) byte-identical to
+  `docs/refactor/baseline/demo_*.txt`; R0 characterization green under both
+  policies. Scoped mypy (`python -m mypy shared runtime
+  --ignore-missing-imports`) unchanged at 4 errors; `tests/contract_conformance.py`
+  mypy-clean.
+- `python -m mypy --ignore-missing-imports --follow-imports=silent
+  tests/probe_counter.py` -> 31 errors, ALL of one category and NONE at the
+  contract witnesses (line 640+): the shared typed channels
+  (`ExecutionResult.call/pre_state/post_state`, `ValidatedCall`/
+  `UngroundedCall`/`SymbolicallyInapplicable.call`, `PlanFound.plan`,
+  `ExecutionDiscrepancy.call`) and the loop's `task` parameter are annotated
+  with the V1 concrete types (`StateSnapshot`/`GroundedSkillCall`/`Task`).
+  A foreign domain therefore conforms to every `shared.contracts` protocol
+  statically AND runs, but the shared record types do not yet admit it
+  statically — see DEFERRED(R6) below.
+- Reviews: test-reviewer 0 FAIL — 40 mutation probes on a scratch copy; of
+  the R5-module survivors it reported, six were closed in this change set
+  and re-verified killed (M41a `from_recovery` via `is`; M20 first-matching
+  and M39 any-call discrepancy selection in `_recovery_for`, both of which
+  had survived the WHOLE 792-test suite; M8 a nested-receiver
+  `result.post_state.canonical()` read; M28 a production `MergedComparators`
+  class; the evaluate-before-ground routing inversion), and its scope/wording
+  asks (subprocess proof scope, `PYTHONPATH` for the subprocess, wider
+  geometry token list, plan state-invariance, ghost call also inapplicable)
+  are done. architecture-reviewer 0 FAIL — its WARN-2 (`Optional[Any]` /
+  `Any` annotations in the new contract) and WARN-3 (value equality
+  undocumented) fixed in `domain_types.py`; WARN-1 (protocols not yet
+  adopted by production annotations) recorded above; its DEFERRED items
+  recorded below.
 
 Compatibility notes:
-- Pending.
+- No public import, constructor, CLI option, or trace field changed.
+  `shared.contracts.__all__` grew by four names (pure addition). Trace
+  serialization is unchanged: `TraceEntry.canonical()` calls the same
+  `canonical()`/`world_key()` members on whichever domain types it holds.
+- Observable behavior: none. No runtime code changed; both demo transcripts
+  are byte-identical.
+- Serialized-trace caveat (frozen format, unchanged): "unknown evidence
+  survives tracing unchanged" holds for the in-memory `TraceEntry` objects
+  (state/proposal by identity) and for the domain's own `canonical()` forms
+  of task/call/discrepancy/divergence; the canonical JSON still reduces a
+  state to `world_key()`, so a domain field such as the probe's `tick` is
+  carried in memory but not serialized. This is the existing trace contract,
+  not an R5 change.
+- Observed fact, now pinned: the executive layer uses only
+  `reset`/`export_full_state`/`execute_skill` of the environment;
+  `observe`/`is_terminal`/`render` are never called by the loop.
 
 Warnings/deferred:
-- Pending.
+- WARN (accepted): the probe reuses the shared typed CHANNELS
+  (`ExecutionResult`, `PlannerResult`, `CallValidation`,
+  `ExecutionDiscrepancy`, `TrackDivergence`, faults, reports, keys) as they
+  are — they carry no BoxPush vocabulary and the contracts are typed on them.
+  `RawLabel`/`PRODUCIBLE_RAW_LABELS` in `shared/execution.py` are BoxPush-
+  specific provenance but optional (`raw_label=None`), so the probe never
+  touches them.
+- WARN (accepted): `build_probe_loop` mirrors `app.box_push_v1.build_loop`
+  by construction rather than by shared code — a shared generic
+  "compose over defaults" helper would be a production abstraction with one
+  product consumer; not added. `_StrictServicesProxy`/`_CannedComparator`
+  are likewise local copies of the R4 test helpers.
+- WARN (accepted, test-reviewer): the R5 module covers acquisition ORDER;
+  the once-per-cycle acquisition cache remains pinned only by the R3 test
+  `test_acquisition_is_cached_across_iterations_within_one_cycle`. AST-based
+  read scans cannot see a `getattr(nl_proposal, "evidence")` read (inherent
+  limit; the identity/residual tests cover the observable consequence).
+- WARN (accepted): `test_the_runtime_and_contracts_name_no_probe_concept`
+  forbids the substrings "counter"/"probe" in production identifiers; if a
+  legitimate production name (e.g. `step_counter`) ever trips it, narrow it
+  to the fixture's class/module names rather than deleting it.
+- DEFERRED(R6): static typing of the shared record types. The runtime and the
+  contracts are generic in behavior, but `ExecutionResult`, the
+  `CallValidation` variants, `PlanFound`, `ExecutionDiscrepancy`, `TraceEntry`,
+  `ExecutiveHistory.failure_key`, and the `ExecutiveLoopManager`/`execute`
+  signatures are annotated with the V1 concrete types (the 31 fixture mypy
+  errors above). Making them generic in call/state (or annotating against the
+  R5 `RuntimeState`/`RuntimeCall`/`TaskContract` protocols) is a typing-only
+  change across frozen shared types and is the report's Phase 6 acceptance
+  "core contracts, runtime ... pass static type checking".
+- DEFERRED(R6) design note (architecture-reviewer): generalizing
+  `ExecutionResult.call` will meet `ExecutionResult.__post_init__` reading
+  the BoxPush `PRODUCIBLE_RAW_LABELS.get(self.call.skill)` table
+  (`shared/execution.py`) — a BoxPush coupling inside a shared typed
+  channel that the probe sidesteps with `raw_label=None`. R6 must resolve
+  the typing with generics/protocols, never by weakening the raw-label
+  vocabulary check and never with `Any`/`# type: ignore` in the fixture;
+  the fixture's mypy witnesses are the measurable R6 target (31 errors is
+  the baseline).
+- DEFERRED (unassigned; a real next domain): `shared/skills.py`
+  (`SkillName`, the frozen registry), `shared/state_snapshot.py`,
+  `shared/task.py`, `shared/ids.py`, and `shared/execution.py::RawLabel`
+  remain BoxPush-vocabulary V1 types under `shared/`; acceptance 1 holds for
+  `runtime/` and is not a claim about `shared/`. Unresolved, not solved; the
+  R5 protocols name the domain-neutral surface a future extraction would
+  target.
+- DEFERRED(R6): remaining scoped mypy debt (4), AST-scan hardening, `app/`
+  and `tests/contract_conformance.py`/`tests/probe_counter.py` joining the
+  mypy/CI scope, observation aliasing, malformed-backend typed faults.
 
 ---
 
