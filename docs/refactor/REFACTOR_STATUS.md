@@ -43,6 +43,7 @@ Frozen pristine baseline: commit
 
 ## R6 tooling decisions
 
+
 Decided at pre-flight so R1+ static checks have a fixed target; R6 owns the
 actual enforcement work.
 
@@ -53,6 +54,11 @@ actual enforcement work.
 | uv lock | Adopt `uv` lockfile for dependency reproducibility in R6 | `uv` not on PATH at pre-flight |
 | GitHub Actions | Offline suite only — `.github/workflows/offline-tests.yml` added at pre-flight; no live-LM or network-dependent job | In place |
 | Import boundaries | Enforce as plain `unittest` tests (no extra tool) as R1-R4 introduce the boundaries | Owned by R1-R4/R6 |
+
+## R6 owner decisions
+
+- Legacy packages: move `middleware_layer/` and `model_layer/` under `legacy/` as a pure `git mv` with no content edits, in its own commit, last in the phase. If moving would break any existing test or import, stop and ask instead.
+- Commit structure: R6 may be split into up to four commits, in this order — (1) hygiene: observation copying, malformed-backend faults, `NLProposal` split; (2) typing: generics for the shared channels, probe fixture mypy-clean; (3) tooling: `pyproject.toml`, `uv` lockfile, ruff + mypy on `shared runtime app` in `offline-tests.yml`; (4) legacy move. Each commit must leave the suite green and the demos byte-identical. Still one phase, one completion report.
 
 ## Active V1 runner
 
