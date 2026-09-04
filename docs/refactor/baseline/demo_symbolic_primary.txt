@@ -1,0 +1,12 @@
+policy=symbolic_primary  task=deliver_both  (headless)
+  cycle  0  execute           GotoPushPose(agent_0; box_0; delivery_zone)   -> success
+  cycle  1  execute           GotoPushPose(agent_0; box_1; delivery_zone)   -> success
+  cycle  2  execute           GotoPushPose(agent_1; box_0; delivery_zone)   -> success
+  cycle  3  execute           CooperativePush(agent_0,agent_1; box_0; delivery_zone) -> success
+  cycle  4  execute           Push(agent_0; box_1; delivery_zone)           -> failure  !! execution_failure_of_applicable_skill
+  cycle  5  execute           Push(agent_0; box_1; delivery_zone)           -> failure  !! execution_failure_of_applicable_skill
+  cycle  6  execute           Push(agent_0; box_1; delivery_zone)           -> failure  !! execution_failure_of_applicable_skill
+  cycle  7  halt              Push(agent_0; box_1; delivery_zone)           -> -
+
+HALTED_REPEATED_FAILURE: (pre-state, call) failed 3x under SYMBOLIC_PRIMARY — halting with the discrepancy history rather than strengthening the model
+executive steps: 7  primitive steps: 42  discrepancies: 3

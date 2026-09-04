@@ -83,7 +83,7 @@ sub-audits + one independent `architecture-reviewer` contract check.
 | Install instructions | PARTIAL | `requirements.txt` | `pettingzoo>=1.24`, `gymnasium`, `minigrid`, `dspy-ai`, `pyperplan>=2.1`, `pyRDDLGym>=2.7`; deps unpinned except two | Pin exact versions for deterministic V1 (P3 requires it) |
 | Python/OS constraints | PARTIAL | venv `/home/fouzi/PettingZooEnv`, Python 3.12.3, Linux/WSL2 | Established by environment, not declared in repo | Declare in a manifest at P0 |
 | Run command | SATISFIED | `box_push_centralized.py::main` | `cd functional_layer/custom_env/box_push/env && python box_push_centralized.py`; requires a live Ollama at `LLM_BASE` (the `dspy.LM` setup in `::main`) | Add an offline V1 entry point that does not need an LM |
-| Automated test command | SATISFIED (P0) | `python3 -m unittest discover -s tests -t .` — 641 tests, deterministic and offline (1 skip: the MAAOS_LIVE_LM-marked live-LM integration test), no LM required (the P1 module steps the real backend headlessly; P0 modules step nothing) | P0 contract freeze + P1 live-backend integration (tests/test_p1_adapter.py) | — |
+| Automated test command | SATISFIED (P0) | `python3 -m unittest discover -s tests -t .` — 641 tests (P0-P4 freeze count; live pin now in docs/refactor/REFACTOR_STATUS.md), deterministic and offline (1 skip: the MAAOS_LIVE_LM-marked live-LM integration test), no LM required (the P1 module steps the real backend headlessly; P0 modules step nothing) | P0 contract freeze + P1 live-backend integration (tests/test_p1_adapter.py) | — |
 | Target OS/CI | PARTIAL | — | No CI config in repo | OS/Python frozen by **Decision 10**; CI is a project-management question, not V1 semantics (decisions §18 item 10) |
 
 ---

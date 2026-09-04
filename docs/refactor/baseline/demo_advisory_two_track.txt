@@ -1,0 +1,14 @@
+policy=advisory_two_track  task=deliver_both  (headless)
+  cycle  0  execute           GotoPushPose(agent_0; box_0; delivery_zone)   -> success
+  cycle  1  execute           GotoPushPose(agent_0; box_1; delivery_zone)   -> success
+  cycle  2  execute           GotoPushPose(agent_1; box_0; delivery_zone)   -> success
+  cycle  3  execute           CooperativePush(agent_0,agent_1; box_0; delivery_zone) -> success
+  cycle  4  execute           Push(agent_0; box_1; delivery_zone)           -> failure  !! execution_failure_of_applicable_skill
+  cycle  5  execute           Push(agent_0; box_1; delivery_zone)           -> failure  !! execution_failure_of_applicable_skill
+  cycle  6  execute           Push(agent_0; box_1; delivery_zone)           -> failure  !! execution_failure_of_applicable_skill
+  cycle  7  request_proposal  Push(agent_0; box_1; delivery_zone)           -> -
+  cycle  7  execute           GotoPushPose(agent_0; box_1; delivery_zone)   -> success  [nl recovery]
+  cycle  8  execute           Push(agent_0; box_1; delivery_zone)           -> success
+
+GOAL_REACHED: task goal satisfied
+executive steps: 9  primitive steps: 62  discrepancies: 3
