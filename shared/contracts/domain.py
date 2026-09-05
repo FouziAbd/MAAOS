@@ -48,11 +48,15 @@ from shared.discrepancy import ExecutionDiscrepancy
 from shared.execution import ExecutionResult
 from shared.planner_result import PlannerResult
 from shared.skills import CallValidation, UngroundedCall
+from shared.value_contracts import RuntimeCall, RuntimeState
 from shared.versioning import ModelVersion
 
-StateT_contra = TypeVar("StateT_contra", contravariant=True)
+# R6: bounded by the structural value protocols so `monitor` can be typed on the generic
+# `ExecutionResult[StateT, CallT]` — the runtime only ever handles states/calls that satisfy
+# them anyway (they are the bounds of the loop's own parameters).
+StateT_contra = TypeVar("StateT_contra", bound=RuntimeState, contravariant=True)
 SymbolicStateT_contra = TypeVar("SymbolicStateT_contra", contravariant=True)
-CallT_contra = TypeVar("CallT_contra", contravariant=True)
+CallT_contra = TypeVar("CallT_contra", bound=RuntimeCall, contravariant=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,7 +114,10 @@ class DomainServices(Protocol[StateT_contra, SymbolicStateT_contra, CallT_contra
         ...
 
     def monitor(
-        self, pre_symbolic: SymbolicStateT_contra, result: ExecutionResult, /
+        self,
+        pre_symbolic: SymbolicStateT_contra,
+        result: ExecutionResult[StateT_contra, CallT_contra],
+        /,
     ) -> Tuple[ExecutionDiscrepancy, ...]:
         """Typed discrepancies between the model's prediction (from the symbolic state the
         attempt was chosen under) and the authoritative realized result."""

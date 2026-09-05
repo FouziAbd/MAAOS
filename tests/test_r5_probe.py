@@ -278,18 +278,18 @@ class TestProbeComponentsSatisfyTheContracts(unittest.TestCase):
 
     def test_the_frozen_v1_types_satisfy_the_same_structural_protocols(self):
         """The R5 protocols describe what the runtime requires; the accepted V1 types meet
-        them unchanged (nothing in `shared/` or `nl/` was edited for R5). Imported locally:
-        this is the one place the R5 module touches BoxPush, and only to check conformance."""
+        them unchanged (nothing in `shared/` or `nl/` was edited for R5; the R6 proposal
+        variants keep the same read surface). Imported locally: this is the one place the
+        R5 module touches BoxPush, and only to check conformance."""
         from domain.box_push_v1 import AGENT_0, BOX_LIGHT, DELIVERY_ZONE, TASK_DELIVER_BOTH, initial_state
-        from nl.track import NLProposal
+        from nl.track import MalformedProposal
         from shared.skills import GroundedSkillCall, SkillName
         self.assertIsInstance(initial_state(), RuntimeState)
         self.assertIsInstance(
             GroundedSkillCall(SkillName.PUSH, (AGENT_0,), BOX_LIGHT, DELIVERY_ZONE), RuntimeCall)
         self.assertIsInstance(TASK_DELIVER_BOTH, TaskContract)
         self.assertIsInstance(
-            NLProposal(call=None, malformed=MalformedCall(reason="x"), coverage=None,
-                       confidence=None, repaired=False),
+            MalformedProposal(malformed=MalformedCall(reason="x"), coverage=CoverageReport()),
             AdvisoryProposal)
 
     def test_plan_reads_the_state_for_identity_only(self):

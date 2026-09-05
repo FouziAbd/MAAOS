@@ -197,19 +197,55 @@ class TestContractSourceDiscipline(unittest.TestCase):
             yield path, ast.parse(path.read_text(encoding="utf-8"))
 
     def _defined_names(self, tree):
+        """Every identifier a contract source DEFINES or BINDS — class/function names, all
+        parameter names (positional, keyword-only, `*args`, `**kwargs`, lambda parameters —
+        R6 hardening of the R1 scan), assignment targets, every name that appears inside an
+        annotation expression, and every name imported from `shared` (the allowlist admits
+        `shared` wholesale, so a BoxPush-typed import such as `BoxId` must trip HERE)."""
         for node in ast.walk(tree):
             if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
                 yield node.name
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    args = node.args
-                    for arg in (args.posonlyargs + args.args + args.kwonlyargs):
-                        yield arg.arg
-            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                yield node.target.id
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                args = node.args
+                for arg in (args.posonlyargs + args.args + args.kwonlyargs):
+                    yield arg.arg
+                    if arg.annotation is not None:
+                        yield from self._annotation_names(arg.annotation)
+                for extra in (args.vararg, args.kwarg):
+                    if extra is not None:
+                        yield extra.arg
+                        if extra.annotation is not None:
+                            yield from self._annotation_names(extra.annotation)
+                returns = getattr(node, "returns", None)
+                if returns is not None:
+                    yield from self._annotation_names(returns)
+            elif isinstance(node, ast.AnnAssign):
+                if isinstance(node.target, ast.Name):
+                    yield node.target.id
+                yield from self._annotation_names(node.annotation)
             elif isinstance(node, ast.Assign):
                 for target in node.targets:
                     if isinstance(target, ast.Name):
                         yield target.id
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                for alias in node.names:
+                    yield alias.name                      # the imported object's name ...
+                    if alias.asname:
+                        yield alias.asname                # ... and the local binding
+
+    @staticmethod
+    def _annotation_names(annotation):
+        """Identifiers inside an annotation expression, including string annotations."""
+        if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
+            try:
+                annotation = ast.parse(annotation.value, mode="eval").body
+            except SyntaxError:
+                return
+        for sub in ast.walk(annotation):
+            if isinstance(sub, ast.Name):
+                yield sub.id
+            elif isinstance(sub, ast.Attribute):
+                yield sub.attr
 
     @staticmethod
     def _segments(name):
@@ -219,15 +255,56 @@ class TestContractSourceDiscipline(unittest.TestCase):
         spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)
         return [s for s in re.split(r"[_\d]+", spaced.lower()) if s]
 
+    #: R6 hardening: morphological variants trip too (`pushed`, `boxed`, `zoned`, ...) —
+    #: a segment that STARTS with one of these stems is BoxPush vocabulary. `pose` is kept
+    #: whole-word above (`proposal`/`propose` are legitimate contract words).
+    _BOXPUSH_STEMS = ("box", "agent", "zone", "grid", "push", "deliver")
+
+    def _carries_boxpush_vocabulary(self, name):
+        for segment in self._segments(name):
+            if segment in self._BOXPUSH_TOKENS:
+                return segment
+            for stem in self._BOXPUSH_STEMS:
+                if segment.startswith(stem):
+                    return segment
+        return None
+
     def test_no_boxpush_vocabulary_in_contract_names(self):
         for path, tree in self._contract_sources():
             for name in self._defined_names(tree):
-                for segment in self._segments(name):
-                    self.assertNotIn(
-                        segment, self._BOXPUSH_TOKENS,
-                        f"{path.name}: contract name {name!r} carries BoxPush "
-                        f"vocabulary {segment!r}",
-                    )
+                segment = self._carries_boxpush_vocabulary(name)
+                self.assertIsNone(
+                    segment,
+                    f"{path.name}: contract name {name!r} carries BoxPush "
+                    f"vocabulary {segment!r}",
+                )
+
+    def test_the_vocabulary_scan_sees_every_binding_site(self):
+        """R6 hardening, non-vacuous: each binding site the R1 scan missed is now caught —
+        `*args`/`**kwargs`, lambda parameters, annotation expressions (including string
+        annotations), and names imported from `shared`; and a morphological variant trips."""
+        probes = {
+            "vararg": "def f(*boxes): ...",
+            "kwarg": "def f(**agents): ...",
+            "lambda": "g = lambda zone: zone",
+            "param annotation": "def f(x: BoxId) -> None: ...",
+            "return annotation": "def f() -> 'Optional[AgentId]': ...",
+            "attribute annotation": "x: shared.ids.BoxId",
+            "shared import": "from shared.ids import BoxId as _B",
+            "morphology": "def f(pushed_call): ...",
+        }
+        for label, source in probes.items():
+            with self.subTest(site=label):
+                names = list(self._defined_names(ast.parse(source)))
+                self.assertTrue(
+                    any(self._carries_boxpush_vocabulary(n) for n in names),
+                    f"{label}: scan saw {names}, none flagged",
+                )
+        # and the legitimate contract words still pass
+        for clean in ("proposal", "propose", "PreliminaryContext", "RequestProposal",
+                      "symbolic_call", "CallT_contra", "StateT"):
+            with self.subTest(clean=clean):
+                self.assertIsNone(self._carries_boxpush_vocabulary(clean))
 
     def test_no_speculative_semantic_surface_in_contract_names(self):
         for path, tree in self._contract_sources():

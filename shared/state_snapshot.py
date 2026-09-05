@@ -47,7 +47,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import Any, Dict, Mapping, Tuple
 
 from shared.comparison_keys import WorldKey
 from shared.ids import AgentId, BoxId, Cell

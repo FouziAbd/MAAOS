@@ -32,6 +32,17 @@ Obligations implemented here, traceable to docs/decisions/P0_V1_DECISIONS.md:
       never gates the attempt on feasibility. Post-flight verifies identity per skill and raises
       `EXECUTOR_MONITOR_PROTOCOL_FAILURE` (with the ExecutionResult attached) on substitution.
 
+R6 (report Phase 6 items 1-2) hardens the two backend boundaries this module owns:
+  - `observe()` returns a DEEP copy. The per-agent observation dicts and image arrays it used
+    to hand out were the very objects fed to the backend skills on the next primitive step, so
+    a caller mutating a returned observation could alter what the authoritative skills see.
+    `export_full_state()` was already immutable (frozen `StateSnapshot` built from ints).
+  - Every value read back from the backend — the `env.reset()` and `env.step()` return
+    tuples, and the `core_env.world` read that builds the snapshot — is validated at the
+    boundary; a malformed value becomes the typed `MALFORMED_BACKEND_RESULT` fault instead of
+    a bare AttributeError/TypeError/KeyError/ValueError. When the attempt already ran, the
+    fault carries the single case-(c) provenance key (`primitive_steps_before_failure=N`).
+
 DECISION 16 OBLIGATION 4 — RESOLVED (recorded in P0_V1_DECISIONS.md §17): the entities/grid view
 fed to the backend skills is the FULL EXACT GRID derived from `core_env.world` on every primitive
 step: walls, `delivery_zone`, undelivered boxes as `target_object`, OTHER agents as `agent`; a
@@ -49,6 +60,7 @@ No symbolic applicability, planning, or prediction happens here.
 """
 from __future__ import annotations
 
+import copy
 import os
 import sys
 from typing import Any, Dict, List, Mapping, Optional, Tuple
@@ -120,54 +132,89 @@ class BoxPushV1Adapter:
     # ── V1Environment protocol ─────────────────────────────────────────────────────
 
     def reset(self, *, seed: Optional[int] = None) -> StateSnapshot:
-        obs, _infos = self._env.reset(seed=seed)
+        try:
+            returned = self._env.reset(seed=seed)
+        except Exception as error:
+            # a raise out of the authoritative reset is infrastructure, never a domain outcome;
+            # pre-attempt: zero steps, nothing to resynchronize (R6, same channel as env.step)
+            raise InfrastructureFaultError(InfrastructureFault(
+                kind=FaultKind.BACKEND_API_EXCEPTION,
+                message=f"env.reset raised {type(error).__name__}: {error}",
+                source="BoxPushV1Adapter.reset",
+            )) from error
+        if not (isinstance(returned, tuple) and len(returned) == 2):
+            raise self._malformed(
+                f"env.reset returned {type(returned).__name__} instead of the "
+                f"(observations, infos) pair",
+                source="BoxPushV1Adapter.reset",
+            )
+        obs, _infos = returned
+        self._check_observations(obs, source="BoxPushV1Adapter.reset", primitive_steps=None)
         self._obs = obs
         return self.export_full_state()
 
     def observe(self) -> Mapping[str, Any]:
-        """The public per-agent observation channel: the backend's own obs dicts, untouched.
+        """The public per-agent observation channel: the backend's own obs dicts, DEEP-COPIED.
 
         NOT the exact-state channel — obs comes from `core_env.grid` and carries that grid's
         known defects (a delivered box still renders TARGET_OBJECT; a traversed DeliveryTile is
         destroyed). The V1 symbolic track never reads this.
+
+        R6 (report Phase 6 item 1): the copy is deep because the nested per-agent dicts and
+        image arrays are exactly what `_drive` feeds to the backend skills; a shallow copy let
+        a caller mutate the skills' next input through the returned observation.
         """
         self._require_reset()
-        return dict(self._obs)
+        return copy.deepcopy(self._obs)
 
     def export_full_state(self) -> StateSnapshot:
         """Canonical snapshot, built EXCLUSIVELY from `core_env.world` (D4)."""
         self._require_reset()
-        world = self._env.core_env.world
-        agents = tuple(
-            AgentSnapshot(AgentId(aid), (int(a.position[0]), int(a.position[1])), int(a.direction))
-            for aid, a in world.agents.items()
-        )
-        boxes = tuple(
-            BoxSnapshot(
-                BoxId(int(oid)), (int(o.position[0]), int(o.position[1])),
-                int(o.required_agents), bool(o.is_target), bool(o.delivered),
+        return self._snapshot_from_world(primitive_steps=None)
+
+    def _snapshot_from_world(self, *, primitive_steps: Optional[int]) -> StateSnapshot:
+        """The D4 read. A malformed world (missing attribute, wrong shape, an out-of-range
+        value the typed snapshot refuses) is a typed `MALFORMED_BACKEND_RESULT` fault (R6);
+        `primitive_steps` is the case-(c) provenance when the read follows an attempt."""
+        try:
+            world = self._env.core_env.world
+            agents = tuple(
+                AgentSnapshot(
+                    AgentId(aid), (int(a.position[0]), int(a.position[1])), int(a.direction)
+                )
+                for aid, a in world.agents.items()
             )
-            for oid, o in world.objects.items()
-        )
-        static = StaticWorld(
-            width=self._config.width,
-            height=self._config.height,
-            # The backend lists the four corner cells twice (box_push_env._build_base_grid);
-            # canonical form dedupes and sorts, matching domain.box_push_v1._outer_walls.
-            walls=tuple(sorted({(int(x), int(y)) for (x, y) in world.static.walls})),
-            delivery_zone=tuple((int(x), int(y)) for (x, y) in world.static.delivery_zone),
-        )
-        episode = EpisodeSnapshot(
-            step_count=int(world.episode.step_count),
-            terminated=bool(world.episode.terminated),
-            truncated=bool(world.episode.truncated),
-        )
-        return StateSnapshot(agents=agents, boxes=boxes, static=static, episode=episode)
+            boxes = tuple(
+                BoxSnapshot(
+                    BoxId(int(oid)), (int(o.position[0]), int(o.position[1])),
+                    int(o.required_agents), bool(o.is_target), bool(o.delivered),
+                )
+                for oid, o in world.objects.items()
+            )
+            static = StaticWorld(
+                width=self._config.width,
+                height=self._config.height,
+                # The backend lists the four corner cells twice (box_push_env._build_base_grid);
+                # canonical form dedupes and sorts, matching domain.box_push_v1._outer_walls.
+                walls=tuple(sorted({(int(x), int(y)) for (x, y) in world.static.walls})),
+                delivery_zone=tuple((int(x), int(y)) for (x, y) in world.static.delivery_zone),
+            )
+            episode = EpisodeSnapshot(
+                step_count=int(world.episode.step_count),
+                terminated=bool(world.episode.terminated),
+                truncated=bool(world.episode.truncated),
+            )
+            return StateSnapshot(agents=agents, boxes=boxes, static=static, episode=episode)
+        except (AttributeError, KeyError, TypeError, ValueError) as error:
+            raise self._malformed(
+                f"backend world state is malformed: {type(error).__name__}: {error}",
+                source="BoxPushV1Adapter.export_full_state", primitive_steps=primitive_steps,
+            ) from error
 
     def is_terminal(self) -> bool:
         self._require_reset()
-        episode = self._env.core_env.world.episode
-        return bool(episode.terminated or episode.truncated)
+        terminated, truncated = self._episode_flags(primitive_steps=None)
+        return terminated or truncated
 
     def render(self) -> Any:
         self._require_reset()
@@ -180,14 +227,14 @@ class BoxPushV1Adapter:
         self, call: GroundedSkillCall
     ) -> ExecutionResult | MalformedCall | UngroundedCall:
         self._require_reset()
-        if self.is_terminal():
+        terminated, truncated = self._episode_flags(primitive_steps=None)
+        if terminated or truncated:
             # D8 — refused as an InfrastructureFault; the fault channel is not in the return
             # union because a fault short-circuits the cycle rather than competing with results.
             raise InfrastructureFaultError(InfrastructureFault(
                 kind=FaultKind.EXECUTOR_MONITOR_PROTOCOL_FAILURE,
                 message="refused: execution after a terminal episode (D8)",
-                detail=f"terminated={self._env.core_env.world.episode.terminated} "
-                       f"truncated={self._env.core_env.world.episode.truncated}",
+                detail=f"terminated={terminated} truncated={truncated}",
                 source="BoxPushV1Adapter.execute_skill",
             ))
         if not isinstance(call, GroundedSkillCall):
@@ -195,6 +242,12 @@ class BoxPushV1Adapter:
                 reason=f"execute_skill requires a GroundedSkillCall, got {type(call).__name__}",
                 raw=repr(call),
             )
+
+        # R6: the pre-attempt snapshot is taken FIRST. It is the typed D4 read of the whole
+        # world, so a malformed backend state surfaces here as the typed fault, and the
+        # identity resolution / skill construction below read a world the export has just
+        # validated. Nothing transitions in between, so `pre` is the same snapshot as before.
+        pre = self.export_full_state()
 
         rejection = self._resolve_identities(call)
         if rejection is not None:
@@ -209,9 +262,9 @@ class BoxPushV1Adapter:
                        f"{REGISTRY.get(call.skill).backend_dispatch_key!r}",
             )
 
-        pre = self.export_full_state()
         primitive_steps, calls_made = self._drive(skills)
-        post = self.export_full_state()
+        # the attempt ran: a malformed post-attempt world carries case-(c) provenance
+        post = self._snapshot_from_world(primitive_steps=primitive_steps)
         result = self._interpret(call, pre, post, skills, primitive_steps, calls_made)
         self._post_flight(call, pre, post, result)
         return result
@@ -287,10 +340,19 @@ class BoxPushV1Adapter:
         while True:
             if all(sk.is_done for sk in skills.values()):
                 break
-            episode = env.core_env.world.episode
-            if episode.terminated or episode.truncated:
+            terminated, truncated = self._episode_flags(primitive_steps=primitive_steps)
+            if terminated or truncated:
                 break
-            entities = {aid: self._entities_for(aid) for aid in env.agents}
+            try:
+                entities = {aid: self._entities_for(aid) for aid in env.agents}
+            except (AttributeError, KeyError, TypeError, ValueError) as error:
+                # the exact-grid view is derived from `world` on every primitive step (Decision
+                # 16 obligation 4); a malformed world mid-attempt is the same typed fault as
+                # a malformed post-attempt export, with the same case-(c) provenance (R6)
+                raise self._malformed(
+                    f"backend world state is malformed: {type(error).__name__}: {error}",
+                    source="BoxPushV1Adapter._drive", primitive_steps=primitive_steps,
+                ) from error
             actions: Dict[str, int] = {}
             for aid in env.agents:
                 sk = skills.get(aid)
@@ -305,7 +367,7 @@ class BoxPushV1Adapter:
                     actions[aid] = sk.step(self._obs[aid], entities[aid])
                     calls_made[aid] += 1
             try:
-                self._obs, _rewards, terminations, truncations, _infos = env.step(actions)
+                stepped = env.step(actions)
             except Exception as error:
                 # An exception out of the authoritative transition is an infrastructure fault
                 # (:156 malformed backend result / backend exception), never a domain outcome.
@@ -316,6 +378,10 @@ class BoxPushV1Adapter:
                     source="BoxPushV1Adapter._drive",
                 )) from error
             primitive_steps += 1
+            # R6: the transition RAN (one more env.step call is on the books), so a malformed
+            # return is a case-(c) typed fault carrying that count — never a bare unpacking
+            # ValueError or a `.values()` AttributeError
+            self._obs, terminations, truncations = self._unpack_step(stepped, primitive_steps)
             if primitive_steps >= _HARD_CAP:
                 raise InfrastructureFaultError(InfrastructureFault(
                     kind=FaultKind.EXECUTOR_MONITOR_PROTOCOL_FAILURE,
@@ -562,6 +628,76 @@ class BoxPushV1Adapter:
             # travels with the fault (a post-execution fault legally coexists with an
             # ExecutionResult — EXECUTOR_MONITOR_PROTOCOL_FAILURE is not pre-execution).
             raise InfrastructureFaultError(fault, result=result)
+
+    # ── Backend-return normalization (R6, report Phase 6 item 2) ───────────────────
+
+    @staticmethod
+    def _malformed(
+        message: str, *, source: str, primitive_steps: Optional[int] = None
+    ) -> InfrastructureFaultError:
+        """The typed channel for an unexpected backend value. `primitive_steps` is attached
+        under the ONE case-(c) key exactly when an attempt already consumed env steps."""
+        detail = "" if primitive_steps is None else (
+            f"primitive_steps_before_failure={primitive_steps}"
+        )
+        return InfrastructureFaultError(InfrastructureFault(
+            kind=FaultKind.MALFORMED_BACKEND_RESULT, message=message, detail=detail,
+            source=source,
+        ))
+
+    def _check_observations(
+        self, obs: Any, *, source: str, primitive_steps: Optional[int]
+    ) -> None:
+        """The observation mapping `_drive` indexes per agent: a mapping with every backend
+        agent id present, each entry itself a mapping."""
+        if not isinstance(obs, Mapping):
+            raise self._malformed(
+                f"backend observations are {type(obs).__name__}, not a per-agent mapping",
+                source=source, primitive_steps=primitive_steps,
+            )
+        for aid in self._env.agents:
+            if aid not in obs or not isinstance(obs[aid], Mapping):
+                raise self._malformed(
+                    f"backend observations lack a mapping for agent {aid!r}",
+                    source=source, primitive_steps=primitive_steps,
+                )
+
+    def _unpack_step(
+        self, stepped: Any, primitive_steps: int
+    ) -> Tuple[Mapping[str, Any], Mapping[str, Any], Mapping[str, Any]]:
+        """Validate one `env.step` return against the parallel-env shape the drive loop
+        relies on: (obs, rewards, terminations, truncations, infos), with per-agent
+        termination/truncation mappings covering every backend agent."""
+        source = "BoxPushV1Adapter._drive"
+        if not (isinstance(stepped, tuple) and len(stepped) == 5):
+            raise self._malformed(
+                f"env.step returned {type(stepped).__name__}"
+                f"{'' if not isinstance(stepped, tuple) else f' of length {len(stepped)}'} "
+                f"instead of the 5-tuple (obs, rewards, terminations, truncations, infos)",
+                source=source, primitive_steps=primitive_steps,
+            )
+        obs, _rewards, terminations, truncations, _infos = stepped
+        self._check_observations(obs, source=source, primitive_steps=primitive_steps)
+        for name, flags in (("terminations", terminations), ("truncations", truncations)):
+            if not isinstance(flags, Mapping) or any(aid not in flags for aid in self._env.agents):
+                raise self._malformed(
+                    f"env.step {name} are {type(flags).__name__}, not a per-agent mapping "
+                    f"covering every agent",
+                    source=source, primitive_steps=primitive_steps,
+                )
+        return obs, terminations, truncations
+
+    def _episode_flags(self, *, primitive_steps: Optional[int]) -> Tuple[bool, bool]:
+        """(terminated, truncated) from the authoritative episode record, typed-faulted when
+        the record is malformed."""
+        try:
+            episode = self._env.core_env.world.episode
+            return bool(episode.terminated), bool(episode.truncated)
+        except (AttributeError, TypeError, ValueError) as error:
+            raise self._malformed(
+                f"backend episode record is malformed: {type(error).__name__}: {error}",
+                source="BoxPushV1Adapter._episode_flags", primitive_steps=primitive_steps,
+            ) from error
 
     # ── Guards / diagnostics ───────────────────────────────────────────────────────
 

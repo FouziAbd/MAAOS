@@ -368,9 +368,14 @@ class CallValidation(ABC):
         return isinstance(self, (ValidatedCall, OutsideSymbolicModel))
 
 
+# R6: the three verdicts that carry the validated call are generic in the domain-owned call
+# type (unbounded — they hold the call, they never read it). V1 code holds
+# `ValidatedCall[GroundedSkillCall]` etc.; `OutsideSymbolicModel` stays V1-concrete because it
+# consults the frozen BoxPush registry.
+
 @dataclass(frozen=True, slots=True)
-class ValidatedCall(CallValidation):
-    call: GroundedSkillCall
+class ValidatedCall[CallT](CallValidation):
+    call: CallT
 
 
 @dataclass(frozen=True, slots=True)
@@ -392,13 +397,13 @@ class MalformedCall(CallValidation):
 
 
 @dataclass(frozen=True, slots=True)
-class UngroundedCall(CallValidation):
+class UngroundedCall[CallT](CallValidation):
     """Well-formed but references an identity absent from the authoritative state.
 
     Never silently re-grounded onto a different object (skill_executor_push.py:128-136, :263-270).
     """
     reason: str
-    call: Optional[GroundedSkillCall] = None
+    call: Optional[CallT] = None
 
     def to_infrastructure_fault(self):
         from shared.faults import FaultKind, InfrastructureFault
@@ -406,13 +411,13 @@ class UngroundedCall(CallValidation):
 
 
 @dataclass(frozen=True, slots=True)
-class SymbolicallyInapplicable(CallValidation):
+class SymbolicallyInapplicable[CallT](CallValidation):
     """Well-formed and grounded, but symbolic preconditions do not hold.
 
     A symbolic-track result, NOT an infrastructure fault and NOT an execution discrepancy.
     """
     reason: str
-    call: Optional[GroundedSkillCall] = None
+    call: Optional[CallT] = None
     unsatisfied: Tuple[str, ...] = field(default_factory=tuple)
 
 

@@ -1,3 +1,9 @@
+# The default CI job (R0 pre-flight, completed in R6 — report Phase 6 items 4-5).
+#
+# OFFLINE BY CONSTRUCTION: the environment is restored from uv.lock (`--locked` refuses a
+# stale lock; hashes are verified), the suite is the deterministic offline suite, and no
+# step reaches a live LM, Ollama, or the network beyond package installation. The live-LM
+# integration tests stay opt-in (MAAOS_LIVE_LM=1) and are never enabled here.
 name: offline-tests
 
 on:
@@ -11,10 +17,15 @@ jobs:
       SDL_VIDEODRIVER: dummy
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
+          version: "0.12.9"
           python-version: "3.12"
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Run offline suite
-        run: python -B -m unittest discover -s tests -t .
+      - name: Install the locked environment (runtime deps + dev group)
+        run: uv sync --locked
+      - name: Offline suite (unit, contract, import-boundary, characterization tests)
+        run: uv run python -B -m unittest discover -s tests -t .
+      - name: Lint the architectural core (ruff, lint only)
+        run: uv run ruff check shared runtime app
+      - name: Type-check the architectural core, conformance witnesses and probe fixture (mypy)
+        run: uv run mypy

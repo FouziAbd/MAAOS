@@ -20,6 +20,15 @@ consumes exactly one executive step, success or failure. Calls rejected before e
 invocation consume zero. Primitive steps are counted separately, by the wrapper counting
 `env.step()` invocations — never from `BaseSkill._steps`, which is not a primitive-step counter
 (it skips early returns and evaluation iterations: skill_executor_push.py:170, :226).
+
+R6 (report Phase 6 acceptance "core contracts, runtime ... pass static type checking"):
+`ExecutionResult` is generic in the domain-owned state and call types, bounded by the
+structural `RuntimeState` / `RuntimeCall` protocols it actually reads (`same_world`, `skill`,
+`canonical`). V1 code holds `ExecutionResult[StateSnapshot, GroundedSkillCall]`; the record is
+frozen, so the parameters are covariant and a V1 result is also an
+`ExecutionResult[RuntimeState, RuntimeCall]` wherever the generic runtime handles one. The
+raw-label vocabulary check is unchanged: `PRODUCIBLE_RAW_LABELS` is BoxPush provenance keyed
+by the V1 skill name, consulted only when a `raw_label` is supplied.
 """
 from __future__ import annotations
 
@@ -27,8 +36,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Dict, FrozenSet, Mapping, Optional
 
-from shared.skills import GroundedSkillCall, SkillName
-from shared.state_snapshot import StateSnapshot
+from shared.skills import SkillName
+from shared.value_contracts import RuntimeCall, RuntimeState
 
 
 class RawLabel(StrEnum):
@@ -144,16 +153,16 @@ class StepAccounting:
 
 
 @dataclass(frozen=True, slots=True)
-class ExecutionResult:
+class ExecutionResult[StateT: RuntimeState, CallT: RuntimeCall]:
     """The executor's report for a call that REACHED the executor.
 
     A rejected call never produces an ExecutionResult — it produces a `CallValidation` rejection
     (shared.skills) and consumes zero executive steps.
     """
-    call: GroundedSkillCall
+    call: CallT
     outcome: ExecutionOutcome
-    pre_state: StateSnapshot
-    post_state: StateSnapshot
+    pre_state: StateT
+    post_state: StateT
     accounting: StepAccounting
     raw_label: Optional[RawLabel] = None          # provenance ONLY
     failure_class: Optional[FailureStateClass] = None
@@ -181,7 +190,7 @@ class ExecutionResult:
             if self.raw_label not in producible:
                 raise ValueError(
                     f"{self.call.skill} cannot emit raw label {self.raw_label!r}; producible "
-                    f"labels are {sorted(str(l) for l in producible)} (section18.md §B). A label "
+                    f"labels are {sorted(str(label) for label in producible)} (section18.md §B). A label "
                     f"from another skill indicates a mis-wired adapter, not a backend surprise."
                 )
         if self.outcome is ExecutionOutcome.SUCCESS and self.failure_class is not None:

@@ -35,7 +35,7 @@ from enum import StrEnum
 from typing import Any, Dict, Optional, Tuple
 
 from shared.comparison_keys import SymbolicKey, WorldKey
-from shared.skills import GroundedSkillCall
+from shared.value_contracts import RuntimeCall
 from shared.versioning import ModelVersion
 
 
@@ -53,8 +53,11 @@ class ComparisonBasis(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class ExecutionDiscrepancy:
+class ExecutionDiscrepancy[CallT: RuntimeCall]:
     """One discrepancy between prediction/model and authoritative execution.
+
+    R6: generic in the domain-owned call type (bounded by `RuntimeCall` for `canonical`);
+    V1 holds `ExecutionDiscrepancy[GroundedSkillCall]`.
 
     `STATE_EFFECT_MISMATCH` requires at least one COMPLETE comparison pair, and at least one
     recorded pair must actually differ. Both halves matter: a mismatch with no pair records no
@@ -65,7 +68,7 @@ class ExecutionDiscrepancy:
     typed `ExecutionOutcome` rather than a state comparison (Decision 13.7).
     """
     kind: DiscrepancyKind
-    call: GroundedSkillCall
+    call: CallT
     predicted_world_key: Optional[WorldKey] = None
     observed_world_key: Optional[WorldKey] = None
     predicted_symbolic_key: Optional[SymbolicKey] = None

@@ -25,6 +25,8 @@ from shared.symbolic_state import GroundedLiteral
 
 from nl import (
     FORMAT_INSTRUCTIONS,
+    GroundedProposal,
+    MalformedProposal,
     NLProposal,
     NLRequest,
     NLTrack,
@@ -562,13 +564,27 @@ class TestNLTrack(unittest.TestCase):
             NLTrack(RecordedLM()).propose(TASK_DELIVER_BOTH)
 
     def test_a_proposal_carries_exactly_one_of_call_or_malformed(self):
-        from shared.reports import CoverageReport
-        with self.assertRaises(ValueError):
-            NLProposal(call=None, malformed=None, coverage=CoverageReport(),
-                       confidence=None, repaired=False)
-        with self.assertRaises(ValueError):
-            NLProposal(call=PUSH, malformed=MalformedCall("r"), coverage=CoverageReport(),
-                       confidence=None, repaired=False)
+        """R6 (report Phase 6 item 3): the exactly-one invariant is STRUCTURAL — two variant
+        types, each requiring its own payload and admitting no field for the other's. The
+        pre-R6 single class enforced the same invariant at runtime over two optional fields."""
+        from shared.reports import ConfidenceReport, CoverageReport
+        confidence = ConfidenceReport(source="nl", confidence=1.0)
+        with self.assertRaises(TypeError):                      # a grounded variant needs a call
+            GroundedProposal(call=None, coverage=CoverageReport(), confidence=confidence)
+        with self.assertRaises(TypeError):                      # a malformed variant needs one
+            MalformedProposal(malformed=None, coverage=CoverageReport())
+        with self.assertRaises(TypeError):                      # neither admits the other's payload
+            GroundedProposal(call=PUSH, malformed=MalformedCall("r"),
+                             coverage=CoverageReport(), confidence=confidence)
+        with self.assertRaises(TypeError):
+            MalformedProposal(malformed=MalformedCall("r"), call=PUSH, coverage=CoverageReport())
+        grounded = GroundedProposal(call=PUSH, coverage=CoverageReport(), confidence=confidence)
+        malformed = MalformedProposal(malformed=MalformedCall("r"), coverage=CoverageReport())
+        self.assertIsNone(grounded.malformed)
+        self.assertIsNone(malformed.call)
+        self.assertIsNone(malformed.confidence)
+        for proposal in (grounded, malformed):
+            self.assertIsInstance(proposal, NLProposal)          # the PEP 604 union at runtime
 
 
 # ── structural guards ──────────────────────────────────────────────────────────────

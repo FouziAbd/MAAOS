@@ -37,7 +37,7 @@ class FaultKind(StrEnum):
 #: `NL_TRACK_FAILURE` belongs here because the advisory consultation precedes `execute()`:
 #: an exception ESCAPING `nl_track.propose()` (LM/seam/DSPy raise, missing recorded fixture)
 #: faults the cycle with the world untouched and zero steps consumed. It is infrastructure
-#: provenance, never comparator evidence — typed malformed LM OUTPUT stays `NLProposal.malformed`
+#: provenance, never comparator evidence — typed malformed LM OUTPUT stays a `MalformedProposal`
 #: → COVERAGE_GAP through the comparator, the only `TrackDivergence` constructor (H8).
 #: MEMBERSHIP IS STAGE-QUALIFIED (H8 WARN-1): the NL track has a second consultation stage —
 #: `observe()` — which may run AFTER a completed attempt, so an observe-stage fault legally
@@ -72,6 +72,17 @@ class FaultKind(StrEnum):
 #: case-(c) producer (the adapter's `env.step` wrap, runaway cap, alien-label guard and dispatch
 #: guard). An earlier revision let the runaway cap use a second spelling that collided with the
 #: `TraceEntry.primitive_steps_consumed` accessor name while meaning something different.
+#:
+#: R6 (report Phase 6 item 2) adds a third `result=None` shape at the backend BOUNDARY, and
+#: refines the meaning of the key:
+#:   - a `MALFORMED_BACKEND_RESULT` (or a `BACKEND_API_EXCEPTION` from `env.reset`) with NO key
+#:     and NO `"refused:"` prefix is a PRE-ATTEMPT boundary fault — a malformed `env.reset`
+#:     return, a malformed world/episode record read before any attempt, or a raise out of
+#:     `env.reset` — zero executive steps, world untouched (the loop's zero-charge path);
+#:   - the key means "primitives KNOWN to have run": the adapter's producers report the exact
+#:     `env.step` count, while the runtime executor's off-contract-return fault reports the
+#:     lower bound 0 (the backend returned no typed accounting) and says so in `detail`. The
+#:     executive step is charged either way, because the attempt reached the executor.
 PRE_EXECUTION_FAULT_KINDS: frozenset = frozenset({
     FaultKind.MALFORMED_SKILL_CALL,
     FaultKind.MISSING_GROUNDING,

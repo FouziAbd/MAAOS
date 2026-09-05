@@ -241,7 +241,9 @@ def _apply_world(state: CounterState, call: CounterAction) -> CounterState:
 
 # ── the fake environment (the sole physical authority of the probe) ────────────────────
 
-ProbeExecutionOutcome = Union[ExecutionResult, MalformedCall, UngroundedCall]
+ProbeExecutionOutcome = Union[
+    ExecutionResult[CounterState, CounterAction], MalformedCall, UngroundedCall[CounterAction]
+]
 
 
 class CounterEnvironment:
@@ -359,7 +361,7 @@ class CounterSymbolicTrack:
 
     def __init__(self) -> None:
         self._state: Optional[CounterSymbolicState] = None
-        self.recorded: List[ExecutionResult] = []
+        self.recorded: List[ExecutionResult[CounterState, CounterAction]] = []
 
     def sync(self, snapshot: CounterState, /) -> None:
         self._state = project(snapshot)
@@ -370,7 +372,7 @@ class CounterSymbolicTrack:
             raise RuntimeError("CounterSymbolicTrack.sync(state) must be called first")
         return self._state
 
-    def record_outcome(self, result: ExecutionResult, /) -> None:
+    def record_outcome(self, result: ExecutionResult[CounterState, CounterAction], /) -> None:
         self.recorded.append(result)
 
 
@@ -414,7 +416,9 @@ class CounterDomainServices:
         steps.append(stop(counter))
         return PlanFound(plan=tuple(steps), model_version=PROBE_MODEL_VERSION)
 
-    def ground(self, state: CounterState, call: CounterAction, /) -> Optional[UngroundedCall]:
+    def ground(
+        self, state: CounterState, call: CounterAction, /
+    ) -> Optional[UngroundedCall[CounterAction]]:
         if call.counter_id != state.counter_id:
             return UngroundedCall(reason=f"unknown counter {call.counter_id} in {call}", call=call)
         return None
@@ -448,8 +452,11 @@ class CounterDomainServices:
         )
 
     def monitor(
-        self, pre_symbolic: CounterSymbolicState, result: ExecutionResult, /
-    ) -> Tuple[ExecutionDiscrepancy, ...]:
+        self,
+        pre_symbolic: CounterSymbolicState,
+        result: ExecutionResult[CounterState, CounterAction],
+        /,
+    ) -> Tuple[ExecutionDiscrepancy[CounterAction], ...]:
         call = result.call
         if call.counter_id != self.task.counter_id:
             raise ValueError(f"monitor wired to counter {self.task.counter_id}, got {call.counter_id}")
@@ -569,7 +576,9 @@ class CounterActionComparator:
         return ComparisonReport()
 
 
-def counter_recovery(discrepancy: ExecutionDiscrepancy, /) -> Tuple[CounterAction, ...]:
+def counter_recovery(
+    discrepancy: ExecutionDiscrepancy[CounterAction], /
+) -> Tuple[CounterAction, ...]:
     """`RecoveryProvider[CounterAction]`: after a failed Increment, ADVISE a larger stride.
     Advice only — it passes the same grounding/applicability gates and executor as any call."""
     call = discrepancy.call
@@ -580,12 +589,22 @@ def counter_recovery(discrepancy: ExecutionDiscrepancy, /) -> Tuple[CounterActio
 
 # ── the probe's composition root (mirrors app.box_push_v1 in shape) ─────────────────────
 
+ProbeLoop = ExecutiveLoopManager[
+    CounterState, CounterSymbolicState, CounterAction, CounterTask, CounterProposal
+]
+ProbeDomainServicesContract = DomainServices[CounterState, CounterSymbolicState, CounterAction]
+ProbeSymbolicTrackContract = SymbolicTrack[CounterState, CounterSymbolicState]
+ProbeReasoningTrackContract = ReasoningTrack[CounterState, CounterTask, CounterProposal]
+ProbeComparatorContract = ProposalComparator[CounterAction, CounterProposal]
+ProbePolicyContract = OrchestrationPolicyContract[CounterState, CounterAction, CounterProposal]
+
+
 @dataclass(frozen=True, slots=True)
 class ProbeComponents:
-    domain: DomainServices
-    symbolic_track: SymbolicTrack
-    comparator: ProposalComparator
-    recovery_provider: RecoveryProvider
+    domain: ProbeDomainServicesContract
+    symbolic_track: ProbeSymbolicTrackContract
+    comparator: ProbeComparatorContract
+    recovery_provider: RecoveryProvider[CounterAction]
 
 
 def compose_probe(task: CounterTask) -> ProbeComponents:
@@ -598,18 +617,18 @@ def compose_probe(task: CounterTask) -> ProbeComponents:
 
 
 def build_probe_loop(
-    env,
+    env: CounterEnvironment,
     task: CounterTask,
     config: Optional[OrchestrationConfig] = None,
-    nl_track=None,
+    nl_track: Optional[ProbeReasoningTrackContract] = None,
     provenance: Optional[Provenance] = None,
-    policy: Optional[OrchestrationPolicyContract] = None,
+    policy: Optional[ProbePolicyContract] = None,
     *,
-    domain: Optional[DomainServices] = None,
-    symbolic_track: Optional[SymbolicTrack] = None,
-    comparator: Optional[ProposalComparator] = None,
-    recovery_provider: Optional[RecoveryProvider] = None,
-) -> ExecutiveLoopManager:
+    domain: Optional[ProbeDomainServicesContract] = None,
+    symbolic_track: Optional[ProbeSymbolicTrackContract] = None,
+    comparator: Optional[ProbeComparatorContract] = None,
+    recovery_provider: Optional[RecoveryProvider[CounterAction]] = None,
+) -> ProbeLoop:
     """Assemble one executive loop over the probe — the SAME `ExecutiveLoopManager` class
     the product uses, receiving every component through the same keyword seams."""
     defaults = compose_probe(task)
@@ -647,10 +666,7 @@ def smooth_environment() -> CounterEnvironment:
 ProbeEnvironmentContract = Environment[
     CounterState, CounterAction, ProbeExecutionOutcome, Mapping[str, int]
 ]
-ProbeSymbolicTrackContract = SymbolicTrack[CounterState, CounterSymbolicState]
-ProbeDomainServicesContract = DomainServices[CounterState, CounterSymbolicState, CounterAction]
-ProbeReasoningTrackContract = ReasoningTrack[CounterState, CounterTask, CounterProposal]
-ProbeComparatorContract = ProposalComparator[CounterAction, CounterProposal]
+# (the track/domain/comparator/policy contract aliases are defined beside ProbeComponents)
 
 
 def environment_conforms(env: CounterEnvironment) -> ProbeEnvironmentContract:

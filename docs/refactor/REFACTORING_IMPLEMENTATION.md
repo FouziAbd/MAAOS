@@ -890,13 +890,370 @@ Warnings/deferred:
 
 ## R6 — Correctness and repository hygiene
 
-Status: PENDING
+Status: COMPLETE (2026-09-05) — all four commits of the owner's split are
+implemented and verified; commit 4 takes the owner's option (a) (reference-only
+quarantine) instead of the originally planned `git mv` (see "Commit 4" below).
+Reviews: test-reviewer 0 FAIL, architecture-reviewer 0 FAIL (their WARNs closed
+in commit 3 or recorded under Warnings/deferred).
+
+Objective: report Phase 6 items 1-6 — observation aliasing, malformed backend
+returns, the discriminated NL proposal type, static typing of the architectural
+core, CI with lint/type gates, a reproducible dependency lock, and the legacy
+quarantine — under the R6 tooling decisions and owner decisions recorded in
+`docs/refactor/REFACTOR_STATUS.md`.
+
+### Commit 1 — hygiene (report items 1-3)
 
 Implementation:
-- Pending.
+- `functional_layer/custom_env/box_push/env/box_push_v1_adapter.py`
+  (item 1) `observe()` returns `copy.deepcopy(self._obs)`: the nested per-agent
+  dicts and image arrays it used to hand out (shallow `dict(...)`) were the very
+  objects `_drive` feeds to the backend skills on the next primitive step.
+  `export_full_state()` was already a frozen value built from ints.
+  (item 2) Every value read back from the backend is validated at the boundary
+  into the typed `MALFORMED_BACKEND_RESULT` fault (`_malformed` helper): the
+  `env.reset()` pair and the `env.step()` 5-tuple (`_unpack_step`: per-agent
+  observation mappings, per-agent termination/truncation mappings covering every
+  agent), the `world` read that builds the snapshot (`_snapshot_from_world`,
+  wrapping `AttributeError`/`KeyError`/`TypeError`/`ValueError` including the
+  typed snapshot's own refusals), the entities view derived from `world` on
+  every primitive step (`_drive`), and the episode flags (`_episode_flags`).
+  When an attempt already consumed env steps the fault carries the single
+  case-(c) key `primitive_steps_before_failure=N` (N = env.step calls that
+  returned); pre-attempt reads carry none; no message starts with `refused:`.
+  A raise out of `env.reset` is wrapped as `BACKEND_API_EXCEPTION` (pre-attempt,
+  no key), mirroring the `env.step` wrap. The three-case provenance comment in
+  `shared/faults.py` now states this third `result=None` shape (a keyless,
+  non-`refused:` boundary fault = pre-attempt, zero steps) and that the key
+  means "primitives KNOWN to have run" (a stated lower bound at the executor).
+  The pre-attempt export now runs BEFORE identity resolution so pre-flight and
+  skill construction read a world the export has just validated — nothing
+  transitions in between, so the recorded `pre_state` is identical.
+- `runtime/executor.py` (item 2, runtime side): an environment return outside
+  `ExecutionResult | MalformedCall | UngroundedCall` is raised as
+  `MALFORMED_BACKEND_RESULT` instead of reaching the loop as an object whose
+  attribute reads raise bare exceptions. The attempt reached the executor, so
+  one executive step is consumed (Decision 2); the backend reported no typed
+  accounting, so the detail carries `primitive_steps_before_failure=0` and
+  states that 0 is the lower bound (the loop's case-(c) charge is then exactly
+  one executive step and zero primitives).
+- `nl/track.py` (item 3): `NLProposal` is the discriminated union
+  `GroundedProposal | MalformedProposal` (`TypeAlias`; PEP 604 so
+  `isinstance(x, NLProposal)` also works at runtime). `GroundedProposal(call,
+  coverage, confidence, repaired=False)` requires a `GroundedSkillCall` and a
+  `ConfidenceReport`; `MalformedProposal(malformed, coverage)` requires a
+  `MalformedCall`. Both keep the runtime's `AdvisoryProposal` read surface —
+  `MalformedProposal.call`/`.confidence` and `GroundedProposal.malformed` are
+  typed-`None` properties — so the trace columns and the R5 protocol are
+  unchanged. `NLTrack.propose` returns the variant; `nl/__init__.py` exports
+  both. `app/comparator.py` narrows with `isinstance(nl_proposal,
+  MalformedProposal)` (the two pre-existing `union-attr` mypy errors are gone;
+  the redundant `confidence is not None` guard is dropped because the grounded
+  variant's confidence is non-optional).
 
 Tests/evidence:
-- Pending.
+- `tests/test_r6_hygiene.py` (22 tests; suite 796 -> 818; a 23rd, the
+  `env.reset` raise, was added after the architecture review):
+  `TestObservationsDoNotAliasBackendState` (deep copy by identity and content;
+  every mutation kind on the returned mapping — in-place array writes, scalar
+  overwrites, key deletion, nested replacement — invisible to the adapter's own
+  observation, the next `observe()`, and the exact state; a spying `_drive`
+  proves the observation handed to the skills after vandalism equals a pristine
+  adapter's and the attempt is byte-identical; the exported snapshot is frozen
+  at every level and unaffected by later backend transitions);
+  `TestMalformedBackendReturnsAreTypedFaults` (step tuple of wrong length / not
+  a tuple, per-agent flags as lists, flags or observations missing an agent,
+  observations not a mapping, malformed reset return with the D8 latch kept
+  unset and a sound reset recovering, six malformed-world shapes before an
+  attempt at both `export_full_state` and the pre-attempt export inside
+  `execute_skill`, a malformed episode record, a world that turns malformed
+  after the attempt (case-(c) provenance = the primitives the drive consumed)
+  and mid-attempt (provenance = 2), and the sound-backend behavior-preservation
+  pin); `TestExecutorNormalizesOffContractReturns` on the R5 probe (five
+  garbage return shapes -> the typed fault with the lower-bound provenance; the
+  loop records the fault, no execution, one executive step charged, no
+  discrepancy, and the backend did run; typed returns pass verbatim by
+  identity); `TestProposalVariants` (the real `NLTrack` over `RecordedLM`
+  returns each variant; both satisfy `AdvisoryProposal`, are frozen and are
+  instances of the union; the comparator narrows: malformed -> COVERAGE_GAP +
+  TRANSLATION_RESIDUAL, grounded in-model -> empty report).
+- `tests/contract_conformance.py::proposal_narrows_statically` — the mypy
+  witness that one `isinstance` check proves the payload (a function returning
+  `proposal.call` typed `GroundedSkillCall`, no Optional unwrapping).
+- Adapted (assertions preserved or strengthened): `tests/test_p3_nl.py`
+  (the exactly-one invariant is now structural: both variants refuse a missing
+  or foreign payload and neither admits the other's field);
+  `tests/test_p4_runtime.py`, `tests/test_r3_comparison.py`,
+  `tests/test_r4_composition.py`, `tests/test_r5_probe.py` construct the
+  variants through their existing `_proposal` helpers.
+- Mutation probes on a scratch copy (all KILLED by the new tests): shallow
+  `observe()`; unvalidated `env.step` unpacking; executor pass-through;
+  unguarded world export.
+- Full suite 818, OK (skipped=1); both headless demos byte-identical to
+  `docs/refactor/baseline/demo_*.txt`.
+
+### Commit 2 — typing (report acceptance "core contracts, runtime, and new policies pass static type checking")
+
+Implementation:
+- `shared/value_contracts.py` (new leaf): the R5 structural protocols
+  `RuntimeState` / `RuntimeCall` / `TaskContract` / `AdvisoryProposal` moved
+  here verbatim so they can BOUND the generic record types without an import
+  cycle (`shared.contracts` imports the records; the records now import the
+  bounds). `shared/contracts/domain_types.py` re-exports the same objects (the
+  R5 import path and the `shared.contracts` export are unchanged);
+  `shared.__all__` exports the four names. The leaf imports only
+  `shared.comparison_keys` and `shared.reports` (pinned by test).
+- Generic frozen records, PEP 695 syntax, covariant by construction (frozen
+  fields; pinned by the `v1_records_are_also_generic_records` witness):
+  `ExecutionResult[StateT: RuntimeState, CallT: RuntimeCall]`
+  (`shared/execution.py`), `PlanFound[CallT: RuntimeCall]` and an abstract
+  `PlannerResult.canonical` (`shared/planner_result.py`),
+  `ExecutionDiscrepancy[CallT: RuntimeCall]` (`shared/discrepancy.py`),
+  `TraceEntry[StateT, CallT, TaskT: TaskContract]` (`shared/trace_schema.py`),
+  `ValidatedCall[CallT]` / `UngroundedCall[CallT]` /
+  `SymbolicallyInapplicable[CallT]` (`shared/skills.py`; unbounded — held,
+  never read; `OutsideSymbolicModel` stays V1-concrete because it consults the
+  frozen registry). `TraceEntry.nl_proposal` is typed `Optional[RuntimeCall]`:
+  the advisory proposal type is track-owned and a type-parameter bound cannot
+  name another parameter, so the column records what the `AdvisoryProposal`
+  contract guarantees (docstring in `shared/trace_schema.py`).
+- Generic runtime: `ExecutiveLoopManager[StateT, SymbolicStateT, CallT, TaskT,
+  ProposalT: AdvisoryProposal]` with every injected collaborator typed at those
+  parameters (`env: Environment[StateT, CallT, ExecutionAttempt[StateT, CallT],
+  object]`, `nl_track: ReasoningTrack[StateT, TaskT, ProposalT]`, `policy:
+  OrchestrationPolicyContract[StateT, CallT, ProposalT]`, `domain:
+  DomainServices[StateT, SymbolicStateT, CallT]`, `symbolic_track:
+  SymbolicTrack[StateT, SymbolicStateT]`, `comparator:
+  ProposalComparator[CallT, ProposalT]`, `recovery_provider:
+  RecoveryProvider[CallT]`); `EpisodeResult` and `ExecutiveHistory` generic in
+  `[StateT, CallT, TaskT]`; `runtime/executor.py::execute` generic over the R1
+  `Environment` contract with the `ExecutionAttempt[StateT, CallT]` type alias;
+  `runtime/policies.py` generic in the call type too
+  (`SymbolicPrimaryPolicy[StateT, CallT, ProposalT]` — the routing reads only
+  the typed plan channel, verdict, count and standing advice); the legacy
+  `runtime/orchestrator.py` shim's context is typed
+  `PreliminaryContext[None, GroundedSkillCall]`. `shared/contracts/domain.py`
+  bounds its state/call TypeVars by the value protocols and types
+  `monitor(result: ExecutionResult[StateT, CallT])`.
+- `app/box_push_v1.py` names the V1 parameterization once (`V1Loop`,
+  `V1DomainServices`, ..., `V1Policy`) and `build_loop`/`compose`/
+  `BoxPushComponents` are fully annotated (`env: V1Environment`).
+- Two pre-existing debts closed: `shared/skill_ir.py` reused a loop variable
+  across two typed loops (renamed); `runtime/loop.py` `extra_faults` tuple
+  annotation. `ExecutiveLoopManager._entry` takes explicit typed keyword
+  parameters (no `**kw: Any`), so every trace column the loop records is
+  type-checked at its call site (architecture-reviewer W2).
+- `tests/probe_counter.py` annotated at the probe parameterization
+  (`ExecutionResult[CounterState, CounterAction]`, `ProbeLoop`, ...): 31 -> 0
+  mypy errors with no `Any` and no `type: ignore` (the R5 target).
+
+Tests/evidence:
+- `tests/test_r6_typing.py` (8 tests; suite 818 -> 826): the mypy gate exactly
+  as CI runs it (`shared runtime app tests/contract_conformance.py
+  tests/probe_counter.py --ignore-missing-imports --follow-imports=silent` ->
+  "Success: no issues found") plus a NON-VACUITY probe (a V1-typed record given
+  a foreign call and a loop handed a non-task are both reported); both skipped
+  — not passed — when mypy is absent. Runtime pins (no type checker): the
+  records' and the loop's `__type_params__` names and bounds, records still
+  frozen/slotted/subscriptable, `PlannerResult` abstract with every concrete
+  result serializing, protocol identity across the three import paths, the
+  leaf module's import discipline.
+- `tests/contract_conformance.py` gains the R6 witnesses
+  `v1_loop_is_typed_at_the_v1_parameters`, `v1_trace_keeps_domain_precision`
+  (a V1 entry's `selected_call.box` is reachable statically — nothing widened
+  to `Any`), `v1_records_are_also_generic_records` (covariance), and the policy
+  witnesses take the third parameter.
+- Adapted: `tests/test_canonical_faithfulness.py` coverage scan skips abstract
+  bases and protocols (they have no serialization of their own; every concrete
+  type is still required); `tests/test_observation_contract.py`'s export
+  completeness is satisfied by the four new `shared.__all__` names.
+- `python -m mypy shared runtime app --ignore-missing-imports
+  --follow-imports=silent`: 4 -> 0 errors (36 source files); with the two test
+  files (the config scope) 38 files, Success. Full suite 826, OK (skipped=1);
+  both demos byte-identical.
+
+### Commit 3 — tooling (report items 4-5)
+
+Implementation:
+- `pyproject.toml`: `[project]` metadata, `requires-python = ">=3.12,<3.13"`
+  (Decision 10), runtime dependencies pinned exactly and mirroring
+  `requirements.txt` line for line, `[dependency-groups] dev = mypy==2.3.1,
+  ruff==0.16.6, PyYAML==6.0.3` (PyYAML parses the workflow in
+  `tests/test_r6_tooling.py`; declared so the default suite never depends on a
+  transitive edge — architecture-reviewer W6), `[tool.uv] package = false` (flat multi-package tree, never
+  built/installed), `[tool.mypy]` with `files` = the R6 gate scope,
+  `follow_imports = "silent"`, `ignore_missing_imports`, `[tool.ruff]` lint
+  only (`E4,E7,E9,F,W`; legacy/research trees excluded; no formatter — frozen
+  sources are not reformatted).
+- `uv.lock` (`uv lock`, uv 0.12.9): the transitive environment — 91 packages,
+  every registry distribution with sha256 hashes, `requires-python ==3.12.*`,
+  the project itself virtual. `uv lock` WARNS that the frozen `numpy==2.4.0`
+  pin is yanked upstream ("Backward compatibility bug"); the pin is a recorded
+  V1 decision (decisions §18 item 2) and is deliberately not changed here.
+- `.github/workflows/offline-tests.yml`: `astral-sh/setup-uv` (uv 0.12.9,
+  Python 3.12), `uv sync --locked` (refuses a stale lock, verifies hashes),
+  the offline suite, `uv run ruff check shared runtime app`, `uv run mypy`
+  (config scope). `SDL_VIDEODRIVER=dummy`; no live LM, service, secret or
+  network step beyond package installation. Live-LM tests stay opt-in
+  (`MAAOS_LIVE_LM=1`).
+- Lint hygiene needed for the core to pass ruff: three unused imports
+  (`shared/state_snapshot.py`, `shared/symbolic_state.py`, `shared/task.py`)
+  and four ambiguous `l` comprehension variables renamed
+  (`shared/symbolic_state.py`) — no behavior.
+- `README.md` environment section names the lock and the CI gates.
+
+Tests/evidence:
+- `tests/test_r6_tooling.py` (16 tests; suite 826 -> 842): pyproject vs
+  requirements pin agreement (every dependency `==`-pinned); dev-group pins;
+  not a distributable package; the mypy scope equals `tests/test_r6_typing.py`'s
+  gate; ruff lint-only over the default error classes with the legacy trees
+  excluded; every runtime and dev pin locked at its version; every locked
+  distribution hashed (transitive closure > 50 packages); lock Python 3.12;
+  the parsed workflow (push + pull_request triggers, locked sync, the exact
+  suite command, `python-version: "3.12"`, the two gate commands, no
+  live-model/service/secret content in the executable job); the ruff gate on
+  `shared runtime app` with a non-vacuity probe (skipped without ruff).
+- `python -m mypy` (config-driven) -> Success (38 files); `python -m ruff
+  check shared runtime app` -> All checks passed; `uv lock --check` -> up to
+  date. Full suite 842, OK (skipped=1); both demos byte-identical.
+- NOT verified here: an actual GitHub Actions run (no `gh` access and the
+  branch is unpushed) and `uv sync` into a fresh virtual environment (it would
+  duplicate the multi-GB pinned stack locally). The lock/workflow/test evidence
+  above is what backs the "CI runs offline" criterion until the first push.
+
+### Earlier-phase items owned by R6
+
+- AST-scan hardening (R1 WARN): `tests/test_r1_contracts.py::_defined_names`
+  now also scans `*args`/`**kwargs`, lambda parameters, annotation expressions
+  (including string annotations, names and attribute segments), and names
+  imported from `shared` (so a BoxPush-typed import such as `BoxId` trips the
+  vocabulary scan even though the `shared` root is allowed); morphological
+  variants (`pushed`, `boxes`, ...) trip via stem matching while `pose` stays
+  whole-word (`proposal`/`propose` are contract words). Non-vacuity test
+  `test_the_vocabulary_scan_sees_every_binding_site` (suite 842 -> 843).
+- Mutation-harness O1-O4 port (R2): rather than editing the frozen
+  `docs/implementation/p4_mutation_harness.py`, the four O-series mutations
+  were re-applied to `runtime/policies.py` on a scratch export (NoPlan ->
+  Replan; threshold ignored; primary escapes to REQUEST_PROPOSAL; primary
+  declares the NL input; inapplicable head executed) — all five KILLED by the
+  current suite (4 / 50 / 16 / 5 / 5 failures respectively).
+- `app/` in the mypy/CI scope and the probe fixture / conformance witnesses in
+  the gate (R4/R5): done in commits 2-3.
+- Legacy shim `state=None` typing (R2): done (`PreliminaryContext[None,
+  GroundedSkillCall]`).
+
+### Commit 4 — legacy quarantine (report item 6): OPTION (a), owner decision 2026-09-05
+
+The owner's original instruction was a pure `git mv` of `middleware_layer/` and
+`model_layer/` under `legacy/` with no content edits, stopping if the move broke
+any test or import. It would have:
+- break the supported runner's opt-in live path:
+  `functional_layer/custom_env/box_push/env/box_push_v1_run.py:92`
+  imports `model_layer.planner.v1_nl_live` for `--nl live`;
+- break the opt-in live test `tests/test_p3_live_lm.py:17` (same import);
+- move a V1 component: `model_layer/planner/v1_nl_live.py` is the V1 live
+  DSPy seam (decisions §18 item 10 / P0_V1_DECISIONS.md:852 name it as the
+  only dspy binding), placed on the legacy side only because the import guard
+  forbids `nl/` from importing dspy;
+- turn the suite red by construction: `tests/test_no_backend_imports.py`
+  auto-discovers every top-level directory holding `.py` files that is not in
+  its `LEGACY_PACKAGES` list as a GUARDED package, so a new `legacy/` tree
+  would be scanned and fail on its numpy/dspy/backend imports — a pure `git mv`
+  with no content edits cannot keep the suite green (architecture-reviewer);
+- break the legacy runners/demos that import both packages
+  (`functional_layer/custom_env/box_push/env/box_push_per_step.py`,
+  `.../box_push_centralized.py`, `.../box_push_schema.py`,
+  `functional_layer/custom_env/cooperative_search_transport/**`,
+  `functional_layer/envs/*.py`) and the intra-package absolute imports inside
+  `middleware_layer/` and `model_layer/` themselves.
+The owner therefore chose the report's FIRST alternative for item 6 — "mark
+legacy packages clearly as unsupported/reference-only" — implemented as:
+- `README.md` "Legacy code": a REFERENCE-ONLY banner naming both trees, the
+  gate exclusion, the import prohibition, and the single named exception;
+- `.claude/rules/legacy-packages.md` (new rule): both trees are pre-V1
+  reference code, excluded from the mypy/ruff gates, and must not be imported
+  by `shared/`, `runtime/`, `app/`, or `tests/` — with ONE named exception,
+  `model_layer.planner.v1_nl_live`, the supported V1 live NL seam;
+- `tests/test_r6_legacy_boundary.py` (5 tests): an AST scan of the four V1-side
+  directories for static AND dynamic (`importlib.import_module` / `__import__`)
+  legacy imports whose allowlist is exactly `{"model_layer.planner.v1_nl_live"}`
+  (non-vacuous: the lazy in-function import in `tests/test_p3_live_lm.py` is
+  seen and is the only hit; a scratch probe proves all four import shapes are
+  detected); the exception module exists, defines `build_live_seam`, and is
+  named by the runner's opt-in path; both trees exist and sit outside
+  `[tool.mypy] files` and inside `[tool.ruff] extend-exclude`; the rule and the
+  README state the boundary and the exception.
+No file under either legacy tree was edited or moved.
+
+Compatibility notes:
+- Trace serialization, CLI options, `EpisodeOutcome`/`EpisodeResult` shapes,
+  `runtime.orchestrator` shim, the accepted V1 outcomes and the three designed
+  discrepancies are unchanged (R0 characterization green; demos byte-identical).
+- DELIBERATE CHANGE (report item 3): `NLProposal(call=..., malformed=..., ...)`
+  direct construction no longer exists; construct `GroundedProposal` /
+  `MalformedProposal`. The name `NLProposal` remains importable from `nl` and
+  `nl.track` as the union type; every attribute read the runtime, comparator,
+  trace, and live test perform is unchanged. In-repo callers (tests) adapted;
+  no out-of-repo caller is known.
+- DELIBERATE CHANGE: `PlannerResult` now has an abstract `canonical`; the base
+  was already uninstantiable (`__new__`), so only a hypothetical subclass
+  without `canonical` is affected (none exists).
+- Typing-only changes (no runtime effect): the loop's/`build_loop`'s parameter
+  annotations, the generic parameters on the records (`ExecutionResult`,
+  `PlanFound`, ... remain constructible with the same keywords; bare
+  annotations elsewhere keep working), `TraceEntry.nl_proposal: Optional[RuntimeCall]`,
+  `shared.__all__` + 4 names.
+- Observable behavior differences: none on any path the frozen backend takes
+  (it never returns a malformed value). Differences exist only where the
+  backend or a foreign environment misbehaves: a malformed `env.reset`/`env.step`
+  return, a malformed `world`, or an off-contract `execute_skill` return now
+  surfaces as `InfrastructureFaultError(MALFORMED_BACKEND_RESULT)` (previously
+  a bare `ValueError`/`AttributeError`/`TypeError`/`KeyError`); the runtime
+  charges an off-contract return as one executive step with zero primitives.
+
+Warnings/deferred:
+- WARN (recorded, owner): `numpy==2.4.0` is yanked upstream; `uv lock` resolves
+  the exact pin regardless. Bumping is a recorded-decision matter.
+- WARN (accepted): the mypy and ruff gate tests SKIP when the tools are not
+  installed (they are dev-group tools, not runtime dependencies); CI installs
+  the dev group, so the gates are enforced there and on any developer machine
+  with `uv sync`.
+- WARN (accepted): the executor's off-contract charge reports the primitive
+  count as the lower bound 0 and says so in the fault detail; no other honest
+  number exists at that boundary.
+- WARN (accepted): the domain/symbolic/nl side is type-checked for inference
+  only (`follow_imports = silent`); `python -m mypy domain symbolic nl
+  --ignore-missing-imports --follow-imports=silent` reports 30 errors in 3
+  files (26 `str` vs `PredicateName` NewType arguments in
+  `domain/box_push_v1.py`, 2 in `symbolic/planner.py`, 3 in
+  `symbolic/predictor.py` — pre-existing, typing-only, frozen V1 sources) and
+  the sys.path-mounted adapter 10; both outside the report's "architectural
+  core" and deliberately outside the gate.
+- DEFERRED (post-R6, owner's own task, recorded 2026-09-05): "Relocate the
+  live NL seam out of `model_layer/` to a non-legacy home compatible with the
+  import guard, then move both legacy trees under `legacy/`." Until then the
+  quarantine is the option-(a) boundary above. (The R4 owner item —
+  `CLAUDE.md` "Active implementation" naming `app/` — is resolved: the entry
+  is present.)
+- WARN (accepted, architecture-reviewer W3): the contract protocols still name a
+  few records unparameterized (`DomainServices.ground -> Optional[UngroundedCall]`,
+  `.monitor -> Tuple[ExecutionDiscrepancy, ...]`, `SymbolicTrack.record_outcome`,
+  `RecoveryProvider.__call__`, `V1Environment.execute_skill`): under mypy
+  defaults these are `[Any]`-parameterized, so the loop's parameterized
+  annotations at those seams are accepted rather than proven. Variance
+  (contravariant TypeVars in covariant positions) or the frozen P0
+  `V1Environment` prevent parameterizing them without a contract change;
+  `disallow_any_generics` would surface them. Not an acceptance gap.
+- WARN (accepted, architecture-reviewer W5): the adapter reads `self._env.agents`
+  raw in the R6 validators (the backend's agent-id list, never a return value);
+  a raise out of `env.reset` is now wrapped as `BACKEND_API_EXCEPTION` like
+  `env.step` (test `test_a_raise_out_of_reset_is_a_typed_backend_fault`).
+- DEFERRED (unassigned; a real next domain): `shared/skills.py`,
+  `shared/state_snapshot.py`, `shared/task.py`, `shared/ids.py`,
+  `shared/execution.py::RawLabel`/`PRODUCIBLE_RAW_LABELS` remain
+  BoxPush-vocabulary V1 types under `shared/` (R5 note); the generic records
+  now hold them as parameters rather than by name, which is as far as R6 goes
+  without a second real domain.
 
 Compatibility notes:
 - Pending.

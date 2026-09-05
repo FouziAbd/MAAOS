@@ -691,6 +691,12 @@ class TestCanonicalFormsAreFaithful(unittest.TestCase):
                     continue
                 if not hasattr(value, "canonical"):
                     continue
+                if inspect.isabstract(value) or getattr(value, "_is_protocol", False):
+                    # R6: an abstract base (`PlannerResult.canonical` is abstract) or a
+                    # structural protocol (`RuntimeCall`/`TaskContract` declare `canonical`)
+                    # has no serialization of its own to verify; every concrete
+                    # implementation is still required to appear in the case table
+                    continue
                 if name not in covered and name not in VERIFIED_ELSEWHERE:
                     missing.append(f"{name} ({module.__name__})")
         self.assertEqual(
