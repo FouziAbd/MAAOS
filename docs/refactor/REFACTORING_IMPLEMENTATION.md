@@ -890,9 +890,11 @@ Warnings/deferred:
 
 ## R6 — Correctness and repository hygiene
 
-Status: IN PROGRESS (2026-09-04/05) — commits 1-3 of the owner's four-commit
-split are implemented and verified; commit 4 (the legacy move) is NOT done and
-is awaiting an owner decision (see "Legacy move" below).
+Status: COMPLETE (2026-09-05) — all four commits of the owner's split are
+implemented and verified; commit 4 takes the owner's option (a) (reference-only
+quarantine) instead of the originally planned `git mv` (see "Commit 4" below).
+Reviews: test-reviewer 0 FAIL, architecture-reviewer 0 FAIL (their WARNs closed
+in commit 3 or recorded under Warnings/deferred).
 
 Objective: report Phase 6 items 1-6 — observation aliasing, malformed backend
 returns, the discriminated NL proposal type, static typing of the architectural
@@ -1140,11 +1142,11 @@ Tests/evidence:
 - Legacy shim `state=None` typing (R2): done (`PreliminaryContext[None,
   GroundedSkillCall]`).
 
-### Legacy move (report item 6, owner decision: commit 4) — NOT DONE, owner input required
+### Commit 4 — legacy quarantine (report item 6): OPTION (a), owner decision 2026-09-05
 
-The owner's instruction is a pure `git mv` of `middleware_layer/` and
-`model_layer/` under `legacy/` with no content edits, and "if moving would
-break any existing test or import, stop and ask instead". It would:
+The owner's original instruction was a pure `git mv` of `middleware_layer/` and
+`model_layer/` under `legacy/` with no content edits, stopping if the move broke
+any test or import. It would have:
 - break the supported runner's opt-in live path:
   `functional_layer/custom_env/box_push/env/box_push_v1_run.py:92`
   imports `model_layer.planner.v1_nl_live` for `--nl live`;
@@ -1164,10 +1166,24 @@ break any existing test or import, stop and ask instead". It would:
   `functional_layer/custom_env/cooperative_search_transport/**`,
   `functional_layer/envs/*.py`) and the intra-package absolute imports inside
   `middleware_layer/` and `model_layer/` themselves.
-Stopped without moving. Options for the owner are listed in the R6 completion
-report; the interim quarantine is documentary (`CLAUDE.md` "Legacy code",
-`.claude/rules/legacy-reference.md`, `README.md`) and the ruff/mypy scopes
-exclude both trees.
+The owner therefore chose the report's FIRST alternative for item 6 — "mark
+legacy packages clearly as unsupported/reference-only" — implemented as:
+- `README.md` "Legacy code": a REFERENCE-ONLY banner naming both trees, the
+  gate exclusion, the import prohibition, and the single named exception;
+- `.claude/rules/legacy-packages.md` (new rule): both trees are pre-V1
+  reference code, excluded from the mypy/ruff gates, and must not be imported
+  by `shared/`, `runtime/`, `app/`, or `tests/` — with ONE named exception,
+  `model_layer.planner.v1_nl_live`, the supported V1 live NL seam;
+- `tests/test_r6_legacy_boundary.py` (5 tests): an AST scan of the four V1-side
+  directories for static AND dynamic (`importlib.import_module` / `__import__`)
+  legacy imports whose allowlist is exactly `{"model_layer.planner.v1_nl_live"}`
+  (non-vacuous: the lazy in-function import in `tests/test_p3_live_lm.py` is
+  seen and is the only hit; a scratch probe proves all four import shapes are
+  detected); the exception module exists, defines `build_live_seam`, and is
+  named by the runner's opt-in path; both trees exist and sit outside
+  `[tool.mypy] files` and inside `[tool.ruff] extend-exclude`; the rule and the
+  README state the boundary and the exception.
+No file under either legacy tree was edited or moved.
 
 Compatibility notes:
 - Trace serialization, CLI options, `EpisodeOutcome`/`EpisodeResult` shapes,
@@ -1213,8 +1229,12 @@ Warnings/deferred:
   `symbolic/predictor.py` — pre-existing, typing-only, frozen V1 sources) and
   the sys.path-mounted adapter 10; both outside the report's "architectural
   core" and deliberately outside the gate.
-- DEFERRED (owner): the legacy move (above). (The R4 owner item — `CLAUDE.md`
-  "Active implementation" naming `app/` — is resolved: the entry is present.)
+- DEFERRED (post-R6, owner's own task, recorded 2026-09-05): "Relocate the
+  live NL seam out of `model_layer/` to a non-legacy home compatible with the
+  import guard, then move both legacy trees under `legacy/`." Until then the
+  quarantine is the option-(a) boundary above. (The R4 owner item —
+  `CLAUDE.md` "Active implementation" naming `app/` — is resolved: the entry
+  is present.)
 - WARN (accepted, architecture-reviewer W3): the contract protocols still name a
   few records unparameterized (`DomainServices.ground -> Optional[UngroundedCall]`,
   `.monitor -> Tuple[ExecutionDiscrepancy, ...]`, `SymbolicTrack.record_outcome`,
