@@ -4,8 +4,12 @@
 
 Claude Code harness: **refreshed for post-P0-P4 refactoring**
 
-Current refactor phase: **R6 COMPLETE** (2026-09-05). All R0-R6 phases are
-complete; the next step is `/refactor-audit`. Commit 4 took the owner's option
+Current refactor phase: **R0-R6 COMPLETE AND AUDITED — PASS** (final
+`/refactor-audit` 2026-09-05 on branch `refactor_audit` from `main` `4d38a61`:
+0 FAIL, 9 WARN; record in `docs/refactor/REFACTORING_IMPLEMENTATION.md`
+§"Final Definition of Completion"). The refactor program is closed; remaining
+items are the owner's post-R6 legacy relocation and the optional test
+hardening listed in that record. Commit 4 of R6 took the owner's option
 (a) for report item 6 — a reference-only quarantine of `middleware_layer/` and
 `model_layer/` (README banner, `.claude/rules/legacy-packages.md`,
 `tests/test_r6_legacy_boundary.py`) instead of a `git mv`, because the move
@@ -43,6 +47,11 @@ phase adds or removes tests.
 
 Current offline suite: 849 tests, deterministic and offline
 
+Final audit evidence (2026-09-05): suite `OK (skipped=1)`, ruff clean, mypy
+`0 errors` on the gate, `uv lock --check` up to date, both headless demos
+byte-identical to `docs/refactor/baseline/demo_*.txt`, GitHub Actions
+`offline-tests` green on `main` `4d38a61`.
+
 Frozen pristine baseline: commit
 `116d1fdde7b54f5e2f44f98f9f36304c92569162`, captured 2026-09-04 in
 `docs/refactor/baseline/` (suite tail, both headless demo transcripts, and
@@ -59,7 +68,7 @@ actual enforcement work.
 | mypy | Adopt, scoped to `shared/` + `runtime/` first, `--ignore-missing-imports`; widen later only if R6 calls for it | mypy 2.3.1, captured 2026-09-04: `python -m mypy shared runtime --ignore-missing-imports` → **49 errors in 7 files** (25 source files checked), saved in `docs/refactor/baseline/mypy_pristine.txt`. 49 is the "must not increase" baseline; R6 owns driving it down. **R6 (2026-09-05): 0 errors** on the gate `shared runtime app tests/contract_conformance.py tests/probe_counter.py` (`[tool.mypy]` in `pyproject.toml`, `follow_imports = silent`; 38 files); enforced by `tests/test_r6_typing.py` and CI |
 | ruff | Adopt for lint (no autoformat rewrite of frozen code) | NOT INSTALLED at pre-flight. **R6: ruff 0.16.6**, lint-only `E4,E7,E9,F,W` on `shared runtime app` (`[tool.ruff]` in `pyproject.toml`), clean; enforced by `tests/test_r6_tooling.py` and CI |
 | uv lock | Adopt `uv` lockfile for dependency reproducibility in R6 | `uv` not on PATH at pre-flight. **R6: uv 0.12.9**, `uv.lock` (91 packages, sha256 hashes, Python ==3.12.*); `uv lock --check` up to date; the frozen `numpy==2.4.0` pin is yanked upstream (WARN, owner) |
-| GitHub Actions | Offline suite only — `.github/workflows/offline-tests.yml` added at pre-flight; no live-LM or network-dependent job | In place. **R6:** `uv sync --locked` → offline suite → `ruff check shared runtime app` → `mypy`; not yet observed running (branch unpushed) |
+| GitHub Actions | Offline suite only — `.github/workflows/offline-tests.yml` added at pre-flight; no live-LM or network-dependent job | In place. **R6:** `uv sync --locked` → offline suite → `ruff check shared runtime app` → `mypy`; observed green on `main` `4d38a61` and PR #9 (final audit, 2026-09-05) |
 | Import boundaries | Enforce as plain `unittest` tests (no extra tool) as R1-R4 introduce the boundaries | Owned by R1-R4/R6 — in place (`tests/test_no_backend_imports.py`, `tests/test_r4_composition.py`, `tests/test_r1_contracts.py` scans hardened in R6) |
 
 ## R6 owner decisions

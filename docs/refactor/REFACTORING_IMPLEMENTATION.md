@@ -1255,16 +1255,157 @@ Warnings/deferred:
   now hold them as parameters rather than by name, which is as far as R6 goes
   without a second real domain.
 
-Compatibility notes:
-- Pending.
-
-Warnings/deferred:
-- Pending.
-
 ---
 
 ## Final Definition of Completion
 
-Status: NOT YET AUDITED
+Status: AUDITED — **PASS** (2026-09-05, `/refactor-audit` on branch
+`refactor_audit` from `main` merge commit `4d38a61`; 0 FAIL, 9 WARN, no file
+edited by the audit).
 
-Record the final `/refactor-audit` result here only after R6.
+Method: full offline suite, both headless demos diffed against the frozen
+baseline, the static gates run live, the CI history queried, and three
+independent read-only reviews (`architecture-reviewer`,
+`backend-investigator`, `test-reviewer`), each returning 0 FAIL.
+
+### Verification commands and results
+
+| Check | Result |
+|---|---|
+| `python -B -m unittest discover -s tests -t .` | 849 tests, `OK (skipped=1)`; the one skip is `tests/test_p3_live_lm.py` gated by `MAAOS_LIVE_LM=1`; two further runs by the test reviewer gave identical counts |
+| `python -m ruff check shared runtime app` (ruff 0.16.6) | `All checks passed!` |
+| `python -m mypy` (mypy 2.3.1, `[tool.mypy]` scope, 38 files) | `Success: no issues found` |
+| `uv lock --check` (uv 0.12.9) | up to date, 91 packages |
+| `box_push_v1_run.py --headless --policy advisory_two_track` / `--policy symbolic_primary` (with `SDL_VIDEODRIVER=dummy`) | byte-identical to `docs/refactor/baseline/demo_advisory_two_track.txt` and `demo_symbolic_primary.txt`; a second advisory run has the same md5 |
+| GitHub Actions `offline-tests` (queried via the Actions API) | `success` on `main` `4d38a61` (push, 2026-09-05T03:21Z) and on PR #9 `aea178c`; 15 runs total, every R-phase merge green |
+| `git diff 116d1fd..HEAD --name-status -- tests/` | 12 added, 6 modified, 0 deleted; `def test_` counts of every pre-existing file unchanged (`test_no_backend_imports` grew 15 -> 16) |
+
+### Definition-of-completion items (report "Definition of completion")
+
+1. **Existing BoxPush behaviour and evidence traces remain valid — PASS.**
+   Both frozen transcripts reproduce byte-for-byte;
+   `tests/test_r0_characterization.py` executes real episodes and pins the
+   decision sequences, the 9/62/3 and 7/42/3 footers, and exactly three
+   `EXECUTION_FAILURE_OF_APPLICABLE_SKILL` discrepancies on
+   `Push(agent_0; box_1; delivery_zone)`. The backend investigator traced the
+   designed failures to the Decision-6 non-exclusive `in_pose(agent_0, box_1)`
+   literal surviving the cooperative push (`domain/box_push_v1.py:243-248`)
+   while `agent_1` occupies `agent_0`'s front cell, and found nothing under
+   `runtime/`, `shared/`, `app/`, `symbolic/`, `nl/` that prunes, gates, or
+   hides them.
+2. **The executive loop has no BoxPush imports or conditionals — PASS.**
+   Every import in `runtime/` is stdlib, `shared.*`, or `runtime.*`; all
+   vocabulary hits are docstrings (`runtime/loop.py:30-31,40,146`,
+   `runtime/policies.py:31`); enforced by `tests/test_r4_composition.py`
+   (recursive allowlist, dynamic-import ban, vocabulary scan).
+3. **Policies, tracks, comparators, recovery providers injected through
+   explicit contracts — PASS.** `runtime/loop.py:150-163`: `Environment`,
+   `OrchestrationPolicyContract`, keyword-only `DomainServices` (required),
+   `SymbolicTrack` (required), `ProposalComparator`, `RecoveryProvider`, all
+   generic Protocols under `shared/contracts/`; an attached NL track without a
+   comparator is refused at construction (`:164-168`). Composition root:
+   `app/box_push_v1.py:161-207`; runner uses `build_loop`.
+4. **Comparison occurs before the final policy decision whenever both
+   proposals are requested — PASS.** `runtime/loop.py:362-384`:
+   `required_inputs` -> acquire once per cycle -> `comparator.compare` ->
+   `OrchestrationContext(preliminary, nl_proposal, comparison)` ->
+   `policy.decide`. Pinned by the probe event log
+   `[required_inputs, propose, compare, decide]` (`tests/test_r5_probe.py:544`)
+   and the reactive-vs-ignoring policy pair (`tests/test_r3_comparison.py:344-401`).
+5. **Adding a policy or comparator does not require modifying the loop —
+   PASS.** Test-local policies/comparators drive real episodes through the
+   unmodified loop (`tests/test_r2_policies.py:329-352`,
+   `tests/test_r4_composition.py:617`, `tests/test_r5_probe.py:619,883,1042`).
+6. **A non-BoxPush test domain runs through the same loop — PASS.**
+   `tests/probe_counter.py:635` constructs `runtime.loop.ExecutiveLoopManager`
+   directly over counter state and `Increment`/`Stop`; no production module
+   names the probe (all `probe|counter|Increment|Stop` hits are prose).
+7. **No unsupported future semantic machinery — PASS.** No `async`,
+   `await`, thread, plugin, `entry_points`, or `importlib` in `shared/`,
+   `runtime/`, `app/`; `belief`, `probab`, `DURATION_ANOMALY` hits are the
+   pre-existing P0 exact-belief vocabulary; `calibrat` appears only as
+   negations; no production `CompositeComparator`/`StateEstimateComparator`/
+   `AskUser` (absence pinned at `tests/test_r5_probe.py:1060`).
+8. **Contract tests, import-boundary tests, static type checking — PASS.**
+   `tests/test_r1_contracts.py` + `tests/contract_conformance.py`,
+   `test_r2_policies.py`, `test_r3_comparison.py`, `test_r4_composition.py`,
+   `test_r5_probe.py`; boundaries in `test_r4_composition.py:116-229`,
+   `test_no_backend_imports.py`, `test_r6_legacy_boundary.py`; ruff/mypy run
+   live above and in CI, with gate tests that invoke both tools via
+   subprocess with non-vacuity probes.
+
+### Permanent V1 invariants (re-verified)
+
+Single executor path (`runtime/executor.py:46` is the only `execute_skill`
+call outside the adapter); recovery calls re-enter the same ground/evaluate/
+predict/execute gates (`runtime/loop.py:397,431,438,452,473`); the three
+typed channels stay separate and `OrchestrationContext` carries no fault
+field; NL-acquisition faults short-circuit pre-decision with zero charge
+(`:366-375`); prediction runs only after the decision (`:452`); no
+BFS/reachability/collision/rollout code under `symbolic/`, `runtime/`,
+`domain/` (only prohibition comments); `Execute`/`RequestProposal` refuse
+`call=None`; policies hold no environment handle (`runtime/policies.py`
+imports only stdlib + `shared`).
+
+### WARN findings (none blocking)
+
+1. **Trace content changed on one fault path (recorded in §R3).** After
+   the R3 reorder, the `NL_TRACK_FAILURE` entry has `None` decision/
+   selection/validation/prediction columns
+   (`tests/test_p4_runtime.py:769-778` adapted, core fail-closed assertions
+   kept). The schema is unchanged; the accepted transcripts are byte-identical;
+   but "byte-identical everywhere" does not hold for this fault path.
+2. **Three owner-accepted public breaks** (recorded in
+   `docs/decisions/R4_COMPOSITION_ROOT.md` and §R6): `runtime.comparator`
+   import path removed (`app.comparator`), bare
+   `ExecutiveLoopManager(env, task)` no longer composes BoxPush, direct
+   `NLProposal(...)` construction replaced by the two variants.
+3. **Policy registry is runtime-hosted.** `POLICY_FACTORIES`/`build_policy`
+   live in `runtime/policies.py:159-182` (an open string-keyed dict, not an
+   enum switch), not "at the application boundary" as the report suggests;
+   `OrchestrationConfig.policy` is still typed on the closed `StrEnum`, so a
+   newly registered name is reachable by constructor injection or a duck-typed
+   config. Constructor injection is the supported extension seam.
+4. **Stale docstring** at `runtime/loop.py:3-4` still lists the pre-R3
+   cycle order (`... validate -> orchestrate -> execute -> ... -> compare`).
+5. **`runtime/orchestrator.py:29,37,46,55`** (the legacy `decide()` shim)
+   names the V1-concrete `GroundedSkillCall`; it reads no BoxPush field. It is
+   the one V1-concrete type still named inside `runtime/` and is not in the
+   `BOXPUSH_NAMES` scan.
+6. **`runtime/loop.py:424-426`** breaks to the Execute path without an
+   `isinstance(decision, Execute)` guard; a non-conforming injected policy
+   returning a foreign object surfaces a bare `AttributeError`, not a typed
+   refusal. Statically the union is exhausted.
+7. **mypy gate is default strictness.** `--disallow-untyped-defs` reports 7
+   errors in 3 files and `--strict` 25 in 12 over the gated scope; the report's
+   "passes static type checking" holds for the default profile only.
+8. **`numpy==2.4.0` is yanked upstream** (recorded owner item, §R6).
+9. **Headless handling in the characterization test is implicit**
+   (`render_mode=None` in the adapter; CI sets `SDL_VIDEODRIVER: dummy`); no
+   BoxPush test asserts `render()` is never called on the default path.
+
+### Deferred debt and owner
+
+- DEFERRED (owner, post-R6): relocate `model_layer/planner/v1_nl_live.py`
+  to a non-legacy home compatible with the import guard, then `git mv`
+  `middleware_layer/` and `model_layer/` under `legacy/` (§R6 commit 4,
+  `.claude/rules/legacy-packages.md`).
+- DEFERRED (unassigned; a real second domain): BoxPush-vocabulary V1 types
+  under `shared/` (`skills.py`, `state_snapshot.py`, `task.py`, `ids.py`,
+  `execution.py::PRODUCIBLE_RAW_LABELS`).
+- Suggested test hardening from the test reviewer (not required for
+  completion, none implemented): assert `type(loop) is ExecutiveLoopManager`
+  in `tests/test_r5_probe.py` (currently `assertIsInstance`); a golden
+  `entry.canonical()` JSON pin for both accepted episodes; extend the
+  `runtime/` dynamic-import scan to `exec`/`eval`/`compile`; move the
+  `tests/test_r6_legacy_boundary.py` scratch module out of `tests/` into a
+  tempdir; add `GroundedSkillCall` to the R4 vocabulary scan with an explicit
+  allowlist entry for the shim.
+
+### Verdict
+
+All eight Definition-of-Completion items are satisfied with the permanent V1
+invariants intact. R0-R6 is complete. The next substantive domain is the
+validation of these abstractions, per the report's closing paragraph;
+`docs/refactor/NEXT_DOMAIN.md` holds the owner's next-domain inputs (all
+`Unknown` as of 2026-09-04) to be filled when that domain is chosen.
