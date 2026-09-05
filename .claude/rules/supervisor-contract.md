@@ -7,8 +7,8 @@ Use three different authorities for three different questions.
 The existing authoritative BoxPush environment/backend establishes what
 physical execution actually does.
 
-Do not invent or rewrite physical semantics during a behavior-preserving
-refactor.
+Do not invent or rewrite physical semantics during maintenance or any
+behavior-preserving change.
 
 ## 2. Frozen P0-P4 V1 semantics
 
@@ -20,22 +20,31 @@ These documents define the accepted Symbolic-Twin V1 semantic contract:
 The completed P0-P4 implementation and its acceptance evidence are regression
 targets.
 
-## 3. Current R0-R6 architecture objective
+## 3. Completed R0-R6 architecture (authority and history)
 
-This document defines the current architectural refactor:
+This document is the architectural specification that the completed R0-R6
+refactor (audited PASS, 2026-09-05) was implemented against:
 
 - `docs/supervisor/MAAOS_code_review_and_refactoring_report.md`
 
-It may change internal dependency structure, composition roots, contracts,
+It remains the architectural authority for the supported runtime. The
+refactor changed internal dependency structure, composition roots, contracts,
 policy/comparator/provider injection, and lifecycle organization while
-preserving frozen V1 behavior.
+preserving frozen V1 behavior; the record of what was actually done is in
+`docs/refactor/REFACTORING_IMPLEMENTATION.md`.
 
-It does not authorize speculative future semantics.
+It does not authorize speculative future semantics, and it is not a mandate
+for further ongoing refactoring.
+
+Future maintenance must preserve both the frozen V1 semantics (authority 2)
+and the completed R0-R6 architecture (this authority) unless the project owner
+explicitly changes one of them.
 
 ## Conflict handling
 
-If an R0-R6 architectural instruction can be satisfied with an adapter while
-preserving frozen V1 semantics, prefer the adapter.
+If an R0-R6 architectural requirement (including one reopened for a
+regression fix) can be satisfied with an adapter while preserving frozen V1
+semantics, prefer the adapter.
 
 If satisfying the clean boundary would materially require changing a frozen V1
 decision, public compatibility contract, execution semantics, or trace format,
