@@ -7,9 +7,13 @@ what physics forbids; every refusal surfaces as a typed `ExecutionDiscrepancy` r
 an orchestrator that decides — per policy — whether to halt with evidence or recover on the
 LLM's advice. Nothing is ever silently patched to make a plan work.
 
-**Status: P0-P4 complete** — five tagged baselines (`p0-v1-freeze` … `p4-v1-orchestrator`),
-closed by a three-auditor hostile final audit at 0 FAIL. The full record:
-[`docs/implementation/P0_P4_IMPLEMENTATION.md`](docs/implementation/P0_P4_IMPLEMENTATION.md).
+**Status: P0-P4 complete; refactor R0-R6 complete and audited** — five tagged baselines
+(`p0-v1-freeze` … `p4-v1-orchestrator`) closed by a three-auditor hostile final audit at 0 FAIL,
+then a behavior-preserving architectural refactor (R0-R6) audited PASS on 2026-09-05 with both
+headless demos byte-identical to the frozen baseline. Records:
+[`docs/implementation/P0_P4_IMPLEMENTATION.md`](docs/implementation/P0_P4_IMPLEMENTATION.md) and
+[`docs/refactor/REFACTORING_IMPLEMENTATION.md`](docs/refactor/REFACTORING_IMPLEMENTATION.md);
+current state in [`docs/refactor/REFACTOR_STATUS.md`](docs/refactor/REFACTOR_STATUS.md).
 
 ## Watch it run
 
@@ -32,13 +36,20 @@ the symbolic decision.
 ## Architecture
 
 ```
-shared/     frozen typed contracts (P0): skills, IR, StateSnapshot, results, channels, traces
-domain/     the frozen BoxPush V1 instance (DOMAIN_IR, projection, tasks, golden keys)
-symbolic/   applicability (literal membership ONLY), BFS planner, monitor-side predictor,
-            dual-basis monitor, exact-state belief (P2)
+shared/     frozen typed contracts (P0): skills, IR, StateSnapshot, results, channels, traces;
+            shared/contracts/ (R1): generic Protocols for environment, tracks, comparator,
+            recovery provider, domain services, and orchestration policy
+domain/     the frozen BoxPush V1 instance (DOMAIN_IR, projection, tasks, golden keys,
+            BoxPush action equivalence)
+symbolic/   applicability (literal membership ONLY), classical symbolic-state planner,
+            monitor-side predictor, dual-basis monitor, exact-state belief (P2)
 nl/         the LLM peer track behind an offline seam: parser, interpreters, selector,
             one-attempt repair, translator with residual, recovery proposer (P3)
-runtime/    policy-free executor, track comparator, pure orchestrator, executive loop (P4)
+runtime/    domain-agnostic core: policy-free executor, SymbolicPrimary/AdvisoryTwoTrack
+            policies, executive loop; imports only shared/ and runtime/ (P4, R2-R4)
+app/        composition root (R4): BoxPush action comparator and `build_loop`, which wires
+            environment, domain services, tracks, comparator, recovery and policy into the
+            runtime; the only package that imports both runtime/ and domain/
 functional_layer/custom_env/box_push/env/box_push_v1_adapter.py
             the P1 adapter: V1Environment over the authoritative backend
 ```
@@ -51,7 +62,7 @@ each (`ExecutionDiscrepancy` / `TrackDivergence` / `InfrastructureFault`).
 ## Tests and evidence
 
 ```bash
-python -B -m unittest discover -s tests -t .    # 641 tests, offline, deterministic, ~0.5s
+python -B -m unittest discover -s tests -t .    # offline, deterministic, ~2s; count pinned in docs/refactor/REFACTOR_STATUS.md
 ```
 
 - 292 checked-in mutation-harness mutants across five harnesses, all killed

@@ -19,5 +19,7 @@ any hypothetical answer until a real domain requires it.
 | Concurrency | Sequential executive like V1, or concurrent/asynchronous track or agent execution? | Unknown |
 | Uncertainty | Deterministic transitions, or stochastic/probabilistic outcomes needing calibrated uncertainty? | Unknown |
 
-Replace any `Unknown` with a concrete answer if a real next domain is chosen
-before `/refactor-phase R4`; record the change here with the date.
+Replace any `Unknown` with a concrete answer when a real next domain is chosen.
+R0-R6 is complete (2026-09-05); the next domain validates the extracted
+contracts rather than shaping a refactor phase. Record the change here with
+the date.
