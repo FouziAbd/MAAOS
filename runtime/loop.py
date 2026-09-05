@@ -1,8 +1,14 @@
 """The executive loop manager (:35, :252-255): owns the cycle, the budgets, and the wiring.
 
-One cycle: budget gate -> sync -> plan -> ground -> validate -> orchestrate -> execute ->
-record -> monitor -> compare -> trace. Every distinction the earlier phases froze is enacted
-here, with the P4-binding decisions from `docs/decisions/P0_V1_DECISIONS.md` §19.1:
+One cycle (post-R3 order, as implemented in `run()` / `_run_cycle()`): sync -> goal/budget
+gate -> plan -> preliminary context -> `policy.required_inputs()` -> acquire the requested
+track input (the advisory proposal, at most once per cycle) -> compare (when a proposal was
+acquired; the report rides in the `OrchestrationContext`) -> `policy.decide()` -> ground ->
+validate -> predict (recorded only) -> execute -> observe -> monitor -> trace. `Halt`,
+`RequestProposal` (recovery advice standing, re-select) and `Replan` end or re-enter selection
+before any gate; only `Execute` reaches the gates and the executor. Every distinction the
+earlier phases froze is enacted here, with the P4-binding decisions from
+`docs/decisions/P0_V1_DECISIONS.md` §19.1:
 
   - gating happens on the typed `CallValidation`, in the loop — the executor gates nothing
     (§19.1 item 2);
