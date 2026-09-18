@@ -38,7 +38,8 @@ from shared.value_contracts import AdvisoryProposal, RuntimeCall, RuntimeState, 
 
 #: The R6 static gate, exactly as CI runs it.
 MYPY_TARGETS = (
-    "shared", "runtime", "app", "tests/contract_conformance.py", "tests/probe_counter.py",
+    "shared", "runtime", "app", "kit", "domains", "maaos",
+    "tests/contract_conformance.py", "tests/probe_counter.py",
 )
 MYPY_FLAGS = ("--ignore-missing-imports", "--follow-imports=silent")
 

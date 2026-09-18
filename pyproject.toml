@@ -50,6 +50,9 @@ files = [
     "shared",
     "runtime",
     "app",
+    "kit",
+    "domains",
+    "maaos",
     "tests/contract_conformance.py",
     "tests/probe_counter.py",
 ]

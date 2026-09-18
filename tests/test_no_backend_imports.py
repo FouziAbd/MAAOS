@@ -21,6 +21,7 @@ structural defence against that is `shared/symbolic_state.py` — symbolic reaso
 """
 import ast
 import pathlib
+import sys
 import unittest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -45,11 +46,28 @@ LEGACY_PACKAGES = frozenset({"functional_layer", "legacy", "tests", "docs"})
 #: Runtime state the symbolic side must not reach (:118).
 RUNTIME_PACKAGES = frozenset({"runtime"})
 
-#: The application/composition layer (R4): the ONE guarded package that sits ABOVE the
-#: runtime and legitimately imports it (report Part II dependency direction). It is still
-#: guarded against the backend like every other package; it is only excluded from the
-#: :118 "symbolic side must not reach runtime" scan, where it does not belong.
-COMPOSITION_PACKAGES = frozenset({"app"})
+#: The application/composition layer (R4, widened by DK1): the guarded packages that sit
+#: ABOVE the runtime and legitimately import it (report Part II dependency direction). They
+#: are still guarded against the backend like every other package; they are only excluded
+#: from the :118 "symbolic side must not reach runtime" scan, where they do not belong.
+#: DK1 (`docs/decisions/DK1_DOMAIN_PACKAGE.md`): `domains` (one declaration package per
+#: domain) and `maaos` (the CLI) join `app`. Inside `domains/<x>/` the :118 guarantee is kept
+#: PER MODULE by `domain_role_violations` below — only `__init__.py` may reach the runtime.
+COMPOSITION_PACKAGES = frozenset({"app", "domains", "maaos"})
+
+#: DK1: the enumerated backend-boundary modules — the ONE file per domain package that may
+#: import a backend/framework root (its own simulator, `numpy`, the BoxPush adapter). A static
+#: set, never a glob: adding a domain adds a line here, and the DK1 test asserts the set equals
+#: `{domains/<name>/environment.py for name in domains.registry.REGISTRY}`. The exemption
+#: covers FORBIDDEN_PREFIXES minus NEVER_EXEMPT_ROOTS (legacy trees, LM frameworks), and nothing else: the
+#: dynamic-import ban, the sys.path ban and the runtime/app ban still apply to these files.
+DOMAIN_ENVIRONMENT_MODULES = frozenset({
+    "domains/box_push/environment.py",
+})
+#: Never exempt, even for the door: the legacy trees, and the LM frameworks — an environment
+#: module is a simulator binding, never an LM binding (R6 kept the dspy seam outside the
+#: guarded tree; `nl/` may not import it either).
+NEVER_EXEMPT_ROOTS = frozenset({"legacy", "middleware_layer", "model_layer", "utils", "dspy", "torch"})
 
 
 def discovered_guarded_packages(root: pathlib.Path = REPO_ROOT):
@@ -91,19 +109,28 @@ def python_files(package: str, root: pathlib.Path = REPO_ROOT):
     return sorted((root / package).rglob("*.py"))
 
 
-def forbidden_import_violations(packages, forbidden, root: pathlib.Path = REPO_ROOT):
+def forbidden_import_violations(
+    packages, forbidden, root: pathlib.Path = REPO_ROOT, *, exempt_modules=frozenset()
+):
     """The single enforcement path, shared by the real checks and the fail-closed probes.
 
     Routing both through one function is what makes the probes meaningful: a probe that passes
     cannot coexist with a real check that was quietly hardcoded back to ("shared", "domain").
+
+    `exempt_modules` (DK1): repo-relative POSIX paths allowed to import `forbidden` roots —
+    except the NEVER_EXEMPT_ROOTS, which no exemption reaches. Only `backend_violations`
+    passes the enumerated `DOMAIN_ENVIRONMENT_MODULES`; every other check passes nothing.
     """
-    return [
-        f"{path.relative_to(root)}:{lineno} imports {module}"
-        for package in packages
-        for path in python_files(package, root)
-        for module, lineno in imported_modules(path)
-        if module.split(".")[0] in forbidden
-    ]
+    violations = []
+    for package in packages:
+        for path in python_files(package, root):
+            rel = path.relative_to(root).as_posix()
+            exempt = rel in exempt_modules
+            for module, lineno in imported_modules(path):
+                top = module.split(".")[0]
+                if top in forbidden and not (exempt and top not in NEVER_EXEMPT_ROOTS):
+                    violations.append(f"{rel}:{lineno} imports {module}")
+    return violations
 
 
 def runtime_violations(packages, root: pathlib.Path = REPO_ROOT):
@@ -112,8 +139,105 @@ def runtime_violations(packages, root: pathlib.Path = REPO_ROOT):
     return forbidden_import_violations(packages, RUNTIME_PACKAGES | COMPOSITION_PACKAGES, root)
 
 
-def backend_violations(packages, root: pathlib.Path = REPO_ROOT):
-    return forbidden_import_violations(packages, FORBIDDEN_PREFIXES, root)
+def backend_violations(packages, root: pathlib.Path = REPO_ROOT, *, exempt_modules=None):
+    exempt = DOMAIN_ENVIRONMENT_MODULES if exempt_modules is None else exempt_modules
+    return forbidden_import_violations(
+        packages, FORBIDDEN_PREFIXES, root, exempt_modules=exempt
+    )
+
+
+# ── DK1: module roles inside a domain package ─────────────────────────────────────────
+#: `domains/<x>/` is a composition package for the package-level scan, so the :118 guarantee
+#: is re-established PER MODULE here (`docs/decisions/DK1_DOMAIN_PACKAGE.md`, `domains/__init__`):
+#:   __init__.py     may import runtime / app / the sibling `environment` (composition role)
+#:   environment.py  may import a backend (via DOMAIN_ENVIRONMENT_MODULES); never runtime,
+#:                   app, `model`, or the package itself
+#:   any other       stdlib, shared, kit and sibling MODULES only; never runtime, app,
+#:                   `environment`, a backend root, or the package itself
+#: "The package itself" (`import domains.x`, `from domains.x import NAME`, `from . import NAME`
+#: where NAME is not a sibling module) is banned for non-init modules because `__init__.py` may
+#: import the runtime: binding a name through it would launder `runtime` into the symbolic
+#: side without ever spelling it (review W8).
+DOMAINS_PACKAGE = "domains"
+DOMAIN_ROLE_ALLOWED_ROOTS = frozenset({"shared", "kit"})
+
+
+def imported_modules_resolved(path: pathlib.Path, package: str):
+    """Like `imported_modules`, but RESOLVES relative imports against `package` (the dotted
+    name of the module's package) and yields `from . import NAME` as `package.NAME`."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                yield alias.name, node.lineno
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                base = package.split(".")
+                if node.level > len(base):
+                    # beyond the top-level package: Python itself refuses this at import
+                    # time; report it as the package so it never resolves to an empty root
+                    yield package, node.lineno
+                    continue
+                base = base[: len(base) - (node.level - 1)] if node.level > 1 else base
+                prefix = ".".join(base)
+                if node.module:
+                    yield f"{prefix}.{node.module}", node.lineno
+                else:
+                    for alias in node.names:
+                        yield f"{prefix}.{alias.name}", node.lineno
+            elif node.module:
+                if node.module.startswith(package + ".") or node.module == package:
+                    # `from domains.x import NAME`: NAME may be a sibling module
+                    for alias in node.names:
+                        yield (f"{node.module}.{alias.name}" if node.module == package
+                               else node.module), node.lineno
+                else:
+                    yield node.module, node.lineno
+
+
+def domain_role_violations(root: pathlib.Path = REPO_ROOT):
+    """Every domain package under `domains/`, checked module by module against its role."""
+    violations = []
+    domains_dir = root / DOMAINS_PACKAGE
+    if not domains_dir.is_dir():
+        return violations
+    stdlib_names = set(sys.stdlib_module_names) | {"__future__"}
+    for pkg_dir in sorted(p for p in domains_dir.iterdir() if p.is_dir()):
+        package = f"{DOMAINS_PACKAGE}.{pkg_dir.name}"
+        siblings = {p.stem for p in pkg_dir.glob("*.py")}
+        for path in sorted(pkg_dir.rglob("*.py")):
+            if "__pycache__" in path.parts:
+                continue
+            rel = path.relative_to(root).as_posix()
+            role = path.name if path.parent == pkg_dir else "other"
+            for module, lineno in imported_modules_resolved(path, package):
+                top = module.split(".")[0]
+                what = None
+                if role == "__init__.py":
+                    continue                                    # composition role
+                if top in RUNTIME_PACKAGES or top == "app" or top == "maaos":
+                    what = f"{role} may not import the runtime/composition layer"
+                elif module == package:
+                    what = "may not import its own package (laundering through __init__)"
+                elif module.startswith(package + "."):
+                    member = module[len(package) + 1:].split(".")[0]
+                    if member not in siblings:
+                        what = "may not bind a package attribute through __init__ (laundering)"
+                    elif role == "environment.py" and member == "model":
+                        what = "environment.py may not import model (backend boundary)"
+                    elif role != "environment.py" and member == "environment":
+                        what = f"{path.name} may not import environment (symbolic side)"
+                elif top == DOMAINS_PACKAGE:
+                    what = "may not import another domain package"
+                elif role != "environment.py" and top in FORBIDDEN_PREFIXES:
+                    what = f"{path.name} may not import a backend/framework root"
+                elif role != "environment.py" and top not in (
+                    stdlib_names | DOMAIN_ROLE_ALLOWED_ROOTS
+                ):
+                    what = f"{path.name} may import only stdlib, shared, kit and siblings"
+                if what:
+                    violations.append(f"{rel}:{lineno} imports {module} — {what}")
+    return violations
 
 
 class TestGuardCoverage(unittest.TestCase):
@@ -158,7 +282,11 @@ class TestNoBackendImports(unittest.TestCase):
         violations = []
         for package in discovered_guarded_packages():
             for path in python_files(package):
-                if "sys.path" in path.read_text(encoding="utf-8"):
+                text = path.read_text(encoding="utf-8")
+                # DK1: `sys.modules` too — a domain's `__init__` (composition role) loads the
+                # runtime before its siblings run, so `sys.modules["runtime..."]` in a
+                # symbolic-side module would be a deterministic escape from the AST scan
+                if "sys.path" in text or "sys.modules" in text:
                     violations.append(str(path.relative_to(REPO_ROOT)))
         self.assertEqual(violations, [])
 
@@ -188,6 +316,15 @@ class TestSymbolicSideCannotReachRuntimeState(unittest.TestCase):
         # — but it IS still discovered and backend-guarded like every other package
         self.assertNotIn("app", side)
         self.assertIn("app", discovered_guarded_packages())
+        # DK1: `domains` and `maaos` are composition packages too; `kit` is symbolic side
+        for composition in ("domains", "maaos"):
+            self.assertNotIn(composition, side)
+            self.assertIn(composition, discovered_guarded_packages())
+        self.assertIn("kit", side)
+
+    def test_the_real_tree_has_no_domain_role_violations(self):
+        """DK1: inside `domains/<x>/` the :118 guarantee is re-established per module."""
+        self.assertEqual(domain_role_violations(), [])
 
     def test_the_real_tree_has_no_runtime_imports_on_the_symbolic_side(self):
         """Consistency-check P3 WARN 16: `runtime_violations` previously ran ONLY on throwaway

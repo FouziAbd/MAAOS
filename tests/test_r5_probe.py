@@ -99,7 +99,9 @@ from tests.probe_counter import (
 
 _FIXTURE = pathlib.Path(_REPO_ROOT, "tests", "probe_counter.py")
 _RUNTIME_DIR = pathlib.Path(_REPO_ROOT, "runtime")
-_PRODUCTION_DIRS = tuple(pathlib.Path(_REPO_ROOT, d) for d in ("shared", "runtime", "app"))
+_PRODUCTION_DIRS = tuple(
+    pathlib.Path(_REPO_ROOT, d) for d in ("shared", "runtime", "app", "kit", "domains", "maaos")
+)
 
 PRIMARY = OrchestrationConfig(policy=OrchestrationPolicy.SYMBOLIC_PRIMARY)
 ADVISORY = OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK)
@@ -146,7 +148,8 @@ class TestProbeFixtureIsBoxPushFree(unittest.TestCase):
         "__future__", "hashlib", "json", "dataclasses", "enum", "typing", "shared", "runtime",
     })
     FORBIDDEN_ROOTS = frozenset({
-        "domain", "symbolic", "nl", "app", "functional_layer", "legacy", "middleware_layer",
+        "domain", "symbolic", "nl", "app", "kit", "domains", "maaos",
+        "functional_layer", "legacy", "middleware_layer",
         "model_layer", "utils", "box_push_v1_adapter", "box_push_v1_run", "box_push_env",
         "multi_agent_box_push_env", "skill_executor_push", "shared_skills",
     })
