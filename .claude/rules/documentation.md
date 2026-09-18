@@ -16,7 +16,10 @@ Always distinguish:
 
 - implemented and tested;
 - implemented but not acceptance-tested;
-- planned for a later R-phase;
+- historical/deferred work recorded at R0-R6 closure (owner-assigned,
+  not scheduled);
+- explicitly reopened maintenance work, or future work requested by the
+  project owner;
 - intentionally out of scope;
 - unresolved domain contract.
 
@@ -36,10 +39,14 @@ is required:
 Do not rewrite them to make R0-R6 look like part of the original P0-P4
 implementation.
 
-Current refactor status belongs in:
+The completed R0-R6 status, final audit record, and any later regression fix
+to the refactor belong in:
 
 - `docs/refactor/REFACTOR_STATUS.md`
 - `docs/refactor/REFACTORING_IMPLEMENTATION.md`
+
+Do not describe R0-R6 as ongoing work; it is complete and audited PASS
+(2026-09-05).
 
 The supervisor source report:
 

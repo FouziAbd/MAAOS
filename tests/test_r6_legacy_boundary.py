@@ -73,7 +73,8 @@ class TestTheV1SideImportsNothingFromTheLegacyTrees(unittest.TestCase):
         for directory in GUARDED_DIRS:
             for path in _python_files(_REPO_ROOT / directory):
                 for module, lineno in _legacy_imports(path):
-                    found.setdefault(module, []).append(f"{path.relative_to(_REPO_ROOT)}:{lineno}")
+                    found.setdefault(module, []).append(
+                        f"{path.relative_to(_REPO_ROOT).as_posix()}:{lineno}")
         violations = {m: where for m, where in found.items() if m not in ALLOWED_LEGACY_IMPORTS}
         self.assertEqual(
             violations, {},

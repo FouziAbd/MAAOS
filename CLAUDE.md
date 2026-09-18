@@ -2,23 +2,35 @@
 
 ## Project status
 
-MAAOS Symbolic-Twin BoxPush V1 implementation phases **P0-P4 are complete**.
+MAAOS Symbolic-Twin BoxPush V1 implementation phases **P0-P4 are complete**
+and frozen.
 
-The current work is a **behavior-preserving architectural refactor**, named
-**Refactor R0-R6**.
+The behavior-preserving architectural refactor **R0-R6 is complete and
+audited PASS** (2026-09-05). The refactor program is closed.
+
+The repository is in **maintenance**:
+
+- completed P0-P4 behavior remains the regression baseline;
+- completed R0-R6 architecture remains the supported architecture;
+- do not reopen or reimplement an R-phase unless explicitly requested to fix
+  a discovered regression against its recorded acceptance criteria;
+- the next substantive architectural validation comes from a real next domain
+  (owner inputs in `docs/refactor/NEXT_DOMAIN.md`), not from speculative
+  abstraction work.
 
 Do not confuse these names:
 
 - `P0-P4` = the completed/frozen Symbolic-Twin V1 implementation milestone.
-- `R0-R6` = the current refactoring phases from the supervisor/Codex review.
+- `R0-R6` = the completed refactoring phases from the supervisor/Codex review.
 - Future product/research phases such as `P5+` remain out of scope unless the
   project owner explicitly requests them.
 
-Current refactor status is tracked in:
+Refactor status and final audit record:
 
 `docs/refactor/REFACTOR_STATUS.md`
+`docs/refactor/REFACTORING_IMPLEMENTATION.md`
 
-Current architectural refactor authority:
+Architectural authority (the completed R0-R6 objective):
 
 `docs/supervisor/MAAOS_code_review_and_refactoring_report.md`
 
@@ -67,11 +79,12 @@ Default offline regression suite:
 python -B -m unittest discover -s tests -t .
 ```
 
-Do not hard-code a permanent expected test count. R0-R6 may add tests.
+Do not hard-code a permanent expected test count. The live count is pinned in
+`docs/refactor/REFACTOR_STATUS.md` and checked mechanically by the suite.
 
 ## Authority and source of truth
 
-Use this precedence when reasoning about the refactor:
+Use this precedence when reasoning about the codebase:
 
 1. Existing authoritative backend/environment implementation establishes
    realized low-level physical execution behavior.
@@ -79,26 +92,27 @@ Use this precedence when reasoning about the refactor:
 3. `docs/supervisor/SUPERVISOR_P0_P4_CONTRACT.md` defines the accepted P0-P4
    Symbolic-Twin V1 behavior and architectural invariants.
 4. `docs/supervisor/MAAOS_code_review_and_refactoring_report.md` defines the
-   current R0-R6 architectural refactoring objective.
+   completed R0-R6 architectural objective and remains the architectural
+   authority.
 5. Existing tests, acceptance traces, and implementation documentation
    characterize the accepted implementation and provide regression evidence.
 
-The R0-R6 report may change internal composition, interfaces, dependency
+The R0-R6 report changed internal composition, interfaces, dependency
 direction, and lifecycle organization. It does **not** silently override frozen
-V1 behavior.
+V1 behavior, and neither may any later maintenance change.
 
-If a requested refactor conflicts materially with a frozen V1 semantic
-decision, stop and explain the conflict rather than changing the frozen
-behavior.
+If a requested change conflicts materially with a frozen V1 semantic decision
+or with the audited R0-R6 architecture, stop and explain the conflict rather
+than changing the frozen behavior.
 
 Never invent domain behavior when code/specification does not establish it.
 
-## Central refactoring rule
+## Central architectural rule
 
-Generalize mechanisms and extension points now; generalize domain semantics
-only when a real domain requires them.
+Generalize mechanisms and extension points from concrete requirements;
+generalize domain semantics only when a real domain requires them.
 
-This is an incremental extraction, not a rewrite.
+Extend the delivered architecture incrementally; do not rewrite it.
 
 Keep state/action/result types typed and domain-owned. Do not replace them with
 a universal `dict[str, Any]` framework.
@@ -108,7 +122,7 @@ look general.
 
 ## Permanent V1 invariants
 
-These must remain true throughout R0-R6:
+These must remain true at all times:
 
 - The backend remains the sole authority for physical execution success.
 - The symbolic model remains deliberately optimistic.
@@ -125,16 +139,31 @@ These must remain true throughout R0-R6:
 - The executor remains policy-independent.
 - Default tests remain deterministic and offline.
 - Live LM/Ollama/DSPy execution remains opt-in.
-- Do not weaken or delete existing tests merely to make a refactor pass.
+- Do not weaken or delete existing tests merely to make a change pass.
 - Preserve existing CLI/import/serialized-trace compatibility where practical;
   adapt around incompatibilities rather than silently changing external
   formats.
 
-## R0-R6 execution discipline
+## Maintenance discipline
 
-Implement exactly **one refactor phase at a time**.
+Normal work is regression protection, consistency checking, and documentation
+that describes actual behavior. After each coherent behavior-sensitive change:
 
-Before editing for a phase:
+```bash
+python -B -m unittest discover -s tests -t .
+```
+
+Also run the static gates used by CI (`ruff check shared runtime app`,
+`mypy`) when touching `shared/`, `runtime/`, or `app/`.
+
+## R-phase discipline (only when a phase is explicitly reopened)
+
+`/refactor-phase Rn` remains available, but it is not the normal workflow.
+Use it only when the project owner explicitly asks to fix a discovered
+regression against a recorded R-phase acceptance criterion. Then implement
+exactly **one refactor phase at a time**.
+
+Before editing for a reopened phase:
 
 1. Read the exact phase in
    `docs/supervisor/MAAOS_code_review_and_refactoring_report.md`.
@@ -156,7 +185,7 @@ After each coherent behavior-sensitive change:
 python -B -m unittest discover -s tests -t .
 ```
 
-Also run focused tests/static checks required by the assigned phase.
+Also run focused tests/static checks required by the reopened phase.
 
 At phase completion report:
 
@@ -166,11 +195,11 @@ At phase completion report:
 - full/focused results;
 - behavior differences, if any;
 - remaining known debt and which later R-phase owns it;
-- whether the assigned phase acceptance criteria are satisfied.
+- whether the reopened phase acceptance criteria are satisfied.
 
-## Current target architecture
+## Supported architecture
 
-The final R0-R6 direction is:
+The architecture delivered by R0-R6 is:
 
 ```text
 concrete BoxPush/domain implementations
@@ -185,12 +214,12 @@ concrete BoxPush/domain implementations
 authoritative environment/backend
 ```
 
-The generic runtime target must not interpret BoxPush vocabulary such as agent,
-box, zone, or geometry semantics.
+The generic runtime must not interpret BoxPush vocabulary such as agent, box,
+zone, or geometry semantics.
 
-Expected variable components are injected through narrow typed contracts,
-including tracks, comparator, recovery provider, policy, environment/domain
-services as introduced by the assigned R-phase.
+Variable components are injected through narrow typed contracts under
+`shared/contracts/`: environment, tracks, comparator, recovery provider,
+policy, and domain services. Composition happens in `app/`.
 
 Policies decide; they do not execute the backend.
 
@@ -199,9 +228,8 @@ Comparators report evidence; they do not select or execute actions.
 Track proposal, recovery proposal, and orchestration authority are distinct
 concepts.
 
-When a policy requests both proposals, R3 establishes comparison before the
-final policy decision. Do not force this lifecycle change before its assigned
-phase.
+When a policy requests both proposals, the loop performs the comparison
+before the final policy decision (R3). Preserve this lifecycle.
 
 ## Out of scope
 
@@ -217,8 +245,10 @@ Unless explicitly requested as a new domain requirement, do not implement:
 - dynamic third-party plugin discovery for the runtime;
 - speculative universal abstractions for future domains.
 
-A test-only synthetic probe domain in R5 is allowed because it validates
-architectural substitutability; it is not production semantic functionality.
+The test-only synthetic probe domain under `tests/` (R5) is allowed because
+it validates architectural substitutability; it is not production semantic
+functionality. When a real next domain is chosen, extend contracts from its
+concrete requirements and tests, not in anticipation of them.
 
 ## Legacy code
 
@@ -228,11 +258,11 @@ alternative supported Symbolic-Twin runtimes. The trees keep their import
 names and run with `legacy/` on `sys.path` (the legacy runners mount it
 themselves; `cd legacy && python -m model_layer.agent` for the in-tree demos).
 
-Do not use legacy structure as architectural precedent for R0-R6.
+Do not use legacy structure as architectural precedent.
 
-The post-R6 relocation under `legacy/` was completed 2026-09-18 (recorded in
-`docs/refactor/REFACTORING_IMPLEMENTATION.md`). Do not move or delete the
-legacy tree again without an explicit owner request.
+The recorded post-R6 relocation under `legacy/` was completed 2026-09-18
+(`docs/refactor/REFACTORING_IMPLEMENTATION.md`, `.claude/rules/legacy-packages.md`).
+Do not move or delete the legacy tree again without an explicit owner request.
 
 ## Documentation
 
@@ -242,20 +272,25 @@ Keep the supervisor's refactoring report unchanged as a source artifact.
 
 Do not rewrite the historical
 `docs/implementation/P0_P4_IMPLEMENTATION.md` as if R0-R6 were part of the
-original P0-P4 implementation. Record R0-R6 work in:
+original P0-P4 implementation. R0-R6 work, and any later regression fix to
+it, is recorded in:
 
 `docs/refactor/REFACTORING_IMPLEMENTATION.md`
 
 ## Primary manual workflows
 
-Use these project skills when appropriate:
+Normal maintenance workflows:
 
-- `/refactor-preflight` (once, before R0)
-- `/refactor-phase R0` ... `/refactor-phase R6`
 - `/v1-regression`
-- `/consistency-check v1|refactor|all`
-- `/refactor-doc`
-- `/refactor-audit`
+- `/consistency-check all` (or `v1` / `refactor`)
 - `/run-v1`
+- `/refactor-audit` only when a re-audit is actually needed
+
+Available but not the normal next workflow:
+
+- `/refactor-phase Rn` — only for an explicitly requested regression fix to a
+  recorded phase
+- `/refactor-doc` — only after such a fix, to update the refactor record
+- `/refactor-preflight` — historical; it ran once before R0
 
 The old P0-P4 implementation workflows are retired.

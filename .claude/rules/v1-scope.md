@@ -1,10 +1,20 @@
 # V1 and Refactor Scope Rules
 
-The historical Symbolic-Twin implementation milestone **P0-P4 is complete**.
+The historical Symbolic-Twin implementation milestone **P0-P4 is complete**
+and frozen. It remains the regression baseline.
 
-The current work is the behavior-preserving architectural refactor **R0-R6**.
+The behavior-preserving architectural refactor **R0-R6 is complete and
+audited PASS** (2026-09-05). It remains the supported architecture. The
+program is closed unless the project owner explicitly reopens a phase to fix a
+discovered regression against its recorded acceptance criteria.
 
-`R5` means "Refactor Phase 5"; it does not mean product/supervisor phase P5.
+The next meaningful architectural validation comes from a real next domain
+(owner inputs in `docs/refactor/NEXT_DOMAIN.md`), not from speculative
+abstraction work.
+
+Naming: `R0-R6` are the completed refactor phases from the supervisor/Codex
+review; `R5` means "Refactor Phase 5"; it does not mean product/supervisor
+phase P5.
 
 The accepted V1 semantics remain deliberately:
 
@@ -16,7 +26,8 @@ The accepted V1 semantics remain deliberately:
 - non-concurrent;
 - non-probabilistic.
 
-R0-R6 may improve extensibility without adding future semantic machinery.
+R0-R6 improved extensibility without adding future semantic machinery.
+Maintenance must keep it that way.
 
 Do not implement stochastic DBNs, learned structure, Julia MDP/POMDP
 compilation, asynchronous executive concurrency, duration distributions,
@@ -27,5 +38,6 @@ requested for a real next domain.
 The R5 synthetic counter domain is permitted only as a test fixture proving
 architectural substitutability. It must not become production functionality.
 
-Preserve later-useful legacy/POMDP research code unless an assigned hygiene
-change explicitly quarantines it.
+Preserve later-useful legacy/POMDP research code unless the project owner
+explicitly requests the recorded post-R6 relocation as a separate reviewable
+hygiene change (see `legacy-packages.md`).
