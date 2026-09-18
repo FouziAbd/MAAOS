@@ -222,13 +222,17 @@ architectural substitutability; it is not production semantic functionality.
 
 ## Legacy code
 
-`middleware_layer/`, `model_layer/`, and pre-V1 runners are research/reference
-material, not alternative supported Symbolic-Twin runtimes.
+`legacy/` (`middleware_layer/`, `model_layer/`, `utils/`, `ui/`) and the pre-V1
+runners under `functional_layer/` are research/reference material, not
+alternative supported Symbolic-Twin runtimes. The trees keep their import
+names and run with `legacy/` on `sys.path` (the legacy runners mount it
+themselves; `cd legacy && python -m model_layer.agent` for the in-tree demos).
 
 Do not use legacy structure as architectural precedent for R0-R6.
 
-Do not move/delete large legacy package trees during the refactor unless the
-assigned phase explicitly calls for a separate reviewable hygiene change.
+The post-R6 relocation under `legacy/` was completed 2026-09-18 (recorded in
+`docs/refactor/REFACTORING_IMPLEMENTATION.md`). Do not move or delete the
+legacy tree again without an explicit owner request.
 
 ## Documentation
 

@@ -175,7 +175,7 @@ class TestProtocolAndExport(unittest.TestCase):
                 imported |= {alias.name.split(".")[0] for alias in node.names}
             elif isinstance(node, ast.ImportFrom) and node.module:
                 imported.add(node.module.split(".")[0])
-        for forbidden in ("middleware_layer", "deterministic_grid_updater",
+        for forbidden in ("legacy", "middleware_layer", "deterministic_grid_updater",
                           "belief_manager", "model_layer", "dspy"):
             with self.subTest(module=forbidden):
                 self.assertNotIn(forbidden, imported)

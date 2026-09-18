@@ -93,7 +93,7 @@ class TestProjectMetadataAndPins(unittest.TestCase):
         self.assertEqual(lint["select"], ["E4", "E7", "E9", "F", "W"])
         self.assertNotIn("format", self.pyproject["tool"]["ruff"])
         excluded = set(self.pyproject["tool"]["ruff"]["extend-exclude"])
-        self.assertLessEqual({"middleware_layer", "model_layer", "functional_layer"}, excluded)
+        self.assertLessEqual({"legacy", "functional_layer"}, excluded)
 
 
 class TestTheLockIsReproducible(unittest.TestCase):

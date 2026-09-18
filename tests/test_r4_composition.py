@@ -124,7 +124,7 @@ class TestRuntimeImportBoundary(unittest.TestCase):
     #: guard already bans — listed explicitly so a violation names its category
     FORBIDDEN_ROOTS = frozenset({
         "domain", "symbolic", "nl", "app",
-        "functional_layer", "middleware_layer", "model_layer",
+        "functional_layer", "legacy", "middleware_layer", "model_layer", "utils",
         "box_push_v1_adapter", "box_push_v1_run", "box_push_env", "multi_agent_box_push_env",
         "skill_executor_push", "shared_skills", "box_push_centralized", "box_push_per_step",
     })
