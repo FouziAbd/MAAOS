@@ -27,7 +27,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 #: Backend / framework roots the contract and symbolic side must never depend on.
 FORBIDDEN_PREFIXES = frozenset({
-    "functional_layer", "middleware_layer", "model_layer",
+    "functional_layer", "legacy", "middleware_layer", "model_layer", "utils",
     "shared_skills", "skill_executor_push", "box_push_env",
     "multi_agent_box_push_env", "box_push_centralized", "box_push_per_step",
     "minigrid", "pettingzoo", "gymnasium", "dspy", "torch", "numpy",
@@ -36,10 +36,11 @@ FORBIDDEN_PREFIXES = frozenset({
 #: Dynamic-import escapes that would make the AST scan blind.
 FORBIDDEN_DYNAMIC = frozenset({"importlib", "imp", "pkgutil", "runpy"})
 
-#: Pre-existing packages that are NOT part of the V1 contract/symbolic side.
-LEGACY_PACKAGES = frozenset({
-    "functional_layer", "middleware_layer", "model_layer", "utils", "ui", "tests", "docs",
-})
+#: Pre-existing packages that are NOT part of the V1 contract/symbolic side. The pre-V1
+#: trees (`middleware_layer`, `model_layer`, `utils`, `ui`) live under `legacy/` since
+#: 2026-09-18 and are deliberately NOT listed by their old names: a resurrected top-level
+#: copy would be discovered and guarded fail-closed, not silently skipped.
+LEGACY_PACKAGES = frozenset({"functional_layer", "legacy", "tests", "docs"})
 
 #: Runtime state the symbolic side must not reach (:118).
 RUNTIME_PACKAGES = frozenset({"runtime"})

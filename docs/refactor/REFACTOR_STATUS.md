@@ -7,15 +7,18 @@ Claude Code harness: **refreshed for post-P0-P4 refactoring**
 Current refactor phase: **R0-R6 COMPLETE AND AUDITED — PASS** (final
 `/refactor-audit` 2026-09-05 on branch `refactor_audit` from `main` `4d38a61`:
 0 FAIL, 9 WARN; record in `docs/refactor/REFACTORING_IMPLEMENTATION.md`
-§"Final Definition of Completion"). The refactor program is closed; remaining
-items are the owner's post-R6 legacy relocation and the optional test
-hardening listed in that record. Commit 4 of R6 took the owner's option
-(a) for report item 6 — a reference-only quarantine of `middleware_layer/` and
-`model_layer/` (README banner, `.claude/rules/legacy-packages.md`,
-`tests/test_r6_legacy_boundary.py`) instead of a `git mv`, because the move
-would break the runner's `--nl live` import, the opt-in live test, the
-auto-discovering import guard, and would move the V1 live seam. Relocating that
-seam and moving both trees under `legacy/` is a recorded post-R6 owner task.
+§"Final Definition of Completion"). The refactor program is closed; the only
+remaining items are the optional test hardening listed in that record. Commit
+4 of R6 took the owner's option (a) for report item 6 — a reference-only
+quarantine of `middleware_layer/` and `model_layer/` instead of a `git mv`,
+because the move would have broken the runner's `--nl live` import, the opt-in
+live test and the auto-discovering import guard. The recorded post-R6 owner
+task is **done (2026-09-18)**: the live seam now lives beside the runner
+(`functional_layer/custom_env/box_push/env/box_push_v1_nl_live.py`) and
+`middleware_layer/`, `model_layer/`, `utils/`, `ui/` sit under `legacy/` with
+their import names unchanged; record in
+`docs/refactor/REFACTORING_IMPLEMENTATION.md` §"Post-R6 maintenance: legacy
+relocation".
 
 The completed Symbolic-Twin V1 implementation phases P0-P4 remain the frozen
 behavioral baseline.
@@ -45,7 +48,7 @@ phase adds or removes tests.
 
 ## Baseline evidence
 
-Current offline suite: 849 tests, deterministic and offline
+Current offline suite: 850 tests, deterministic and offline
 
 Final audit evidence (2026-09-05): suite `OK (skipped=1)`, ruff clean, mypy
 `0 errors` on the gate, `uv lock --check` up to date, both headless demos
@@ -73,7 +76,7 @@ actual enforcement work.
 
 ## R6 owner decisions
 
-- Legacy packages: move `middleware_layer/` and `model_layer/` under `legacy/` as a pure `git mv` with no content edits, in its own commit, last in the phase. If moving would break any existing test or import, stop and ask instead. **Outcome (2026-09-05):** the move would break imports and the import guard; the owner chose option (a) — reference-only quarantine (README banner, `.claude/rules/legacy-packages.md`, `tests/test_r6_legacy_boundary.py` pinning the single exception `model_layer.planner.v1_nl_live`). The relocation + move is a post-R6 owner task.
+- Legacy packages: move `middleware_layer/` and `model_layer/` under `legacy/` as a pure `git mv` with no content edits, in its own commit, last in the phase. If moving would break any existing test or import, stop and ask instead. **Outcome (2026-09-05):** the move would break imports and the import guard; the owner chose option (a) — reference-only quarantine (README banner, `.claude/rules/legacy-packages.md`, `tests/test_r6_legacy_boundary.py` pinning the single exception `model_layer.planner.v1_nl_live`). The relocation + move is a post-R6 owner task. **Done 2026-09-18** (post-R6 maintenance entry in `REFACTORING_IMPLEMENTATION.md`).
 - Commit structure: R6 may be split into up to four commits, in this order — (1) hygiene: observation copying, malformed-backend faults, `NLProposal` split; (2) typing: generics for the shared channels, probe fixture mypy-clean; (3) tooling: `pyproject.toml`, `uv` lockfile, ruff + mypy on `shared runtime app` in `offline-tests.yml`; (4) legacy move. Each commit must leave the suite green and the demos byte-identical. Still one phase, one completion report.
 
 ## Active V1 runner

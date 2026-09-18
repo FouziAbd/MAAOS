@@ -83,14 +83,17 @@ python -B -m unittest discover -s tests -t .    # offline, deterministic, ~2s; c
 
 ## Legacy code
 
-> **REFERENCE-ONLY.** `middleware_layer/` and `model_layer/` are pre-V1 research code, not
-> a supported Symbolic-Twin runtime. They are excluded from the mypy/ruff gates and must not be
-> imported by `shared/`, `runtime/`, `app/`, or `tests/` — with ONE named exception,
-> `model_layer.planner.v1_nl_live`, the supported V1 live NL seam (opt-in `--nl live`).
-> Pinned by `tests/test_r6_legacy_boundary.py` and `.claude/rules/legacy-packages.md`.
-> Relocating that seam and moving both trees under `legacy/` is a post-R6 task.
+> **REFERENCE-ONLY.** `legacy/` holds the pre-V1 research trees `middleware_layer/`,
+> `model_layer/`, `utils/` and `ui/` (moved there 2026-09-18; they keep their import names and
+> the legacy runners mount `legacy/` on `sys.path`). They are not a supported Symbolic-Twin
+> runtime, are excluded from the mypy/ruff gates, and must not be imported by `shared/`,
+> `runtime/`, `app/`, or `tests/` under any name (`legacy.*`, `middleware_layer.*`,
+> `model_layer.*`, `utils.*`). The supported V1 live NL seam (opt-in `--nl live`) is
+> `functional_layer/custom_env/box_push/env/box_push_v1_nl_live.py`, relocated 2026-09-18
+> from `model_layer/planner/v1_nl_live.py`. Pinned by `tests/test_r6_legacy_boundary.py` and
+> `.claude/rules/legacy-packages.md`.
 
-`middleware_layer/`, `model_layer/agent.py`, the KAZ/CST environments, and the original
+`legacy/middleware_layer/`, `legacy/model_layer/agent.py`, the KAZ/CST environments, and the original
 LLM-driven runner (`box_push_centralized.py`) predate V1 and are preserved as reference —
 the legacy runner's silent-fallback patterns are exactly what the V1 typed contracts forbid,
 and the partial-observability belief machinery is capital for post-V1 milestones (its known

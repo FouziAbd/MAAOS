@@ -146,8 +146,8 @@ class TestProbeFixtureIsBoxPushFree(unittest.TestCase):
         "__future__", "hashlib", "json", "dataclasses", "enum", "typing", "shared", "runtime",
     })
     FORBIDDEN_ROOTS = frozenset({
-        "domain", "symbolic", "nl", "app", "functional_layer", "middleware_layer",
-        "model_layer", "box_push_v1_adapter", "box_push_v1_run", "box_push_env",
+        "domain", "symbolic", "nl", "app", "functional_layer", "legacy", "middleware_layer",
+        "model_layer", "utils", "box_push_v1_adapter", "box_push_v1_run", "box_push_env",
         "multi_agent_box_push_env", "skill_executor_push", "shared_skills",
     })
     #: BoxPush/geometry vocabulary the probe must not imitate (report Phase 5 acceptance 2)

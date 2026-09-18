@@ -18,7 +18,9 @@ import pygame
 from KAZ_RL import create_kaz_rl_env
 
 # Add project root to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+sys.path.insert(0, _REPO_ROOT)
+sys.path.insert(0, os.path.join(_REPO_ROOT, 'legacy'))  # legacy/: middleware_layer, model_layer, utils (post-R6 relocation, 2026-09-18)
 
 from model_layer.agent import Agent
 from middleware_layer.middleware_orchestrator import MiddlewareOrchestrator

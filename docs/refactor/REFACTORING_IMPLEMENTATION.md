@@ -1232,7 +1232,8 @@ Warnings/deferred:
 - DEFERRED (post-R6, owner's own task, recorded 2026-09-05): "Relocate the
   live NL seam out of `model_layer/` to a non-legacy home compatible with the
   import guard, then move both legacy trees under `legacy/`." Until then the
-  quarantine is the option-(a) boundary above. (The R4 owner item —
+  quarantine is the option-(a) boundary above. [done 2026-09-18 — see
+  §Post-R6 maintenance: legacy relocation] (The R4 owner item —
   `CLAUDE.md` "Active implementation" naming `app/` — is resolved: the entry
   is present.)
 - WARN (accepted, architecture-reviewer W3): the contract protocols still name a
@@ -1389,7 +1390,8 @@ imports only stdlib + `shared`).
 - DEFERRED (owner, post-R6): relocate `model_layer/planner/v1_nl_live.py`
   to a non-legacy home compatible with the import guard, then `git mv`
   `middleware_layer/` and `model_layer/` under `legacy/` (§R6 commit 4,
-  `.claude/rules/legacy-packages.md`).
+  `.claude/rules/legacy-packages.md`). [done 2026-09-18 — see §Post-R6
+  maintenance: legacy relocation]
 - DEFERRED (unassigned; a real second domain): BoxPush-vocabulary V1 types
   under `shared/` (`skills.py`, `state_snapshot.py`, `task.py`, `ids.py`,
   `execution.py::PRODUCIBLE_RAW_LABELS`).
@@ -1399,7 +1401,7 @@ imports only stdlib + `shared`).
   `entry.canonical()` JSON pin for both accepted episodes; extend the
   `runtime/` dynamic-import scan to `exec`/`eval`/`compile`; move the
   `tests/test_r6_legacy_boundary.py` scratch module out of `tests/` into a
-  tempdir; add `GroundedSkillCall` to the R4 vocabulary scan with an explicit
+  tempdir [done 2026-09-18 with the legacy relocation]; add `GroundedSkillCall` to the R4 vocabulary scan with an explicit
   allowlist entry for the shim.
 
 ### Verdict
@@ -1409,3 +1411,117 @@ invariants intact. R0-R6 is complete. The next substantive domain is the
 validation of these abstractions, per the report's closing paragraph;
 `docs/refactor/NEXT_DOMAIN.md` holds the owner's next-domain inputs (all
 `Unknown` as of 2026-09-04) to be filled when that domain is chosen.
+
+---
+
+## Post-R6 maintenance: legacy relocation (2026-09-18)
+
+Status: COMPLETE (2026-09-18), branch `legacy_relocation` from `main` `ab67cd7`.
+Behavior-neutral hygiene change completing the owner task recorded under §R6
+commit 4 and §Final Definition of Completion ("DEFERRED (owner, post-R6)").
+Two commits, each leaving the suite green, ruff/mypy clean and both headless
+demos byte-identical to `docs/refactor/baseline/`.
+
+Owner decisions (2026-09-18):
+- scope: `middleware_layer/`, `model_layer/`, `utils/`, `ui/` move under
+  `legacy/`; the pre-V1 runners under `functional_layer/` stay (two tests read
+  `box_push_centralized.py` by path; the CST `env/{constants,state,objects}.py`
+  modules are V1-active backend inputs);
+- seam home: beside the V1 runner, in the sys.path-mounted env dir;
+- runnability: intra-legacy import names unchanged; `legacy/` is mounted on
+  `sys.path` by the legacy runners (no `legacy/__init__.py`, no import
+  rewrites to `legacy.<tree>`).
+
+### Commit 1 — `V1: relocate the live NL seam beside the runner`
+
+- `git mv model_layer/planner/v1_nl_live.py
+  functional_layer/custom_env/box_push/env/box_push_v1_nl_live.py`; function
+  body unchanged, module docstring rewritten (the env dir is already
+  sys.path-mounted by the runner and the tests and sits outside the
+  fail-closed guard and the ruff/mypy gates, so the lazy dspy binding needs no
+  guard allowance).
+- Consumers: `box_push_v1_run.py` (`--nl live`, lazy) and
+  `tests/test_p3_live_lm.py` (lazy, `MAAOS_LIVE_LM=1`; now mounts the env dir
+  at module scope exactly like `tests/test_p1_adapter.py`) import
+  `from box_push_v1_nl_live import build_live_seam`.
+- `tests/test_r6_legacy_boundary.py`: `ALLOWED_LEGACY_IMPORTS` is empty; the
+  named-exception test became
+  `test_the_live_seam_lives_beside_the_runner_outside_the_legacy_trees`
+  (file exists, defines `build_live_seam`, no module-scope dspy import, both
+  consumers import it by the new name, no `v1_nl_live.py` left under the
+  legacy trees); the rule/README test expects `box_push_v1_nl_live`.
+- `tests/test_p3_nl.py`: default test modules and `nl/*.py` must not import
+  `box_push_v1_nl_live` either.
+- Docs: README banner, `.claude/rules/legacy-packages.md`, `CLAUDE.md`
+  "Active implementation" (the seam is listed as the opt-in live NL seam),
+  `nl/seam.py` and `nl/runtime_config.py` docstrings;
+  `docs/decisions/P0_V1_DECISIONS.md` §18 item 3 keeps its frozen text with a
+  bracketed relocation note only.
+
+### Commit 2 — `hygiene: move legacy trees under legacy/ (import names unchanged)`
+
+- `git mv middleware_layer|model_layer|utils|ui legacy/<same name>` (no
+  `legacy/__init__.py`; `legacy.<tree>` resolves only as a PEP 420 namespace).
+- Inside the tree: no import edits. The three belief updaters
+  (`legacy/middleware_layer/belief_updaters/{factory,deterministic_grid_updater,particle_filter_updater}.py`)
+  already compute `_REPO_ROOT = ../..`, which now resolves to `legacy/` — the
+  correct import root; a trailing comment records that. The in-tree demos
+  (`model_layer/agent.py`, `model_layer/storage/history.py` `__main__`) run as
+  `cd legacy && python -m model_layer.agent`.
+- Legacy runners under `functional_layer/` mount `legacy/` in their existing
+  bootstrap block (one added path, comment-tagged `post-R6 relocation,
+  2026-09-18`): `custom_env/box_push/env/{box_push_centralized,box_push_per_step,box_push_schema}.py`,
+  `custom_env/cooperative_search_transport/{cst_centralized.py,env/cst_centralized.py,env/cst_llm_demo.py,env/entity_schema.py}`,
+  `envs/{KAZ,KAZ_centralized,KAZ_RL_LLM_Agents,KAZ_vision,entity_schema}.py`.
+  The V1-active `box_push_v1_adapter.py` / `box_push_v1_run.py` bootstraps are
+  untouched (their import closure needs nothing from `legacy/`).
+- Guards: `tests/test_no_backend_imports.py` `LEGACY_PACKAGES` =
+  `{functional_layer, legacy, tests, docs}` — the four moved names are
+  deliberately dropped so a resurrected top-level copy is discovered and
+  guarded fail-closed; `FORBIDDEN_PREFIXES` gains `legacy` and `utils`.
+  `tests/test_r6_legacy_boundary.py` (6 tests, +1): V1 side imports no legacy
+  root (`legacy`, `middleware_layer`, `model_layer`, `utils`; relative imports
+  excluded via `node.level`); the probe (now written in a
+  `tempfile.TemporaryDirectory`, closing the recorded hardening item) sees
+  every import shape under every root name; seam beside the runner; trees
+  under `legacy/`, old roots absent, `legacy` in `LEGACY_PACKAGES` and
+  `FORBIDDEN_PREFIXES`, tree names not in `LEGACY_PACKAGES`; `legacy` in ruff
+  `extend-exclude` and outside mypy `files`; rule and README wording.
+  `legacy` (and `utils` where the list is a root list) added to the forbidden
+  roots in `tests/test_p1_adapter.py`, `tests/test_r4_composition.py`,
+  `tests/test_r5_probe.py`, `tests/test_p3_nl.py`;
+  `tests/test_r6_tooling.py` expects `{legacy, functional_layer}` excluded.
+- Config: `pyproject.toml` ruff `extend-exclude = ["legacy",
+  "functional_layer", "docs"]`; `.gitignore` repoints
+  `/legacy/model_layer/storage/agent_history.db`. CI workflow unchanged.
+- Docs/rules: README "Legacy code" banner; `CLAUDE.md` "Legacy code";
+  `.claude/rules/legacy-packages.md` (paths `legacy/**/*` + the seam file;
+  body rewritten for the new layout); `.claude/rules/legacy-reference.md`
+  paths; `legacy/middleware_layer/README.md` example gains a one-line
+  sys.path note; `docs/refactor/REFACTOR_STATUS.md` current-state paragraph,
+  R6 owner-decision outcome and the suite-count pin (850).
+
+Deliberately left unchanged:
+- frozen/historical documents that cite `model_layer/planner/v1_nl_live.py`
+  (`docs/implementation/P0_P4_IMPLEMENTATION.md`, `docs/handoff/section18.md`)
+  and the R6 narrative above — the path is historical there;
+- `docs/supervisor/*` (source artifacts);
+- mentions of `middleware_layer` as a git BRANCH name (`docs/claude/SETUP.md`,
+  `docs/decisions/P0_V1_DECISIONS.md:5`, `docs/handoff/section18.md`,
+  `docs/refactor/baseline/BASELINE.md`);
+- pre-existing defect, noted not fixed: the top-level
+  `functional_layer/custom_env/cooperative_search_transport/cst_centralized.py`
+  computes `_REPO_ROOT` one level above the repository, so it was never
+  runnable standalone; the mount was applied mechanically.
+
+Verification (both commits): `python -B -m unittest discover -s tests -t .`
+`OK (skipped=1)` (849 after commit 1, 850 after commit 2, matching the pin);
+`ruff check shared runtime app` clean; `mypy` 0 errors; both headless demos
+byte-identical to `docs/refactor/baseline/demo_*.txt`; `--nl live` seam
+smoke without Ollama (module import leaves `dspy` out of `sys.modules`,
+`build_live_seam(PINNED_V1_NL_RUNTIME)` returns a seam with `complete`);
+`import middleware_layer, model_layer.agent, utils.logging_utils` with
+`legacy/` on `sys.path`; `import model_layer` from the repo root raises
+`ModuleNotFoundError`; the legacy runner bootstraps import
+(`box_push_schema`, both `entity_schema` modules); every `legacy/**/*.py`
+parses. Behavior differences: none.

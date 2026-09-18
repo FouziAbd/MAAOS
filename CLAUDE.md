@@ -49,6 +49,8 @@ The supported Symbolic-Twin V1 runtime is the code under:
   and `domain/`
 - `functional_layer/custom_env/box_push/env/box_push_v1_adapter.py`
 - `functional_layer/custom_env/box_push/env/box_push_v1_run.py`
+- `functional_layer/custom_env/box_push/env/box_push_v1_nl_live.py` — the opt-in
+  live NL seam (`--nl live`), the only dspy binding
 
 The active BoxPush V1 runner is:
 
@@ -250,14 +252,17 @@ concrete requirements and tests, not in anticipation of them.
 
 ## Legacy code
 
-`middleware_layer/`, `model_layer/`, and pre-V1 runners are research/reference
-material, not alternative supported Symbolic-Twin runtimes.
+`legacy/` (`middleware_layer/`, `model_layer/`, `utils/`, `ui/`) and the pre-V1
+runners under `functional_layer/` are research/reference material, not
+alternative supported Symbolic-Twin runtimes. The trees keep their import
+names and run with `legacy/` on `sys.path` (the legacy runners mount it
+themselves; `cd legacy && python -m model_layer.agent` for the in-tree demos).
 
 Do not use legacy structure as architectural precedent.
 
-Do not move/delete large legacy package trees unless the project owner
-explicitly requests the recorded post-R6 relocation as a separate reviewable
-hygiene change (see `.claude/rules/legacy-packages.md`).
+The recorded post-R6 relocation under `legacy/` was completed 2026-09-18
+(`docs/refactor/REFACTORING_IMPLEMENTATION.md`, `.claude/rules/legacy-packages.md`).
+Do not move or delete the legacy tree again without an explicit owner request.
 
 ## Documentation
 

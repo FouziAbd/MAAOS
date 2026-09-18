@@ -8,7 +8,9 @@ import pygame
 from pettingzoo.butterfly import knights_archers_zombies_v10
 
 # Add project root to path to support direct execution
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+sys.path.insert(0, _REPO_ROOT)
+sys.path.insert(0, os.path.join(_REPO_ROOT, 'legacy'))  # legacy/: middleware_layer, model_layer, utils (post-R6 relocation, 2026-09-18)
 
 from model_layer.agent import Agent
 from middleware_layer.middleware_orchestrator import MiddlewareOrchestrator

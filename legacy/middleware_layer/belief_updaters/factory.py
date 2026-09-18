@@ -16,7 +16,7 @@ import sys
 import os
 
 _THIS_DIR  = os.path.dirname(os.path.abspath(__file__))
-_REPO_ROOT = os.path.abspath(os.path.join(_THIS_DIR, "../.."))
+_REPO_ROOT = os.path.abspath(os.path.join(_THIS_DIR, "../.."))  # legacy/ — the import root for middleware_layer/model_layer since the 2026-09-18 relocation
 for _p in (_THIS_DIR, _REPO_ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)

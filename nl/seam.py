@@ -4,7 +4,8 @@ model.
 Every NL module that needs a model talks to an `LMSeam`: a typed request in, raw text out.
 The default (and only in-repo) implementation is `RecordedLM`, a deterministic fixture store —
 default P3 tests never touch a live model (.claude/rules/testing.md). The live DSPy binding
-lives OUTSIDE this package (`model_layer/planner/v1_nl_live.py`): the auto-discovered import
+lives OUTSIDE this package (`functional_layer/custom_env/box_push/env/box_push_v1_nl_live.py`,
+beside the V1 runner): the auto-discovered import
 guard (`tests/test_no_backend_imports.py`) forbids `nl/` from importing `dspy` at all, so the
 seam is structural, not conventional.
 

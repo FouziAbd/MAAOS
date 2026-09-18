@@ -10,7 +10,8 @@ import os
 
 _THIS_DIR  = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.abspath(os.path.join(_THIS_DIR, "../../../.."))
-for _p in (_THIS_DIR, _REPO_ROOT):
+_LEGACY_ROOT = os.path.join(_REPO_ROOT, "legacy")  # legacy/: middleware_layer, model_layer, utils (post-R6 relocation, 2026-09-18)
+for _p in (_THIS_DIR, _REPO_ROOT, _LEGACY_ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 

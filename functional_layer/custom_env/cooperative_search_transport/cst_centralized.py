@@ -32,6 +32,7 @@ _ENV_DIR   = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.abspath(os.path.join(_ENV_DIR, "../../../.."))
 sys.path.insert(0, _ENV_DIR)
 sys.path.insert(0, _REPO_ROOT)
+sys.path.insert(0, os.path.join(_REPO_ROOT, "legacy"))  # legacy/: middleware_layer, model_layer, utils (post-R6 relocation, 2026-09-18)
 
 import dspy
 from constants import Actions, Directions, DIRECTION_NAMES, ACTION_NAMES

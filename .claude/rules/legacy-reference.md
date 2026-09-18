@@ -1,7 +1,6 @@
 ---
 paths:
-  - "middleware_layer/**/*"
-  - "model_layer/**/*"
+  - "legacy/**/*"
   - "functional_layer/custom_env/box_push/env/box_push_centralized.py"
   - "functional_layer/custom_env/cooperative_search_transport/**/*"
 ---

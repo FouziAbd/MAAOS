@@ -240,6 +240,7 @@ This ensures **rule compliance** even if the LLM is confused about action-outcom
 ## Example: Full KAZ Loop with Middleware
 
 ```python
+# run with <repo>/legacy on sys.path (the legacy runners mount it themselves; or `cd legacy`)
 from middleware_layer.middleware_orchestrator import MiddlewareOrchestrator
 from model_layer.agent import Agent
 

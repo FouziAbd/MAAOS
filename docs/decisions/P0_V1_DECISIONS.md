@@ -850,7 +850,8 @@ These are scheduled engineering tasks, not open decisions.
 3. ~~**P3 — introduce the offline LM seam.**~~ — **done in P3 (2026-08-21).** `nl/seam.py`
    (`NLRequest`/`LMSeam`/`RecordedLM` with the typed `UnrecordedRequestError`); every NL module
    takes the seam by injection; the ONLY dspy binding is `model_layer/planner/v1_nl_live.py`
-   (legacy side — the auto-discovered import guard forbids `nl/` from importing dspy at all),
+   [relocated 2026-09-18 to `functional_layer/custom_env/box_push/env/box_push_v1_nl_live.py`;
+   post-R6 maintenance] (legacy side — the auto-discovered import guard forbids `nl/` from importing dspy at all),
    consuming the pinned `nl/runtime_config.py::PINNED_V1_NL_RUNTIME` (temperature 0, cache ON —
    a deliberate departure from the legacy runner's `cache=False`, required by :236). Default
    tests are fully offline; live coverage only in `tests/test_p3_live_lm.py` behind
