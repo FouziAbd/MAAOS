@@ -656,11 +656,13 @@ class TestPeerTrackGuards(unittest.TestCase):
                 found = self._imports(source)
                 self.assertNotIn("dspy", found)
                 self.assertNotIn("model_layer", found)
+                self.assertNotIn("box_push_v1_nl_live", found)
 
     def test_live_seam_module_is_not_imported_by_the_nl_package(self):
         for source in sorted(self.NL_DIR.glob("*.py")):
             with self.subTest(module=f"nl/{source.name}"):
                 self.assertNotIn("model_layer", self._imports(source))
+                self.assertNotIn("box_push_v1_nl_live", self._imports(source))
 
 
 if __name__ == "__main__":

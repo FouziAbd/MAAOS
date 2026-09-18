@@ -37,6 +37,8 @@ The supported Symbolic-Twin V1 runtime is the code under:
   and `domain/`
 - `functional_layer/custom_env/box_push/env/box_push_v1_adapter.py`
 - `functional_layer/custom_env/box_push/env/box_push_v1_run.py`
+- `functional_layer/custom_env/box_push/env/box_push_v1_nl_live.py` — the opt-in
+  live NL seam (`--nl live`), the only dspy binding
 
 The active BoxPush V1 runner is:
 

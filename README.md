@@ -85,10 +85,11 @@ python -B -m unittest discover -s tests -t .    # offline, deterministic, ~2s; c
 
 > **REFERENCE-ONLY.** `middleware_layer/` and `model_layer/` are pre-V1 research code, not
 > a supported Symbolic-Twin runtime. They are excluded from the mypy/ruff gates and must not be
-> imported by `shared/`, `runtime/`, `app/`, or `tests/` — with ONE named exception,
-> `model_layer.planner.v1_nl_live`, the supported V1 live NL seam (opt-in `--nl live`).
+> imported by `shared/`, `runtime/`, `app/`, or `tests/` (no exceptions). The supported V1
+> live NL seam (opt-in `--nl live`) is `functional_layer/custom_env/box_push/env/box_push_v1_nl_live.py`,
+> relocated 2026-09-18 from `model_layer/planner/v1_nl_live.py`.
 > Pinned by `tests/test_r6_legacy_boundary.py` and `.claude/rules/legacy-packages.md`.
-> Relocating that seam and moving both trees under `legacy/` is a post-R6 task.
+> Moving both trees under `legacy/` is the remaining post-R6 task.
 
 `middleware_layer/`, `model_layer/agent.py`, the KAZ/CST environments, and the original
 LLM-driven runner (`box_push_centralized.py`) predate V1 and are preserved as reference —

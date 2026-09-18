@@ -4,7 +4,8 @@
 response caching ON, fixed model/provider. Model and api_base match the legacy runner's
 hardcoded values (`box_push_centralized.py::main`); `cache=True` is a DELIBERATE departure from
 the legacy `cache=False` — the supervisor contract (:236) requires response caching for the V1
-baseline. Consumed only through the seam builder in `model_layer/planner/v1_nl_live.py`. Default tests never instantiate a live seam;
+baseline. Consumed only through the seam builder in
+`functional_layer/custom_env/box_push/env/box_push_v1_nl_live.py`. Default tests never instantiate a live seam;
 this module exists so the LIVE path has exactly one, pinned, reviewable configuration.
 """
 from __future__ import annotations

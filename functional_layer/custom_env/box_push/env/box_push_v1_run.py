@@ -89,7 +89,7 @@ def main() -> None:
 
     nl_track = None
     if args.nl == "live":
-        from model_layer.planner.v1_nl_live import build_live_seam
+        from box_push_v1_nl_live import build_live_seam
         from nl import NLTrack, PINNED_V1_NL_RUNTIME
         nl_track = NLTrack(build_live_seam(PINNED_V1_NL_RUNTIME))
         print(f"live NL track: {PINNED_V1_NL_RUNTIME.model} @ {PINNED_V1_NL_RUNTIME.api_base}")
