@@ -45,12 +45,30 @@ The supported Symbolic-Twin V1 runtime is the code under:
 - `runtime/`
 - `app/` — composition root; `app.box_push_v1.build_loop` assembles the BoxPush
   environment, tracks, comparator, equivalence, recovery provider and policy over
-  the domain-agnostic `runtime/`. The only package that may import both `runtime/`
-  and `domain/`
+  the domain-agnostic `runtime/`. With the `domains/` composition packages (below), the
+  only place that may import both `runtime/` and `domain/`
 - `functional_layer/custom_env/box_push/env/box_push_v1_adapter.py`
 - `functional_layer/custom_env/box_push/env/box_push_v1_run.py`
 - `functional_layer/custom_env/box_push/env/box_push_v1_nl_live.py` — the opt-in
   live NL seam (`--nl live`), the only dspy binding
+
+The domain kit (post-R6 maintenance program DK0-DK5, 2026-09-19; ADR
+`docs/decisions/DK1_DOMAIN_PACKAGE.md`, record
+`docs/domains/DOMAIN_KIT_IMPLEMENTATION.md`) adds, without changing any of the above:
+
+- `kit/` — defaults for domain authors, extracted from BoxPush ∩ the R5 probe
+  (`EnvironmentBase`, `DerivedDomainServices`, `ProjectionTrack`, `bfs_plan`,
+  `DefaultProposalComparator`, keys); imports only `shared`; never imported by `runtime/`
+- `app/domain_package.py` (the `DomainPackage` declaration record), `app/assembly.py`
+  (`assemble_loop`, `build_loop` generalized), `app/validation.py` (`validate-domain`)
+- `domains/` — one package per domain (`domains/box_push/` is a thin declaration over the
+  frozen modules; `domains/registry.py` is the hand-edited static registry); a composition
+  package for the import guard with per-module roles (only `__init__.py` reaches
+  `app`/`runtime`; `environment.py` is the only backend door)
+- `maaos/` — `python -m maaos create-domain | validate-domain | list-domains`
+
+Adding a domain: `docs/domains/ADDING_A_DOMAIN.md` (the author needs nothing else).
+The second-domain proof is `tests/fixture_lamp/`.
 
 The active BoxPush V1 runner is:
 
@@ -153,8 +171,9 @@ that describes actual behavior. After each coherent behavior-sensitive change:
 python -B -m unittest discover -s tests -t .
 ```
 
-Also run the static gates used by CI (`ruff check shared runtime app`,
-`mypy`) when touching `shared/`, `runtime/`, or `app/`.
+Also run the static gates used by CI (`ruff check shared runtime app kit domains maaos`,
+`mypy`) when touching `shared/`, `runtime/`, `app/`, `kit/`, `domains/` or `maaos/`, and
+`python -m maaos validate-domain box_push` when touching the kit or the validator.
 
 ## R-phase discipline (only when a phase is explicitly reopened)
 
@@ -284,6 +303,8 @@ Normal maintenance workflows:
 - `/v1-regression`
 - `/consistency-check all` (or `v1` / `refactor`)
 - `/run-v1`
+- `/add-domain new <name>` | `validate <name>` | `review <name>` — the domain workflow
+- `/domain-kit-phase fix` — a recorded regression fix to the domain kit under its gates
 - `/refactor-audit` only when a re-audit is actually needed
 
 Available but not the normal next workflow:

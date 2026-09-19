@@ -19,6 +19,13 @@ any hypothetical answer until a real domain requires it.
 | Concurrency | Sequential executive like V1, or concurrent/asynchronous track or agent execution? | Unknown |
 | Uncertainty | Deterministic transitions, or stochastic/probabilistic outcomes needing calibrated uncertainty? | Unknown |
 
+2026-09-19 — the domain kit (DK0-DK5, `docs/decisions/DK1_DOMAIN_PACKAGE.md`) made
+adding a domain a first-class workflow (`docs/domains/ADDING_A_DOMAIN.md`) by extracting
+mechanisms both BoxPush and the R5 probe already implemented; it adds no semantics. The
+fields below stay `Unknown`: the kit assumes classical, deterministic, fully observable,
+sequential domains, and the first real domain outside those assumptions validates the
+contracts rather than the kit.
+
 Replace any `Unknown` with a concrete answer when a real next domain is chosen.
 R0-R6 is complete (2026-09-05); the next domain validates the extracted
 contracts rather than shaping a refactor phase. Record the change here with

@@ -46,7 +46,7 @@ not improvise a scaffold or a validator by hand.
    ```bash
    python -m maaos create-domain <name>
    ```
-   It writes new files only. Add the registry line it prints to `domains/registry.py` by hand.
+   It writes new files only. Add the two registry lines it prints to `domains/registry.py` by hand.
 3. Validate the untouched scaffold — it must pass before any domain logic is written:
    ```bash
    python -m maaos validate-domain <name>
@@ -63,7 +63,7 @@ not improvise a scaffold or a validator by hand.
    to write `environment.py`; never guess backend behavior.
 6. Fill in the generated files in this order, running `validate-domain` after each:
    `types.py` (State/Call/Task, `identities()`), `model.py` (symbolic state, `project`,
-   `apply`, `applicable`, `plan`), `environment.py` (`_snapshot`, `_attempt`), then optional
+   `apply`, `applicable`, `plan`), `environment.py` (`_reset`, `_attempt`, `_is_terminal`), then optional
    `DomainExamples` (an ungrounded call, an inapplicable call) and a recovery rule.
    Follow `docs/domains/ADDING_A_DOMAIN.md`; each `validate-domain` FAIL names the file and
    member to fix.
