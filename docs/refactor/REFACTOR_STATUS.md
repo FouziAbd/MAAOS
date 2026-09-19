@@ -48,7 +48,7 @@ phase adds or removes tests.
 
 ## Baseline evidence
 
-Current offline suite: 885 tests, deterministic and offline
+Current offline suite: 927 tests, deterministic and offline
 
 Final audit evidence (2026-09-05): suite `OK (skipped=1)`, ruff clean, mypy
 `0 errors` on the gate, `uv lock --check` up to date, both headless demos
