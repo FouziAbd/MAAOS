@@ -148,6 +148,32 @@ external mutable simulator must derive its state value inside `_attempt` from a 
 or not use the base as-is; a D4-style re-read hook is DEFERRED until a real such domain
 exists (owner choice).
 
+## DK3 — validation catalogue (2026-09-19)
+
+`app/validation.py::validate_domain` / `validate_named` and `python -m maaos validate-domain
+<name>` (`maaos/cli.py`). Codes as SHIPPED (the phase spec's provisional "DK003 unregistered
+name" is DK001; DK002 is a registered object that is not a `DomainPackage`):
+
+| Code | Check |
+|---|---|
+| DK001 / DK002 | registry: name registered / value is a `DomainPackage` whose `name` equals the key |
+| DK010–DK017 | contracts: services, symbolic track, comparator, environment, task, state, call (+ value equality), reasoning track — missing members listed by name |
+| DK020 | default task declared (guaranteed by the record; reported for visibility) |
+| DK030–DK032 | environment: reset returns a state, `export_full_state` stable, `observe()` does not alias, execute-before-reset is a `"refused:"` fault |
+| DK040–DK043 | plan: typed result, deterministic, heads grounded, `examples.ungrounded_call` rejected |
+| DK050–DK052 | evaluate: typed verdict, head applicable, `examples.inapplicable_call` inapplicable |
+| DK060 | predict returns a `Prediction` with typed keys |
+| DK070 / DK071 | bounded episodes under both policies without a track / one with the declared track; FAULTED is a FAIL, HALTED_REPEATED_FAILURE without a recovery provider under advisory is a WARN |
+| DK080 / DK081 | package layout: module roles + no dynamic import / the backend door is enumerated in the guard (never for an LM framework or a legacy tree) |
+| DK090 | services and plan stamp the same model version |
+
+Design rules: every check runs under its own guard (an exception is that check's FAIL with
+the text under details, never a traceback headline); a missing precondition is SKIPPED,
+never PASS; loops are assembled through `app.assembly.assemble_loop` only; names resolve
+through `domains.registry.REGISTRY` only. The role rules and backend roots are a MIRROR of
+`tests/test_no_backend_imports.py` (the authority); `tests/test_dk3_validation.py` asserts
+the mirrored constants equal the originals and that both scanners agree on probe trees.
+
 ## Alternatives considered
 
 - **`DomainPackage` under `shared/contracts/`.** Rejected: the runtime never consumes it;
@@ -171,8 +197,8 @@ exists (owner choice).
   sees the loop's constructor.
 - Adding a domain adds a directory under `domains/`, one line in `domains/registry.py`, and
   one line in `DOMAIN_ENVIRONMENT_MODULES` (the guard's enumerated door) — the latter is a
-  test-side edit a scaffold cannot make; DK4's guide and `validate-domain` (DK3 check DK080)
-  name it explicitly.
+  test-side edit a scaffold cannot make; DK4's guide and `validate-domain` (DK3 check DK081)
+  name it explicitly (DK081).
 - Whitelist constants in eight existing tests/config files grew by the new package names;
   none was relaxed (each edit is an extension of an allowlist or a forbidden set).
 - BoxPush behavior, `build_loop`, the runner CLI, trace format and the demo transcripts are

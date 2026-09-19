@@ -1,6 +1,7 @@
 """The explicit domain registry — the one file an author edits by hand to register a domain.
 
-    REGISTRY["<name>"] = <the DOMAIN your package exports>
+    from domains.<name> import DOMAIN as _<NAME>        # beside the other imports
+    REGISTRY = MappingProxyType({..., "<name>": _<NAME>})  # one entry per domain
 
 Consumers resolve names here and nowhere else: no directory scanning, no dynamic import,
 no plugin discovery (report Phase 4 default assumptions; ADR-R4 rejected registration hooks).

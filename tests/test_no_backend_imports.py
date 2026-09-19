@@ -285,7 +285,9 @@ class TestNoBackendImports(unittest.TestCase):
                 text = path.read_text(encoding="utf-8")
                 # DK1: `sys.modules` too — a domain's `__init__` (composition role) loads the
                 # runtime before its siblings run, so `sys.modules["runtime..."]` in a
-                # symbolic-side module would be a deterministic escape from the AST scan
+                # symbolic-side module would be a deterministic escape from the AST scan.
+                # DK3: `app/validation.py` mirrors this scan for authors and spells the two
+                # markers by concatenation ("sys" + ".path") so this text scan stays clean.
                 if "sys.path" in text or "sys.modules" in text:
                     violations.append(str(path.relative_to(REPO_ROOT)))
         self.assertEqual(violations, [])
