@@ -154,7 +154,7 @@ class TestTheOfflineWorkflow(unittest.TestCase):
         self.assertEqual(setup[0]["with"]["python-version"], "3.12")
 
     def test_it_runs_the_lint_and_type_gates_on_the_core(self):
-        self.assertTrue(any(run.strip() == "uv run ruff check shared runtime app" for run in self.runs))
+        self.assertTrue(any(run.strip() == "uv run ruff check shared runtime app kit domains maaos" for run in self.runs))
         self.assertTrue(any(run.strip() == "uv run mypy" for run in self.runs))
 
     def test_it_never_touches_a_live_model_or_a_service(self):
@@ -178,7 +178,7 @@ class TestTheLintGate(unittest.TestCase):
         )
 
     def test_the_core_passes_the_lint_gate(self):
-        completed = self._ruff("shared", "runtime", "app")
+        completed = self._ruff("shared", "runtime", "app", "kit", "domains", "maaos")
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def test_the_gate_reports_a_violation(self):

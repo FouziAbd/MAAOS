@@ -36,7 +36,7 @@ LIVE_TEST = "tests/test_p3_live_lm.py"
 LIVE_SEAM_IMPORT = "from box_push_v1_nl_live import build_live_seam"
 
 #: The V1 side that must not reach the legacy trees.
-GUARDED_DIRS = ("shared", "runtime", "app", "tests")
+GUARDED_DIRS = ("shared", "runtime", "app", "kit", "domains", "maaos", "tests")
 
 
 def _python_files(directory: pathlib.Path):

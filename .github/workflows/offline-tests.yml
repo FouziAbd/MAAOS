@@ -26,6 +26,6 @@ jobs:
       - name: Offline suite (unit, contract, import-boundary, characterization tests)
         run: uv run python -B -m unittest discover -s tests -t .
       - name: Lint the architectural core (ruff, lint only)
-        run: uv run ruff check shared runtime app
+        run: uv run ruff check shared runtime app kit domains maaos
       - name: Type-check the architectural core, conformance witnesses and probe fixture (mypy)
         run: uv run mypy
