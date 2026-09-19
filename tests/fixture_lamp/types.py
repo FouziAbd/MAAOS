@@ -34,10 +34,11 @@ class State:
     content in `canonical()` and episode bookkeeping (tick counters) OUTSIDE it."""
     lamps: Tuple[str, ...]
     lit: FrozenSet[str] = frozenset()
+    stuck: FrozenSet[str] = frozenset()            # a physical fact: the model's projection drops it
     tick: int = 0                                  # episode bookkeeping, not world content
 
     def canonical(self) -> Dict[str, Any]:
-        return {"lamps": list(self.lamps), "lit": sorted(self.lit)}
+        return {"lamps": list(self.lamps), "lit": sorted(self.lit), "stuck": sorted(self.stuck)}
 
     def world_key(self) -> WorldKey:
         return world_key(self.canonical())

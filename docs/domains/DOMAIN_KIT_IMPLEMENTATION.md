@@ -34,7 +34,8 @@ usability gate, below), and `python -m maaos validate-domain` as the continuous 
 | DK2 | #17 | `kit/` (keys, protocols, environment, track, services, planning, comparator) proven equivalent beside the untouched probe; ADR "DK2 — kit extraction record" | 927 |
 | DK3 | #18 | `app/validation.py` (catalogue DK001–DK090), `maaos/cli.py` (`validate-domain`, `list-domains`); guard-parity proof | 971 |
 | DK4 | #19 | `maaos/scaffold.py` + templates (`create-domain`); `tests/fixture_lamp/` generated verbatim (A) then changed through extension points only (B); review corrections (C) | 992 |
-| DK5 | this PR | `docs/domains/ADDING_A_DOMAIN.md`, this record, README/CLAUDE.md/rule/NEXT_DOMAIN updates, `tests/test_dk5_docs.py`, the usability gate | 1001 |
+| DK5 | #20 | `docs/domains/ADDING_A_DOMAIN.md`, this record, README/CLAUDE.md/rule/NEXT_DOMAIN updates, `tests/test_dk5_docs.py`, the usability gate | 1001 |
+| fix | this PR | the four actionable WARNs of the post-merge `/consistency-check all` (§"Post-program fix") | 1002 |
 
 ## DK1 — declaration, assembly, guard decisions
 
@@ -129,6 +130,36 @@ condition triggered. Its two git checks it could not run itself were run before 
 is empty, and commits `9a2a01d`/`0f72d66` touch nothing under `runtime/`, `shared/`, `kit/`, `app/`.
 `test-reviewer` on DK5: WARN, applied (every `§` reference resolves; the record is pinned
 against a placeholder; README shows the registry step).
+
+## Post-program fix (2026-09-19, `/domain-kit-phase fix`)
+
+`/consistency-check all` after PR #20 merged: PASS, 0 FAIL, 6 WARN, 4 DEFERRED(owner). The
+four actionable WARNs fixed here:
+
+1. **Physical state belongs in the authoritative state.** The guide, the environment template
+   and the lamp fixture told authors to keep a designed physical condition backend-private;
+   `export_full_state` is the sole canonical truth (Decision 4) and the repeated-failure key
+   and `same_world` were blind to such a fact. Now: `stuck` is a field of the lamp `State`
+   (in `canonical()`), `project()` drops it (optimism lives in the projection, as in BoxPush),
+   `apply_world` predicts `Nudge` clearing it, and the guide/template say so. Lamp outcomes
+   unchanged (same executed sequences, three typed failures, recovery, goal); what changed is
+   evidence-level and intended: `observe()`/`world_key()` now carry `stuck`, and `Nudge` is a
+   world-changing success the monitor predicts, instead of an unchanged-world one.
+2. **No marker-string evasion in production code.** `app/validation.py` is the guard's one
+   enumerated string-only exemption (`TEXT_SCAN_STRING_ONLY`); for it the guard runs an AST
+   check (no `sys.path`/`sys.modules` reachable from its own code: direct, aliased, chained,
+   `from sys import`, `__dict__`, `getattr`/`vars`) and the file spells those two markers
+   plainly in strings; the dynamic-import builtin has no such exemption, so that third marker
+   stays concatenated. A probe pins that the exemption is load-bearing and that each access
+   spelling is caught.
+3. `README.md`: `app/` sentence amended for the `domains/` composition packages.
+4. `tests/test_p3_nl.py`: the module-scope dspy/legacy scan is recursive over `tests/`.
+
+Recorded, not fixed (pre-existing or design-level): `ui` is not a banned import root; the
+validator reads the guard's door set from the test file (parity pinned; a shared non-test
+module could hold it); a domain `__init__.py` may import a sibling domain; the generated test
+imports the public `runtime.loop.EpisodeOutcome` (a re-export from `app.assembly` would make
+the "no runtime internal" claim literal).
 
 ## Deferred (owner-scheduled, not accepted indefinitely)
 

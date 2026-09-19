@@ -649,10 +649,12 @@ class TestPeerTrackGuards(unittest.TestCase):
     def test_no_default_test_module_imports_dspy_or_the_live_seam_at_module_scope(self):
         """The sys.modules check above is ordering-dependent (a later module could import dspy
         undetected under alphabetical discovery). This AST scan is not."""
-        for source in sorted((REPO_ROOT / "tests").glob("*.py")):
-            if source.name == "test_p3_live_lm.py":
+        for source in sorted((REPO_ROOT / "tests").rglob("*.py")):
+            if "__pycache__" in source.parts:
+                continue
+            if source.relative_to(REPO_ROOT).as_posix() == "tests/test_p3_live_lm.py":
                 continue                       # the marked live module guards itself by env
-            with self.subTest(module=f"tests/{source.name}"):
+            with self.subTest(module=source.relative_to(REPO_ROOT).as_posix()):
                 found = self._imports(source)
                 self.assertNotIn("dspy", found)
                 self.assertNotIn("legacy", found)

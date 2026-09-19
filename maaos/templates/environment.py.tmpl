@@ -8,9 +8,11 @@ one line to add under tests/.
 
 The environment is the sole authority on what physically happens. `kit.EnvironmentBase`
 supplies the contract's mechanics (refusals, malformed/ungrounded calls, result assembly,
-typed faults); you write three hooks. If your backend holds physical state of its own
-(a stuck switch, a simulator handle), add an `__init__` that calls `super().__init__()` and
-stores it, and reinitialize it in `_reset` — the model must never see it.
+typed faults); you write three hooks. If you need a simulator handle or configuration
+(e.g. which switch starts stuck), add an `__init__` that calls `super().__init__()` and keeps
+it, and use it in `_reset`. Physical FACTS themselves — a stuck switch, a jammed latch — belong
+in the `State` you return, like everything else the environment reports; `project()` in
+`model.py` is what keeps them from the symbolic model.
 """
 from __future__ import annotations
 

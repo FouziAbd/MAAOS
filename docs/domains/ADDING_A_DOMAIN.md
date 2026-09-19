@@ -178,7 +178,7 @@ Subclass `kit.EnvironmentBase[State, Call]`, set `call_type = Call`, write three
 | `_attempt(call, pre) -> result` | ONE executive attempt against your backend |
 | `_is_terminal(state) -> bool` | when no further attempt is possible (the goal is not terminal by itself) |
 | `_observe(state)` (optional) | the public observation; default: the state's `canonical()`, deep-copied |
-| `__init__` (optional) | call `super().__init__()` and store backend-held physical state (a stuck switch, a simulator handle); the model must never see it |
+| `__init__` (optional) | call `super().__init__()` and keep a simulator handle or configuration (e.g. which switch starts stuck). Physical FACTS — a stuck switch, a jammed latch — belong in `State.canonical()` like everything else the environment reports; `project()` is what keeps them from the model |
 
 Inside `_attempt`:
 
@@ -196,7 +196,9 @@ The base supplies the contract's mechanics: the reset-before-use refusal, the po
 refusal, malformed and ungrounded calls returned (not raised), typed results, the provenance
 of mid-attempt faults. The state you return in `post` becomes the authoritative state (a
 value-state model; a domain wrapping an external mutable simulator derives its state value
-inside `_attempt` from a fresh read).
+inside `_attempt` from a fresh read). That state is the sole source of truth for the runtime:
+every physical fact goes into it, including the ones your designed failure depends on — the
+optimism lives in `project()`, which drops them, never in hiding them from `State`.
 
 ### The declaration (`__init__.py`)
 
@@ -275,8 +277,8 @@ recovery advice).
 ## The designed physical failure
 
 A domain is interesting when the environment can refuse what the model admits. Give your
-environment one such condition (a stuck switch, a wrong key, a blocked path) that `_attempt`
-knows and `applicable` does not. Then, under the two policies:
+world one such condition (a stuck switch, a wrong key, a blocked path): a field of `State`
+that `_attempt` honours and `project()` drops, so `applicable` never sees it. Then, under the two policies:
 
 - `symbolic_primary` retries the applicable call, and after three identical failures
   **halts** with the discrepancy history (`EpisodeOutcome.HALTED_REPEATED_FAILURE`) — it never
@@ -302,10 +304,12 @@ The decision vocabulary (`from shared.orchestration_config import ExecutiveDecis
 `execution`, then one `HALT` entry whose `execution` is `None`; under `advisory_two_track` the
 fourth is `REQUEST_PROPOSAL`, followed by the advised calls.
 
-A recovery call that changes nothing symbolically (a `Nudge`, an `Unjam`) is fine: `apply`
-returns the state unchanged, `_attempt` returns `succeeded(call, pre, post)` with an unchanged
-world, and the monitor reports nothing. The planner never chooses such a call on its own
-(the search discards a revisited state), which is exactly what makes it recovery-only.
+A recovery call with no symbolic effect (a `Nudge`, an `Unjam`) is fine: `apply` returns
+`sym` unchanged, and the planner never chooses it on its own (the search discards a revisited
+state), which is exactly what makes it recovery-only. Its PHYSICAL effect — freeing the stuck
+switch — is a change to a `State` field, so if you declare `apply_world`, predict that change
+there (as the lamp's does); otherwise the monitor reports a world-basis mismatch on the
+successful call.
 
 Once you add the failure, the generated "goal under both policies" test must become "goal
 under advisory, halt under symbolic-primary" — the halt is the design, not a bug.

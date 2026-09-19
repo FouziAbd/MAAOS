@@ -25,13 +25,11 @@ class Environment(EnvironmentBase[State, Call]):
 
     def __init__(self, *, stuck: FrozenSet[str] = frozenset({"l2"})) -> None:
         super().__init__()
-        self._stuck_initially = stuck
-        self._stuck: set[str] = set()
+        self._stuck_initially = stuck                 # configuration: which switch starts stuck
 
     def _reset(self, seed: Optional[int]) -> State:
         # TODO(author): the initial authoritative state (deterministic unless you use `seed`)
-        self._stuck = set(self._stuck_initially)     # the physical truth the model cannot see
-        return State(lamps=("l1", "l2"))
+        return State(lamps=("l1", "l2"), stuck=self._stuck_initially)   # the fact is IN the state
 
     def _is_terminal(self, state: State) -> bool:
         # TODO(author): when no further attempt is possible (the goal is NOT terminal by
@@ -47,15 +45,15 @@ class Environment(EnvironmentBase[State, Call]):
         it is what the runtime reports as an ExecutionDiscrepancy."""
         # TODO(author): drive your backend here
         self.note_primitive_steps(1)
-        bumped = State(pre.lamps, lit=pre.lit, tick=pre.tick + 1)
+        bumped = State(pre.lamps, lit=pre.lit, stuck=pre.stuck, tick=pre.tick + 1)
         if call.op is Op.NUDGE:
-            self._stuck.discard(call.lamp_id)          # frees the switch; the world is unchanged
-            return self.succeeded(call, pre, bumped, detail="switch freed")
-        if call.op is Op.TURN_ON and call.lamp_id in self._stuck:
+            freed = State(pre.lamps, lit=pre.lit, stuck=pre.stuck - {call.lamp_id}, tick=pre.tick + 1)
+            return self.succeeded(call, pre, freed, detail="switch freed")
+        if call.op is Op.TURN_ON and call.lamp_id in pre.stuck:   # the fact the model does not see
             return self.failed(call, pre, bumped, failure_class=FailureStateClass.UNCHANGED,
                                detail="the switch is stuck")
         lit = pre.lit | {call.lamp_id} if call.op is Op.TURN_ON else pre.lit - {call.lamp_id}
-        post = State(pre.lamps, lit=frozenset(lit), tick=pre.tick + 1)
+        post = State(pre.lamps, lit=frozenset(lit), stuck=pre.stuck, tick=pre.tick + 1)
         if post.same_world(pre):
             return self.failed(call, pre, post, failure_class=FailureStateClass.UNCHANGED,
                                detail="already in the requested position")

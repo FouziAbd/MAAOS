@@ -18,7 +18,7 @@ small deterministic domain with a designed physical failure:
   - the fixture's file set equals the scaffold's; every `# TODO(author)` extension point is
     still present; and — the structural pin — per file the top-level definitions and the
     class members equal the scaffold's plus an EXPLICIT allowlist (`Environment.__init__`,
-    the constructor the template names for backend-held physical state), and the imports
+    the constructor the template names for a simulator handle or configuration), and the imports
     equal the scaffold's plus two `typing` names;
   - the lamp domain validates with 0 FAIL / 0 WARN; the sticky lamp makes an applicable
     `TurnOn` fail physically; `symbolic_primary` halts on the repeated failure with the
@@ -345,6 +345,11 @@ class TestTheLampDomainIsTheSecondDomainProof(unittest.TestCase):
         for result in failures:                     # exact failure post-state semantics
             self.assertIs(result.failure_class, FailureStateClass.UNCHANGED)
             self.assertTrue(result.post_state.same_world(result.pre_state))
+        # the physical fact lives IN the authoritative state and is dropped by the projection
+        final = loop.env.export_full_state()
+        self.assertEqual(final.stuck, frozenset({"l2"}))
+        self.assertIn("stuck", final.canonical())
+        self.assertNotIn("stuck", loop.domain.model.project(final).canonical())
         # channel separation: physical failure is discrepancy evidence, never a fault/divergence
         self.assertTrue(all(e.divergences == () and e.faults == () for e in episode.history.entries))
 
@@ -361,6 +366,7 @@ class TestTheLampDomainIsTheSecondDomainProof(unittest.TestCase):
         self.assertEqual(executed[-2:], ["Nudge(l2)", "TurnOn(l2)"])
         self.assertEqual(len(episode.discrepancies), 3)
         self.assertEqual(loop.env.export_full_state().lit, frozenset({"l1", "l2"}))
+        self.assertEqual(loop.env.export_full_state().stuck, frozenset())    # Nudge freed it
         # the advice went through the same gate as any call and is recorded as the proposal
         from shared.skills import ValidatedCall
         nudge = next(e for e in episode.history.entries if e.selected_call is not None
