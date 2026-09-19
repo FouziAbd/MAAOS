@@ -69,6 +69,12 @@ DOMAIN_ENVIRONMENT_MODULES = frozenset({
 #: guarded tree; `nl/` may not import it either).
 NEVER_EXEMPT_ROOTS = frozenset({"legacy", "middleware_layer", "model_layer", "utils", "dspy", "torch"})
 
+#: DK fix: the one file whose STRINGS may mention the `sys.path` / `sys.modules` markers (it
+#: mirrors the text scan for authors and builds a child-interpreter script). Enumerated,
+#: never a glob: for it the check is an AST one (`_sys_attribute_access`) — its own code must
+#: not be able to reach those attributes. The dynamic-import marker has no such exemption.
+TEXT_SCAN_STRING_ONLY = frozenset({"app/validation.py"})
+
 
 def discovered_guarded_packages(root: pathlib.Path = REPO_ROOT):
     """Every top-level package that is part of the V1 contract/symbolic side.
@@ -107,6 +113,33 @@ def imported_modules(path: pathlib.Path):
 
 def python_files(package: str, root: pathlib.Path = REPO_ROOT):
     return sorted((root / package).rglob("*.py"))
+
+
+def _sys_attribute_access(source: str, attrs) -> bool:
+    """True when the CODE (not its strings) can reach `sys.<attr>` for any attr in `attrs`:
+    `sys.path`, an alias (`import sys as s; s.path`), a chain (`os.sys.path`),
+    `from sys import path`, `sys.__dict__`, or `getattr/setattr/delattr/vars(sys, ...)`."""
+    tree = ast.parse(source)
+    attrs = set(attrs) | {"__dict__"}
+    aliases = {"sys"} | {
+        alias.asname for node in ast.walk(tree) if isinstance(node, ast.Import)
+        for alias in node.names if alias.name == "sys" and alias.asname
+    }
+
+    def is_sys(node) -> bool:
+        return (isinstance(node, ast.Name) and node.id in aliases) or (
+            isinstance(node, ast.Attribute) and node.attr == "sys")
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr in attrs and is_sys(node.value):
+            return True
+        if isinstance(node, ast.ImportFrom) and node.module == "sys" and any(
+                a.name in attrs for a in node.names):
+            return True
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in (
+                "getattr", "setattr", "delattr", "vars") and node.args and is_sys(node.args[0]):
+            return True
+    return False
 
 
 def forbidden_import_violations(
@@ -282,15 +315,42 @@ class TestNoBackendImports(unittest.TestCase):
         violations = []
         for package in discovered_guarded_packages():
             for path in python_files(package):
+                rel = path.relative_to(REPO_ROOT).as_posix()
                 text = path.read_text(encoding="utf-8")
+                if rel in TEXT_SCAN_STRING_ONLY:
+                    if _sys_attribute_access(text, {"path", "modules"}):
+                        violations.append(rel)
+                    continue
                 # DK1: `sys.modules` too — a domain's `__init__` (composition role) loads the
                 # runtime before its siblings run, so `sys.modules["runtime..."]` in a
                 # symbolic-side module would be a deterministic escape from the AST scan.
-                # DK3: `app/validation.py` mirrors this scan for authors and spells the two
-                # markers by concatenation ("sys" + ".path") so this text scan stays clean.
                 if "sys.path" in text or "sys.modules" in text:
-                    violations.append(str(path.relative_to(REPO_ROOT)))
+                    violations.append(rel)
         self.assertEqual(violations, [])
+
+    def test_the_string_only_exemption_is_load_bearing_and_ast_checked(self):
+        """The exempt file really mentions the markers in strings (else the exemption is dead),
+        and the AST check catches real attribute access."""
+        for rel in TEXT_SCAN_STRING_ONLY:
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+            strings = [n.value for n in ast.walk(ast.parse(text))
+                       if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+            self.assertTrue(any("sys.path" in s or "sys.modules" in s for s in strings), rel)
+            self.assertFalse(_sys_attribute_access(text, {"path", "modules"}), rel)
+        caught = (
+            "import sys\nsys.path.insert(0, 'x')\n",
+            "import sys\nm = sys.modules['runtime']\n",
+            "import os\nos.sys.path.insert(0, 'x')\n",              # a chain
+            "import sys as s\ns.path.append('x')\n",                # an alias
+            "from sys import modules\n",
+            "import sys\nsys.__dict__['path']\n",
+            "import sys\ngetattr(sys, 'path')\n",
+            "import sys\nvars(sys)['modules']\n",
+        )
+        for source in caught:
+            self.assertTrue(_sys_attribute_access(source, {"path", "modules"}), source)
+        self.assertFalse(_sys_attribute_access("MARKER = 'sys.path'\n", {"path", "modules"}))
+        self.assertFalse(_sys_attribute_access("import sys\nprint(sys.executable)\n", {"path", "modules"}))
 
 
 class TestSymbolicSideCannotReachRuntimeState(unittest.TestCase):

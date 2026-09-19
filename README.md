@@ -49,7 +49,8 @@ runtime/    domain-agnostic core: policy-free executor, SymbolicPrimary/Advisory
             policies, executive loop; imports only shared/ and runtime/ (P4, R2-R4)
 app/        composition root (R4): BoxPush action comparator and `build_loop`, which wires
             environment, domain services, tracks, comparator, recovery and policy into the
-            runtime; the only package that imports both runtime/ and domain/
+            runtime; with the domains/ composition packages, the only place that
+            imports both runtime/ and domain/
 functional_layer/custom_env/box_push/env/box_push_v1_adapter.py
             the P1 adapter: V1Environment over the authoritative backend
 kit/        defaults for domain authors (environment base, derived services, projection

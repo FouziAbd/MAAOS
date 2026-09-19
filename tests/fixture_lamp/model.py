@@ -50,7 +50,8 @@ class Model:
         return MODEL_VERSION
 
     def project(self, state: State, /) -> SymbolicState:
-        # TODO(author): derive the symbolic state from the authoritative one
+        # TODO(author): derive the symbolic state from the authoritative one — `stuck` is
+        # deliberately dropped here: the model stays optimistic about every switch
         return SymbolicState(lit=state.lit)
 
     def apply(self, sym: SymbolicState, call: Call, /) -> SymbolicState:
@@ -83,7 +84,9 @@ class Model:
     def apply_world(self, state: State, call: Call, /) -> State:
         # TODO(author): the intended effect on the authoritative state (optional but
         # recommended: it lets the monitor compare the world basis too)
-        return State(state.lamps, lit=self.apply(self.project(state), call).lit, tick=state.tick)
+        stuck = state.stuck - {call.lamp_id} if call.op is Op.NUDGE else state.stuck
+        return State(state.lamps, lit=self.apply(self.project(state), call).lit, stuck=stuck,
+                     tick=state.tick)
 
 
 MODEL = Model()

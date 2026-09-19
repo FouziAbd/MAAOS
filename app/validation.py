@@ -715,9 +715,11 @@ NEVER_EXEMPT_ROOTS: FrozenSet[str] = frozenset({
 DYNAMIC_ROOTS: FrozenSet[str] = frozenset({"importlib", "imp", "pkgutil", "runpy"})
 COMPOSITION_ROOTS: FrozenSet[str] = frozenset({"runtime", "app", "maaos"})
 ALLOWED_SYMBOLIC_ROOTS: FrozenSet[str] = frozenset({"shared", "kit"})
-#: raw-text markers the guard bans (spelled by concatenation because the guard's own text
-#: scan covers this file too; the guard's comment names this spelling)
-_TEXT_MARKERS: Tuple[str, ...] = ("sys" + ".path", "sys" + ".modules", "__import" + "__")
+#: raw-text markers the guard bans. This file is the guard's one enumerated string-only
+#: exemption (`tests/test_no_backend_imports.py::TEXT_SCAN_STRING_ONLY`) for the two `sys`
+#: markers: it may NAME them in strings while its own code is AST-checked never to reach
+#: them. The dynamic-import builtin has no such exemption, so that marker stays concatenated.
+_TEXT_MARKERS: Tuple[str, ...] = ("sys.path", "sys.modules", "__import" + "__")
 
 
 def _imports(path: pathlib.Path, package: str):
@@ -859,7 +861,7 @@ def check_lazy_backend(name: str, *, repo_root: pathlib.Path = _REPO_ROOT) -> Fi
         "import json, sys\n"
         f"import domains.{name}\n"
         f"roots = {sorted(BACKEND_ROOTS)!r}\n"
-        "print(json.dumps(sorted(m for m in sys." + "modules if m.split('.')[0] in roots)))\n"
+        "print(json.dumps(sorted(m for m in sys.modules if m.split('.')[0] in roots)))\n"
     )
     env = dict(os.environ, PYTHONPATH=str(repo_root), SDL_VIDEODRIVER="dummy")
     try:
