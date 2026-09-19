@@ -1,5 +1,6 @@
 """`python -m maaos ...` — the domain-kit command line (DK3).
 
+    python -m maaos create-domain <name> [--target DIR]   generate a runnable domain skeleton
     python -m maaos validate-domain <name> [--budget N]   author-facing connection check
     python -m maaos list-domains                          the names in domains/registry.py
 
@@ -7,16 +8,18 @@ Names resolve through the static `domains.registry.REGISTRY` and nowhere else: n
 directory scanning, no dynamic import (the import guard forbids it in this package). Exit
 status: 0 when no check FAILED, 1 otherwise, 2 for a usage error.
 
-`create-domain` arrives in DK4.
+`create-domain` writes new files only and prints the registry lines to add by hand.
 """
 from __future__ import annotations
 
 import argparse
+import pathlib
 import sys
 from typing import Optional, Sequence
 
 from app.validation import validate_named
 from domains.registry import REGISTRY
+from maaos.scaffold import ScaffoldError, create_domain
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -27,6 +30,10 @@ def _parser() -> argparse.ArgumentParser:
     validate.add_argument("--budget", type=int, default=50,
                           help="executive-step budget for the bounded validation episodes (default 50)")
     sub.add_parser("list-domains", help="print the registered domain names")
+    create = sub.add_parser("create-domain", help="generate a runnable domain skeleton (new files only)")
+    create.add_argument("name", help="a lowercase Python identifier, e.g. warehouse")
+    create.add_argument("--target", default=None,
+                        help="write the package here instead of domains/<name>/ (repo-relative)")
     return parser
 
 
@@ -35,6 +42,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.command == "list-domains":
         for name in sorted(REGISTRY):
             print(name)
+        return 0
+    if args.command == "create-domain":
+        try:
+            created = create_domain(
+                args.name, registered=REGISTRY,
+                target=pathlib.Path(args.target) if args.target else None,
+            )
+        except ScaffoldError as error:
+            print(f"create-domain: {error}", file=sys.stderr)
+            return 1
+        print(created.next_steps())
         return 0
     if args.command == "validate-domain":
         if args.budget <= 0:
