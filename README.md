@@ -52,7 +52,24 @@ app/        composition root (R4): BoxPush action comparator and `build_loop`, w
             runtime; the only package that imports both runtime/ and domain/
 functional_layer/custom_env/box_push/env/box_push_v1_adapter.py
             the P1 adapter: V1Environment over the authoritative backend
+kit/        defaults for domain authors (environment base, derived services, projection
+            track, BFS planner, default comparator, keys) — extracted from BoxPush ∩ probe
+domains/    one package per domain (domains/box_push/ declares BoxPush over the frozen
+            modules; domains/registry.py is the hand-edited registry)
+maaos/      python -m maaos create-domain | validate-domain | list-domains
 ```
+
+## Add a domain
+
+```bash
+python -m maaos create-domain warehouse        # a runnable skeleton, every extension point marked
+#   ... add the two lines it prints to domains/registry.py (by hand) ...
+python -m maaos validate-domain warehouse      # author-facing report: 28 PASS on the untouched scaffold
+```
+
+Then edit `types.py`, `model.py`, `environment.py`, `__init__.py` and re-validate. The guide
+[`docs/domains/ADDING_A_DOMAIN.md`](docs/domains/ADDING_A_DOMAIN.md) is complete on its own; a
+finished small example is [`tests/fixture_lamp/`](tests/fixture_lamp/).
 
 Boundaries are enforced, not conventional: fail-closed import guards (backend, dspy, and
 `runtime` unreachable from the reasoning tracks; predictor unreachable from planning), typed
@@ -102,4 +119,4 @@ defects are recorded in section18 before any revival).
 Python 3.12, Linux/WSL2; dependencies pinned exactly in `requirements.txt` and mirrored in
 `pyproject.toml`, with the full transitive environment locked (hashes included) in `uv.lock`
 — `uv sync --locked` restores it; CI (`.github/workflows/offline-tests.yml`) runs the offline
-suite plus `ruff check shared runtime app` and `mypy` (scope in `pyproject.toml`) from that lock.
+suite plus `ruff check shared runtime app kit domains maaos` and `mypy` (scope in `pyproject.toml`) from that lock.

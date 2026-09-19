@@ -33,7 +33,7 @@ class TestDomain(unittest.TestCase):
     def test_goal_reached_under_both_policies(self):
         # Once you add a designed physical failure, symbolic_primary HALTS on it by design
         # (that is the architecture's point): narrow this to advisory_two_track and assert
-        # the halt in the test below.
+        # the halt in a new test written from the TODO at the end of this class.
         for policy in OrchestrationPolicy:
             with self.subTest(policy=policy.value):
                 loop = assemble_loop(DOMAIN, config=OrchestrationConfig(policy=policy))
@@ -47,9 +47,12 @@ class TestDomain(unittest.TestCase):
     #                                         / EpisodeOutcome.GOAL_REACHED (advisory_two_track)
     #   episode.discrepancies                 the ExecutionDiscrepancy values; each has .call and
     #                                         .kind == DiscrepancyKind.EXECUTION_FAILURE_OF_APPLICABLE_SKILL
-    #   episode.history.entries               one entry per executive cycle: .selected_call,
-    #                                         .execution (the ExecutionResult or None), .decision
-    #   (imports: from shared.discrepancy import DiscrepancyKind)
+    #   episode.history.entries               one entry per DECISION: .decision, .selected_call,
+    #                                         .execution (an ExecutionResult, or None for the halt /
+    #                                         request_proposal entry) — filter on .execution for attempts
+    #   ExecutiveDecision.EXECUTE / REPLAN / REQUEST_PROPOSAL / HALT
+    #   (imports: from shared.discrepancy import DiscrepancyKind;
+    #             from shared.orchestration_config import ExecutiveDecision)
 
 
 if __name__ == "__main__":

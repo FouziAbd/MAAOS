@@ -157,7 +157,8 @@ name" is DK001; DK002 is a registered object that is not a `DomainPackage`):
 | Code | Check |
 |---|---|
 | DK001 / DK002 | registry: name registered / value is a `DomainPackage` whose `name` equals the key |
-| DK010–DK017 | contracts: services, symbolic track, comparator, environment, task, state, call (+ value equality), reasoning track — missing members listed by name |
+| DK010–DK017 | contracts: services, symbolic track, comparator, environment, task, state, call, reasoning track — missing members listed by name; a field shadowing a contract METHOD is named |
+| DK018 | calls compare by value (a frozen dataclass) |
 | DK020 | default task declared (guaranteed by the record; reported for visibility) |
 | DK030–DK032 | environment: reset returns a state, `export_full_state` stable, `observe()` does not alias, execute-before-reset is a `"refused:"` fault |
 | DK040–DK043 | plan: typed result, deterministic, heads grounded, `examples.ungrounded_call` rejected |
@@ -165,6 +166,7 @@ name" is DK001; DK002 is a registered object that is not a `DomainPackage`):
 | DK060 | predict returns a `Prediction` with typed keys |
 | DK070 / DK071 | bounded episodes under both policies without a track / one with the declared track; FAULTED is a FAIL, HALTED_REPEATED_FAILURE without a recovery provider under advisory is a WARN |
 | DK080 / DK081 | package layout: module roles + no dynamic import / the backend door is enumerated in the guard (never for an LM framework or a legacy tree) |
+| DK082 | `import domains.<name>` in a fresh interpreter loads no backend module (the backend import belongs inside the environment factory) |
 | DK090 | services and plan stamp the same model version |
 
 Design rules: every check runs under its own guard (an exception is that check's FAIL with

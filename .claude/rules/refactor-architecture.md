@@ -6,6 +6,9 @@ paths:
   - "domain/**/*"
   - "symbolic/**/*"
   - "nl/**/*"
+  - "kit/**/*"
+  - "domains/**/*"
+  - "maaos/**/*"
   - "functional_layer/custom_env/box_push/env/box_push_v1_*.py"
   - "tests/**/*"
 ---
