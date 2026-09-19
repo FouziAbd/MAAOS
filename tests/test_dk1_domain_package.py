@@ -150,9 +150,17 @@ class TestDomainModuleRoles(unittest.TestCase):
     def test_the_real_tree_has_no_backend_violations_outside_the_door(self):
         self.assertEqual(backend_violations(discovered_guarded_packages()), [])
 
-    def test_the_exempt_set_is_exactly_the_registered_domains_environment_modules(self):
-        expected = {f"domains/{name}/environment.py" for name in REGISTRY}
+    def test_the_exempt_set_is_exactly_the_registered_backend_wrapping_domains(self):
+        """Static and enumerated, never a glob — and exactly the registered domains whose
+        environment.py imports a backend root (a pure-Python domain needs no line)."""
+        expected = set()
+        for name in REGISTRY:
+            door = _REPO_ROOT / "domains" / name / "environment.py"
+            if door.is_file() and any(m.split(".")[0] in FORBIDDEN_PREFIXES
+                                      for m, _ in imported_modules(door)):
+                expected.add(f"domains/{name}/environment.py")
         self.assertEqual(set(DOMAIN_ENVIRONMENT_MODULES), expected)
+        self.assertIn("domains/box_push/environment.py", DOMAIN_ENVIRONMENT_MODULES)
         for rel in DOMAIN_ENVIRONMENT_MODULES:
             self.assertTrue((_REPO_ROOT / rel).is_file(), rel)
 
@@ -432,7 +440,8 @@ class TestImportingDomainsLoadsNoBackend(unittest.TestCase):
         )
         report = json.loads(completed.stdout.strip().splitlines()[-1])
         self.assertEqual(report["loaded"], [], f"backend modules loaded: {report['loaded']}")
-        self.assertEqual(report["names"], ["box_push"])
+        self.assertEqual(report["names"], sorted(REGISTRY))
+        self.assertIn("box_push", report["names"])
         # positive control: the scan DOES see the backend once the factory runs
         self.assertIn("functional_layer.custom_env.box_push.env.box_push_v1_adapter", report["after"])
 

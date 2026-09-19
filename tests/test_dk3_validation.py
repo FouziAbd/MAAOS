@@ -221,7 +221,7 @@ class TestBrokenPackagesAreReportedByCode(unittest.TestCase):
         self.assertIn("author bug in project()", failed.message)
         self.assertIn("BrokenModel", failed.message)
 
-    def test_a_member_that_raises_attribute_error_at_runtime_is_named_with_its_protocol(self):
+    def test_a_property_where_a_method_is_expected_is_caught_statically(self):
         class Vanishing(ProjectionTrack):
             @property
             def record_outcome(self):
@@ -229,9 +229,18 @@ class TestBrokenPackagesAreReportedByCode(unittest.TestCase):
 
         model = KModel(COUNTER)
         broken = dataclasses.replace(kit_package(), symbolic_track=lambda: Vanishing(model.project))
+        report = self._fails(broken, {"DK011"})
+        self.assertIn("record_outcome must be a METHOD", report.by_code("DK011").message)
+
+    def test_a_member_that_raises_attribute_error_at_runtime_is_named_with_its_protocol(self):
+        class Forgetful(ProjectionTrack):
+            def record_outcome(self, result, /):
+                raise AttributeError("record_outcome")     # e.g. a missing internal attribute
+
+        model = KModel(COUNTER)
+        broken = dataclasses.replace(kit_package(), symbolic_track=lambda: Forgetful(model.project))
         report = self._fails(broken, {"DK070"})
-        message = report.by_code("DK070").message
-        self.assertIn("record_outcome is a SymbolicTrack member", message)
+        self.assertIn("record_outcome is a SymbolicTrack member", report.by_code("DK070").message)
 
     def test_plan_returning_the_wrong_type(self):
         class BadPlan(KModel):
@@ -274,6 +283,36 @@ class TestBrokenPackagesAreReportedByCode(unittest.TestCase):
         report = self._fails(dataclasses.replace(kit_package(), services=_services(Mismatched(COUNTER))),
                              {"DK090"})
         self.assertIn("same ModelVersion", report.by_code("DK090").message)
+
+    def test_a_field_shadowing_a_contract_method_is_dk016_not_a_runtime_type_error(self):
+        @dataclasses.dataclass(frozen=True, slots=True)
+        class Shadowing:
+            op: str
+            counter_id: str
+            key: str = "k"                    # shadows Call.key() — the runtime calls it
+
+            @property
+            def skill(self):
+                return self.op
+
+            @property
+            def cost(self):
+                return 1
+
+            def canonical(self):
+                return {"op": self.op, "counter": self.counter_id}
+
+            def identities(self):
+                return frozenset({self.counter_id})
+
+        class ShadowPlan(KModel):
+            def plan(self, sym, identities, /):
+                return PlanFound(plan=(Shadowing("Increment", COUNTER),), model_version=self.model_version)
+
+        report = self._fails(dataclasses.replace(kit_package(), services=_services(ShadowPlan(COUNTER))),
+                             {"DK016"})
+        self.assertIn("key must be a METHOD", report.by_code("DK016").message)
+        self.assertIs(report.by_code("DK070").status, Status.SKIPPED)
 
     def test_a_call_type_with_identity_equality_is_dk018(self):
         class Unequal:
@@ -483,7 +522,9 @@ class TestValidatorMirrorsTheGuard(unittest.TestCase):
         self.assertEqual(BACKEND_ROOTS, FORBIDDEN_PREFIXES)
         self.assertEqual(NEVER_EXEMPT_ROOTS, GUARD_NEVER_EXEMPT)
         self.assertEqual(DYNAMIC_ROOTS, FORBIDDEN_DYNAMIC)
-        self.assertEqual(set(DOMAIN_ENVIRONMENT_MODULES), {f"domains/{n}/environment.py" for n in REGISTRY})
+        # the door set is pinned against the registry (backend-wrapping domains only) in
+        # tests/test_dk1_domain_package.py; here: every listed door is a registered domain
+        self.assertTrue(all(d.split("/")[1] in REGISTRY for d in DOMAIN_ENVIRONMENT_MODULES))
 
     CASES = (
         ({}, False),
@@ -563,7 +604,8 @@ class TestCli(unittest.TestCase):
     def test_list_domains(self):
         code, out, _ = self._main("list-domains")
         self.assertEqual(code, 0)
-        self.assertEqual(out.split(), ["box_push"])
+        self.assertEqual(out.split(), sorted(REGISTRY))
+        self.assertIn("box_push", out.split())
 
     def test_validate_box_push_exits_zero(self):
         code, out, _ = self._main("validate-domain", "box_push")

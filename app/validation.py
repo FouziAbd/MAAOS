@@ -205,7 +205,7 @@ class ValidationReport:
         return "\n".join(lines)
 
 
-def _author_frame(error: BaseException) -> str:
+def author_frame(error: BaseException) -> str:
     """The innermost traceback frame inside `domains/` — the author's own file — or ''."""
     for frame in reversed(traceback.extract_tb(error.__traceback__)):
         path = pathlib.Path(frame.filename)
@@ -262,7 +262,7 @@ class _Checks:
             body()
         except InfrastructureFaultError as error:
             self.failed(code, f"{what} raised a typed infrastructure fault; see details",
-                        f"{error.fault.kind}: {error.fault.message}{_author_frame(error)}")
+                        f"{error.fault.kind}: {error.fault.message}{author_frame(error)}")
         except AttributeError as error:
             name = getattr(error, "name", None) or str(error)
             owner = _MEMBER_OF.get(str(name))
@@ -270,10 +270,10 @@ class _Checks:
                     f"{name} (see {GUIDE} §{owner})" if owner else
                     f"{name!r} is not a contract member — a bug inside the domain's own code")
             self.failed(code, f"{what} raised AttributeError: {hint}",
-                        f"{error}{_author_frame(error)}")
+                        f"{error}{author_frame(error)}")
         except Exception as error:                      # noqa: BLE001 — author-facing by design
             self.failed(code, f"{what} raised {type(error).__name__}; see details",
-                        f"{error}{_author_frame(error)}")
+                        f"{error}{author_frame(error)}")
 
     # ── protocol conformance with missing-member listing ──
     @staticmethod
@@ -300,15 +300,33 @@ class _Checks:
                         f"§{protocol.__name__}", f"got {type(obj).__name__}")
             self.block(code)
             return False
-        if not isinstance(obj, protocol):
-            self.failed(code,
-                        f"{where} has every member of {protocol.__name__} by name, but one of "
-                        f"them is not a method/property (see {GUIDE} §{protocol.__name__})",
+        shadowed = self._shadowed_methods(obj, protocol)
+        if shadowed or not isinstance(obj, protocol):
+            what = (f"{', '.join(shadowed)} must be a METHOD; a field or attribute of the same "
+                    f"name shadows it (rename the field)" if shadowed else
+                    "one of its members is not a method/property")
+            self.failed(code, f"{where}: {what} (see {GUIDE} §{protocol.__name__})",
                         f"got {type(obj).__name__}")
             self.block(code)
             return False
         self.passed(code, f"{type(obj).__name__}")
         return True
+
+    @staticmethod
+    def _shadowed_methods(obj: object, protocol: type) -> List[str]:
+        """Protocol members that are METHODS on the protocol but not callable on the object
+        (e.g. a dataclass field named `key` shadowing `Call.key()`)."""
+        sentinel = object()
+        found = []
+        for member in getattr(protocol, "__protocol_attrs__", ()):
+            if not inspect.isfunction(inspect.getattr_static(protocol, member, None)):
+                continue                                # properties: presence is enough
+            on_type = inspect.getattr_static(type(obj), member, sentinel)
+            on_obj = inspect.getattr_static(obj, member, sentinel)
+            value = on_obj if on_obj is not sentinel else on_type
+            if isinstance(value, property) or (value is not sentinel and not callable(value)):
+                found.append(member)
+        return sorted(found)
 
     # ── DK010-DK020: contracts ──
     def check_contracts(self) -> None:
@@ -884,6 +902,7 @@ def validate_named(
 
 __all__ = [
     "BACKEND_ROOTS",
+    "author_frame",
     "CATALOGUE",
     "CLI_CODES",
     "DYNAMIC_ROOTS",
