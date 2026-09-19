@@ -31,6 +31,9 @@ class TestDomain(unittest.TestCase):
         self.assertEqual([f.code for f in report.findings if f.status is Status.FAIL], [])
 
     def test_goal_reached_under_both_policies(self):
+        # Once you add a designed physical failure, symbolic_primary HALTS on it by design
+        # (that is the architecture's point): narrow this to advisory_two_track and assert
+        # the halt in the test below.
         for policy in OrchestrationPolicy:
             with self.subTest(policy=policy.value):
                 loop = assemble_loop(DOMAIN, config=OrchestrationConfig(policy=policy))

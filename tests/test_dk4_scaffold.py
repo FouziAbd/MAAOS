@@ -266,6 +266,50 @@ class TestTheFixtureWasChangedOnlyThroughExtensionPoints(unittest.TestCase):
             self.assertEqual([f.status for f in check_layout("lamp", repo_root=root)], [Status.PASS, Status.PASS])
 
 
+class TestTheLampDomainIsTheSecondDomainProof(unittest.TestCase):
+    """The success criterion, mechanically: a small deterministic domain with a designed
+    physical failure, built from the scaffold through its extension points, validated and
+    run without any edit under runtime/, shared/, kit/ or app/ (the change-set pin is the
+    reviewer's `git diff --name-only main...HEAD` before merge)."""
+
+    @classmethod
+    def setUpClass(cls):
+        from tests.fixture_lamp import DOMAIN
+        cls.domain = DOMAIN
+
+    def test_validates_with_no_fail_and_no_warn(self):
+        report = validate_domain(self.domain)
+        self.assertEqual([f.code for f in report.findings if f.status is Status.FAIL], [], report.render())
+        self.assertEqual([f.code for f in report.findings if f.status is Status.WARN], [], report.render())
+        self.assertEqual([f.code for f in report.findings if f.status is Status.SKIPPED], ["DK017", "DK071"])
+
+    def test_symbolic_primary_halts_on_the_stuck_switch_with_typed_evidence(self):
+        from app.assembly import assemble_loop
+        from runtime.loop import EpisodeOutcome
+        from shared.discrepancy import DiscrepancyKind
+        from shared.orchestration_config import OrchestrationConfig, OrchestrationPolicy
+        loop = assemble_loop(self.domain, config=OrchestrationConfig(policy=OrchestrationPolicy.SYMBOLIC_PRIMARY))
+        episode = loop.run()
+        self.assertIs(episode.outcome, EpisodeOutcome.HALTED_REPEATED_FAILURE)
+        self.assertEqual([(str(d.call), d.kind) for d in episode.discrepancies],
+                         [("TurnOn(l2)", DiscrepancyKind.EXECUTION_FAILURE_OF_APPLICABLE_SKILL)] * 3)
+        self.assertEqual(loop.executive_steps_charged, 4)
+
+    def test_advisory_two_track_recovers_through_the_advice_and_reaches_the_goal(self):
+        from app.assembly import assemble_loop
+        from runtime.loop import EpisodeOutcome
+        from shared.orchestration_config import ExecutiveDecision, OrchestrationConfig, OrchestrationPolicy
+        loop = assemble_loop(self.domain, config=OrchestrationConfig(policy=OrchestrationPolicy.ADVISORY_TWO_TRACK))
+        episode = loop.run()
+        self.assertIs(episode.outcome, EpisodeOutcome.GOAL_REACHED)
+        decisions = [e.decision for e in episode.history.entries]
+        self.assertEqual(decisions.count(ExecutiveDecision.REQUEST_PROPOSAL), 1)
+        executed = [str(e.selected_call) for e in episode.history.entries if e.execution is not None]
+        self.assertEqual(executed[-2:], ["Nudge(l2)", "TurnOn(l2)"])
+        self.assertEqual(len(episode.discrepancies), 3)
+        self.assertTrue(loop.env.export_full_state().lit == frozenset({"l1", "l2"}))
+
+
 class TestTheLampDomainRunsWithoutBoxPushOrTheBackend(unittest.TestCase):
     def test_a_full_episode_under_both_policies_loads_no_boxpush_or_backend_module(self):
         forbidden = sorted(FORBIDDEN_PREFIXES | {"domain", "symbolic", "nl"})

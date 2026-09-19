@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Dict, FrozenSet
+from typing import Any, Dict, FrozenSet, Tuple
 
 from kit import world_key
 from shared.comparison_keys import WorldKey
@@ -25,18 +25,19 @@ class Op(StrEnum):
     """The executive actions. TODO(author): rename/extend."""
     TURN_ON = "TurnOn"
     TURN_OFF = "TurnOff"
+    NUDGE = "Nudge"          # frees a stuck switch; no symbolic effect (recovery advice only)
 
 
 @dataclass(frozen=True, slots=True)
 class State:
     """TODO(author): the authoritative world. Keep it a frozen dataclass; put the world
     content in `canonical()` and episode bookkeeping (tick counters) OUTSIDE it."""
-    switch_id: str
-    on: bool = False
+    lamps: Tuple[str, ...]
+    lit: FrozenSet[str] = frozenset()
     tick: int = 0                                  # episode bookkeeping, not world content
 
     def canonical(self) -> Dict[str, Any]:
-        return {"switch": self.switch_id, "on": self.on}
+        return {"lamps": list(self.lamps), "lit": sorted(self.lit)}
 
     def world_key(self) -> WorldKey:
         return world_key(self.canonical())
@@ -45,14 +46,14 @@ class State:
         return self.canonical() == other.canonical()
 
     def identities(self) -> FrozenSet[str]:
-        return frozenset({self.switch_id})
+        return frozenset(self.lamps)
 
 
 @dataclass(frozen=True, slots=True)
 class Call:
     """TODO(author): one grounded action and its parameters."""
     op: Op
-    switch_id: str
+    lamp_id: str
 
     @property
     def skill(self) -> Op:
@@ -63,16 +64,16 @@ class Call:
         return 1
 
     def canonical(self) -> Dict[str, Any]:
-        return {"op": str(self.op), "switch": self.switch_id}
+        return {"op": str(self.op), "lamp": self.lamp_id}
 
     def key(self) -> str:
         return json.dumps(self.canonical(), sort_keys=True, separators=(",", ":"))
 
     def identities(self) -> FrozenSet[str]:
-        return frozenset({self.switch_id})
+        return frozenset({self.lamp_id})
 
     def __str__(self) -> str:
-        return f"{self.op}({self.switch_id})"
+        return f"{self.op}({self.lamp_id})"
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,13 +81,13 @@ class Task:
     """TODO(author): the goal as a pure test over the authoritative state."""
     task_id: str
     description: str
-    switch_id: str
+    lamps: Tuple[str, ...]
 
     def is_satisfied_by(self, state: State, /) -> bool:
-        return state.switch_id == self.switch_id and state.on
+        return set(self.lamps) <= state.lit
 
     def canonical(self) -> Dict[str, Any]:
-        return {"task_id": self.task_id, "description": self.description, "switch": self.switch_id}
+        return {"task_id": self.task_id, "description": self.description, "lamps": list(self.lamps)}
 
 
 __all__ = ["Call", "Op", "State", "Task"]

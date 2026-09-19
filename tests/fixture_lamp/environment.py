@@ -12,7 +12,7 @@ typed faults); you write three hooks.
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import FrozenSet, Optional
 
 from kit import EnvironmentBase
 from shared.execution import FailureStateClass
@@ -23,9 +23,15 @@ from .types import Call, Op, State
 class Environment(EnvironmentBase[State, Call]):
     call_type = Call
 
+    def __init__(self, *, stuck: FrozenSet[str] = frozenset({"l2"})) -> None:
+        super().__init__()
+        self._stuck_initially = stuck
+        self._stuck: set[str] = set()
+
     def _reset(self, seed: Optional[int]) -> State:
         # TODO(author): the initial authoritative state (deterministic unless you use `seed`)
-        return State(switch_id="s1", on=False)
+        self._stuck = set(self._stuck_initially)     # the physical truth the model cannot see
+        return State(lamps=("l1", "l2"))
 
     def _is_terminal(self, state: State) -> bool:
         # TODO(author): when no further attempt is possible (the goal is NOT terminal by
@@ -41,7 +47,15 @@ class Environment(EnvironmentBase[State, Call]):
         it is what the runtime reports as an ExecutionDiscrepancy."""
         # TODO(author): drive your backend here
         self.note_primitive_steps(1)
-        post = State(pre.switch_id, on=call.op is Op.TURN_ON, tick=pre.tick + 1)
+        bumped = State(pre.lamps, lit=pre.lit, tick=pre.tick + 1)
+        if call.op is Op.NUDGE:
+            self._stuck.discard(call.lamp_id)          # frees the switch; the world is unchanged
+            return self.succeeded(call, pre, bumped, detail="switch freed")
+        if call.op is Op.TURN_ON and call.lamp_id in self._stuck:
+            return self.failed(call, pre, bumped, failure_class=FailureStateClass.UNCHANGED,
+                               detail="the switch is stuck")
+        lit = pre.lit | {call.lamp_id} if call.op is Op.TURN_ON else pre.lit - {call.lamp_id}
+        post = State(pre.lamps, lit=frozenset(lit), tick=pre.tick + 1)
         if post.same_world(pre):
             return self.failed(call, pre, post, failure_class=FailureStateClass.UNCHANGED,
                                detail="already in the requested position")

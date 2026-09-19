@@ -19,7 +19,7 @@ from .types import Call, Op, State, Task
 # ── tasks ─────────────────────────────────────────────────────────────────────────────
 # TODO(author): declare the named tasks of the domain (at least one) and the default.
 TASKS = {
-    "turn_on": Task(task_id="turn_on", description="Turn the switch on.", switch_id="s1"),
+    "light_all": Task(task_id="light_all", description="Light both lamps.", lamps=("l1", "l2")),
 }
 
 # ── examples for validate-domain (optional, recommended) ──────────────────────────────
@@ -27,7 +27,7 @@ TASKS = {
 # preconditions FAIL in the initial state.
 EXAMPLES = DomainExamples(
     ungrounded_call=Call(Op.TURN_ON, "ghost"),
-    inapplicable_call=Call(Op.TURN_OFF, "s1"),
+    inapplicable_call=Call(Op.TURN_OFF, "l1"),
 )
 
 
@@ -39,13 +39,16 @@ def recover(discrepancy: ExecutionDiscrepancy[Call]) -> tuple[Call, ...]:
     TODO(author): return the calls that should be tried after `discrepancy.call` failed
     physically; return () to advise nothing (the advisory policy then halts like the
     symbolic-primary one)."""
+    failed = discrepancy.call
+    if failed.op is Op.TURN_ON:
+        return (Call(Op.NUDGE, failed.lamp_id), Call(Op.TURN_ON, failed.lamp_id))
     return ()
 
 
 DOMAIN = DomainPackage[State, "SymbolicState", Call, Task, object](  # type: ignore[type-var]
     name="lamp",
     tasks=TASKS,
-    default_task="turn_on",
+    default_task="light_all",
     environment=make_environment,
     services=lambda task: DerivedDomainServices(MODEL, apply_world=MODEL.apply_world),
     symbolic_track=lambda: ProjectionTrack(MODEL.project),

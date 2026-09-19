@@ -33,10 +33,10 @@ MODEL_VERSION = ModelVersion(revision=0, label="lamp-v0")   # TODO(author): bump
 @dataclass(frozen=True, slots=True)
 class SymbolicState:
     """TODO(author): the symbolic view the planner reasons over."""
-    on: bool
+    lit: FrozenSet[str]
 
     def canonical(self) -> Dict[str, Any]:
-        return {"on": self.on}
+        return {"lit": sorted(self.lit)}
 
     def symbolic_key(self) -> SymbolicKey:
         return symbolic_key(self.canonical())
@@ -51,36 +51,39 @@ class Model:
 
     def project(self, state: State, /) -> SymbolicState:
         # TODO(author): derive the symbolic state from the authoritative one
-        return SymbolicState(on=state.on)
+        return SymbolicState(lit=state.lit)
 
     def apply(self, sym: SymbolicState, call: Call, /) -> SymbolicState:
         # TODO(author): the deterministic intended effect of each action
         if call.op is Op.TURN_ON:
-            return SymbolicState(on=True)
-        return SymbolicState(on=False)
+            return SymbolicState(lit=sym.lit | {call.lamp_id})
+        if call.op is Op.TURN_OFF:
+            return SymbolicState(lit=sym.lit - {call.lamp_id})
+        return sym                                  # Nudge: no symbolic effect
 
     def applicable(self, sym: SymbolicState, call: Call, /) -> CallValidation:
-        # TODO(author): preconditions over the SYMBOLIC state only (optimistic by design)
-        if call.op is Op.TURN_ON and sym.on:
-            return SymbolicallyInapplicable(reason=f"{call}: already on", call=call,
-                                            unsatisfied=("not on",))
-        if call.op is Op.TURN_OFF and not sym.on:
-            return SymbolicallyInapplicable(reason=f"{call}: already off", call=call,
-                                            unsatisfied=("on",))
+        # TODO(author): preconditions over the SYMBOLIC state only (optimistic by design):
+        # the model does not know a switch can be stuck — that is the environment's truth
+        if call.op is Op.TURN_ON and call.lamp_id in sym.lit:
+            return SymbolicallyInapplicable(reason=f"{call}: already lit", call=call,
+                                            unsatisfied=("not lit",))
+        if call.op is Op.TURN_OFF and call.lamp_id not in sym.lit:
+            return SymbolicallyInapplicable(reason=f"{call}: already dark", call=call,
+                                            unsatisfied=("lit",))
         return ValidatedCall(call=call)
 
     def plan(self, sym: SymbolicState, identities: FrozenSet[str], /) -> PlannerResult:
         # TODO(author): the goal test and the candidate calls (enumerated from identities)
-        candidates = [Call(op, switch) for switch in sorted(identities) for op in Op]
+        candidates = [Call(op, lamp) for lamp in sorted(identities) for op in (Op.TURN_ON, Op.TURN_OFF)]
         return bfs_plan(
-            sym, is_goal=lambda s: s.on, candidates=candidates,
+            sym, is_goal=lambda s: identities <= s.lit, candidates=candidates,
             applicable=self.applicable, apply=self.apply, model_version=MODEL_VERSION,
         )
 
     def apply_world(self, state: State, call: Call, /) -> State:
         # TODO(author): the intended effect on the authoritative state (optional but
         # recommended: it lets the monitor compare the world basis too)
-        return State(state.switch_id, on=call.op is Op.TURN_ON, tick=state.tick)
+        return State(state.lamps, lit=self.apply(self.project(state), call).lit, tick=state.tick)
 
 
 MODEL = Model()
