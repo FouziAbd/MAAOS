@@ -41,8 +41,15 @@ class TestDomain(unittest.TestCase):
                 self.assertIs(episode.outcome, EpisodeOutcome.GOAL_REACHED, episode.reason)
 
     # TODO(author): add your designed physical failure — an applicable call that fails in
-    # the environment — and assert the ExecutionDiscrepancy the runtime reports for it, the
-    # halt under symbolic_primary, and the recovery under advisory_two_track.
+    # the environment — and assert what the runtime reports for it. The pieces you need:
+    #   episode = assemble_loop(DOMAIN, config=OrchestrationConfig(policy=...)).run()
+    #   episode.outcome                       EpisodeOutcome.HALTED_REPEATED_FAILURE (symbolic_primary)
+    #                                         / EpisodeOutcome.GOAL_REACHED (advisory_two_track)
+    #   episode.discrepancies                 the ExecutionDiscrepancy values; each has .call and
+    #                                         .kind == DiscrepancyKind.EXECUTION_FAILURE_OF_APPLICABLE_SKILL
+    #   episode.history.entries               one entry per executive cycle: .selected_call,
+    #                                         .execution (the ExecutionResult or None), .decision
+    #   (imports: from shared.discrepancy import DiscrepancyKind)
 
 
 if __name__ == "__main__":

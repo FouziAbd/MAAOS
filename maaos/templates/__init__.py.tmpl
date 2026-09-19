@@ -10,10 +10,11 @@ from __future__ import annotations
 
 from app.domain_package import DomainExamples, DomainPackage
 from kit import DefaultProposalComparator, DerivedDomainServices, ProjectionTrack
+from shared.contracts import AdvisoryProposal
 from shared.discrepancy import ExecutionDiscrepancy
 
 from .environment import make_environment
-from .model import MODEL
+from .model import MODEL, SymbolicState
 from .types import Call, Op, State, Task
 
 # ── tasks ─────────────────────────────────────────────────────────────────────────────
@@ -36,13 +37,19 @@ def recover(discrepancy: ExecutionDiscrepancy[Call]) -> tuple[Call, ...]:
     """Advice after a physically failed call. It is ADVICE: every call it returns passes the
     same grounding/applicability gates and the same executor as any other call.
 
+    When it is consulted: under advisory_two_track, after the SAME (state, call) has failed
+    `repeated_failure_threshold` times (3 by default) — the first failures are retried, the
+    symbolic model is never patched. The tuple you return is executed IN ORDER before the
+    planner runs again. `discrepancy` carries `.call` (the failed call), `.kind`, `.message`
+    and the predicted/observed keys; the environment's hidden reason is NOT visible here.
+
     TODO(author): return the calls that should be tried after `discrepancy.call` failed
     physically; return () to advise nothing (the advisory policy then halts like the
     symbolic-primary one)."""
     return ()
 
 
-DOMAIN = DomainPackage[State, "SymbolicState", Call, Task, object](  # type: ignore[type-var]
+DOMAIN: DomainPackage[State, SymbolicState, Call, Task, AdvisoryProposal] = DomainPackage(
     name="__NAME__",
     tasks=TASKS,
     default_task="turn_on",
@@ -50,7 +57,7 @@ DOMAIN = DomainPackage[State, "SymbolicState", Call, Task, object](  # type: ign
     services=lambda task: DerivedDomainServices(MODEL, apply_world=MODEL.apply_world),
     symbolic_track=lambda: ProjectionTrack(MODEL.project),
     recovery_provider=recover,
-    comparator=lambda: DefaultProposalComparator(),
+    comparator=lambda: DefaultProposalComparator[Call, AdvisoryProposal](),
     reasoning_track=None,            # an offline advisory track may be declared later
     examples=EXAMPLES,
 )

@@ -43,7 +43,12 @@ class ScaffoldError(ValueError):
     """An author-facing refusal; the message says what to change."""
 
 
-def check_name(name: str, registered: Container[str] = frozenset()) -> None:
+#: names that would shadow a module of the `domains` package itself
+RESERVED_NAMES: frozenset[str] = frozenset({"registry"})
+
+
+def check_name(name: str, registered: Container[str] = frozenset(),
+               *, repo_root: pathlib.Path = _REPO_ROOT) -> None:
     if not name.isidentifier() or keyword.iskeyword(name):
         raise ScaffoldError(
             f"{name!r} is not a valid domain name: use a Python identifier such as "
@@ -53,6 +58,8 @@ def check_name(name: str, registered: Container[str] = frozenset()) -> None:
         raise ScaffoldError(f"{name!r}: use a lowercase name without a leading underscore")
     if name in registered:
         raise ScaffoldError(f"{name!r} is already registered in domains/registry.py")
+    if name in RESERVED_NAMES or (repo_root / "domains" / f"{name}.py").is_file():
+        raise ScaffoldError(f"{name!r} would shadow domains/{name}.py; pick another name")
 
 
 def render(name: str, *, package_import: str, test_module: str) -> Dict[str, str]:
@@ -102,8 +109,12 @@ class Created:
             lines += ["", f"check it:  validate_domain({self.package_import}.DOMAIN) (not registered — outside domains/)"]
         lines += [
             f"run its test:   python -B -m unittest tests.test_domain_{self.name}",
-            "then edit the # TODO(author) points in types.py, model.py, environment.py, __init__.py,",
-            "re-validating after each change (docs/domains/ADDING_A_DOMAIN.md).",
+            "then edit the # TODO(author) points in types.py, model.py, environment.py and",
+            "__init__.py — the four must agree before the package imports, so edit them as one",
+            "change and validate again after each coherent change (docs/domains/ADDING_A_DOMAIN.md).",
+            "The generated test joins the pinned offline suite: after running",
+            "`python -B -m unittest discover -s tests -t .`, update the one",
+            "`Current offline suite: N tests, ...` line in docs/refactor/REFACTOR_STATUS.md.",
         ]
         return "\n".join(lines)
 
@@ -116,14 +127,18 @@ def create_domain(
     registered: Container[str] = frozenset(),
 ) -> Created:
     """Write the skeleton. Refuses to overwrite anything."""
-    check_name(name, registered)
+    repo_root = repo_root.resolve()
+    check_name(name, registered, repo_root=repo_root)
     package_dir = (repo_root / "domains" / name) if target is None else target
     if not package_dir.is_absolute():
         package_dir = repo_root / package_dir
+    package_dir = package_dir.resolve()             # `..` and symlinks cannot escape the repo
     try:
         rel_pkg = package_dir.relative_to(repo_root)
     except ValueError:
         raise ScaffoldError(f"the target must be inside the repository: {package_dir}") from None
+    if rel_pkg == pathlib.Path(".") or not rel_pkg.parts:
+        raise ScaffoldError("the target must be a new directory inside the repository")
     package_import = ".".join(rel_pkg.parts)
     test_path = repo_root / "tests" / f"test_domain_{name}.py"
     if package_dir.exists():

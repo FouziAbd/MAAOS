@@ -9,6 +9,13 @@ Three frozen dataclasses the runtime handles without interpreting:
 
 `identities()` on State and Call is what grounding checks: a call naming an identity the
 state lacks is rejected before execution (never a feasibility test).
+
+The runtime reads exactly these members — keep their names for METHODS, and never name a
+dataclass FIELD the same (a field `key` would silently shadow `Call.key()`):
+
+    State  world_key() same_world(other) identities()       (+ canonical() for the keys)
+    Call   skill  cost  key()  canonical()  identities()  __str__()  and value equality (==)
+    Task   is_satisfied_by(state)  canonical()
 """
 from __future__ import annotations
 

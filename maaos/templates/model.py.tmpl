@@ -70,7 +70,9 @@ class Model:
         return ValidatedCall(call=call)
 
     def plan(self, sym: SymbolicState, identities: FrozenSet[str], /) -> PlannerResult:
-        # TODO(author): the goal test and the candidate calls (enumerated from identities)
+        # TODO(author): the goal test and the candidate calls (enumerated from identities).
+        # `identities` is a FLAT set of names; with several kinds of object, carry the kind in
+        # the symbolic state (or in the name) so the candidates can be typed.
         candidates = [Call(op, switch) for switch in sorted(identities) for op in Op]
         return bfs_plan(
             sym, is_goal=lambda s: s.on, candidates=candidates,
