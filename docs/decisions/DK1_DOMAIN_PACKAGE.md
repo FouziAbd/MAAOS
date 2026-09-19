@@ -126,6 +126,28 @@ path, or a single repo-root-importable shim — so exactly one adapter module ex
 with a test that `sys.modules` holds a single adapter module after a full episode. Until
 cleared, no code may rely on adapter `isinstance` identity across the two names.
 
+## DK2 — kit extraction record (2026-09-19)
+
+`kit/` (DK2) is built from the BoxPush ∩ probe intersection — refusal protocol, malformed /
+ungrounded arms, identity grounding, result assembly, the exact-projection track, the
+key-comparison monitor, the sha256-of-canonical-JSON keys, the PROPOSAL_FORM / ACTION_CHOICE
+comparator kinds — with these deliberate exceptions, each justified by a concrete
+requirement rather than a hypothetical domain:
+
+| Element | Source | Why it is in the kit |
+|---|---|---|
+| `kit.planning.bfs_plan` | BoxPush only (`symbolic/planner.py`; the probe plans in closed form) | encodes the frozen planner-result categories where authors err (`NoPlan` vs `PlannerFailure`); state-free signature |
+| `EnvironmentBase.note_primitive_steps`, `mid_attempt_fault`, the `_attempt` exception → `BACKEND_API_EXCEPTION` wrap | BoxPush only (adapter case-(c) producers; `runtime/executor.py`) | the `primitive_steps_before_failure=N` key is a runtime-parsed contract (`runtime/loop.py`) otherwise undocumented for authors |
+| `EnvironmentBase._observe` default (`canonical()`) | neither (the adapter returns backend observations, the probe a hand-picked mapping) | a fully-observable V1 default, the same assumption `ProjectionTrack` states; overridable |
+| `EnvironmentBase.executed` | probe only | per-episode diagnostic; nothing in the kit or runtime reads it |
+| `DerivedDomainServices.monitor` catch-all → chained `ValueError` | neither (BoxPush lets non-`ValueError` escapes crash the run) | routes any author error to the loop's established `EXECUTOR_MONITOR_PROTOCOL_FAILURE` conversion instead of an untyped crash; never a discrepancy |
+| `DefaultProposalComparator` opt-in arms (`equivalence`, `low_confidence_threshold`, `report_translation_residual`) | BoxPush only | explicit configuration reproducing BoxPush's kinds/order; defaults stay the intersection |
+
+Authority model of `EnvironmentBase`: value-state (the probe's model). A domain wrapping an
+external mutable simulator must derive its state value inside `_attempt` from a fresh read
+or not use the base as-is; a D4-style re-read hook is DEFERRED until a real such domain
+exists (owner choice).
+
 ## Alternatives considered
 
 - **`DomainPackage` under `shared/contracts/`.** Rejected: the runtime never consumes it;

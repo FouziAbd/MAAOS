@@ -1058,7 +1058,11 @@ class TestCompositeComparatorAggregation(unittest.TestCase):
 
     #: every production class that implements `compare` — a new comparator of ANY name
     #: (composite, merged, aggregating, ...) is a deliberate edit here, never a silent one
-    PRODUCTION_COMPARATORS = {"ProposalComparator", "BoxPushActionComparator"}
+    #: DK2: the kit's default action comparator is a KNOWN comparator (frozen kinds, domain
+    #: rules opt-in), not a composite/belief comparator — a whitelist extension
+    PRODUCTION_COMPARATORS = {
+        "ProposalComparator", "BoxPushActionComparator", "DefaultProposalComparator",
+    }
 
     def test_no_production_composite_comparator_exists(self):
         found = {}
@@ -1070,6 +1074,7 @@ class TestCompositeComparatorAggregation(unittest.TestCase):
                     found[node.name] = path.relative_to(_REPO_ROOT).as_posix()
         self.assertEqual(set(found), self.PRODUCTION_COMPARATORS, found)
         self.assertEqual(found["BoxPushActionComparator"], "app/comparator.py")
+        self.assertEqual(found["DefaultProposalComparator"], "kit/comparator.py")
 
 
 # ── the R5 structural protocols are exactly what the runtime reads ──────────────────
