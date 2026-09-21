@@ -93,6 +93,12 @@ decision (recorded DEFERRED at the R0-R6 closure).
    newcomer's whole domain in unguarded territory — and because the role scan keeps the
    symbolic side of the same package away from that door.
 
+   *2026-09-21 (post-program fix 2, the first second domain):* the set is one guard line per
+   REGISTERED domain whose `environment.py` imports a banned root — a pure-Python domain adds
+   none, which is what the sibling test and DK081 actually assert — and a door may import its
+   simulator and a framework (`numpy`, `pettingzoo`). The load-bearing test therefore counts
+   doors, never imports, and never pins the door count to a literal.
+
    **Known limitation (recorded, not hidden):** the door is nominal for an *in-package*
    simulator. A hand-written sibling `sim.py` imported by both `environment.py` and
    `model.py` is a backend-to-applicability path the import scan cannot see — the same class

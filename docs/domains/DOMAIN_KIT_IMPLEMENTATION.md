@@ -35,7 +35,13 @@ usability gate, below), and `python -m maaos validate-domain` as the continuous 
 | DK3 | #18 | `app/validation.py` (catalogue DK001–DK090), `maaos/cli.py` (`validate-domain`, `list-domains`); guard-parity proof | 971 |
 | DK4 | #19 | `maaos/scaffold.py` + templates (`create-domain`); `tests/fixture_lamp/` generated verbatim (A) then changed through extension points only (B); review corrections (C) | 992 |
 | DK5 | #20 | `docs/domains/ADDING_A_DOMAIN.md`, this record, README/CLAUDE.md/rule/NEXT_DOMAIN updates, `tests/test_dk5_docs.py`, the usability gate | 1001 |
-| fix | this PR | the four actionable WARNs of the post-merge `/consistency-check all` (§"Post-program fix") | 1002 |
+| fix | #21 | the four actionable WARNs of the post-merge `/consistency-check all` (§"Post-program fix") | 1002 |
+| fix | this PR | the two suite pins a second backend-wrapping domain tripped (§"Post-program fix 2") | 1004 |
+
+The right-hand column is the pin at the end of each KIT change. The live pin is the one line in
+`docs/refactor/REFACTOR_STATUS.md`; a domain added after the program (the first: `cooperative_grid`,
+PR #22) moves it without a row here, and `tests/test_dk5_docs.py` only requires this table to
+stay in order and never above the live pin.
 
 ## DK1 — declaration, assembly, guard decisions
 
@@ -160,6 +166,51 @@ validator reads the guard's door set from the test file (parity pinned; a shared
 module could hold it); a domain `__init__.py` may import a sibling domain; the generated test
 imports the public `runtime.loop.EpisodeOutcome` (a re-export from `app.assembly` would make
 the "no runtime internal" claim literal).
+
+## Post-program fix 2 (2026-09-21, `/domain-kit-phase fix`)
+
+The first real second domain, `cooperative_grid` (PR #22, open when this fix was written: a
+PettingZoo two-agent grid whose backend lives under `functional_layer/custom_env/cooperative_grid/`,
+added through `/add-domain`; its diff against `main` touches nothing under `runtime/`,
+`shared/`, `kit/`, `app/` or `maaos/`), passed
+`validate-domain` (28 PASS) and its own tests but turned two kit tests red although the author
+did exactly what the guide says:
+
+1. `tests/test_dk1_domain_package.py` pinned the withdrawn-exemption scan to ONE line (BoxPush's
+   door). The ADR adds one GUARD line per backend-wrapping domain and lets a door import its
+   simulator and a framework, so the test now requires every enumerated door to be load-bearing,
+   nothing outside a door, and only roots the exemption covers (`FORBIDDEN_PREFIXES` minus
+   `NEVER_EXEMPT_ROOTS`) — neither the door count nor the import count is a literal; BoxPush's
+   door stays pinned to its one adapter import. A probe tree with two doors proves the rule
+   fails closed (nothing reported while exempt; one line per import, partitioned by door, when
+   not; a dead door, a backend import outside a door and a never-exempt root are each
+   rejected by the same predicate). ADR-DK1 decision B carries a dated line for this reading.
+2. `tests/test_dk5_docs.py` required the LIVE suite pin in this record's phase table, so the
+   guide's own pin step (`docs/refactor/REFACTOR_STATUS.md`) broke it. The table now records the
+   pin at the end of each kit change (monotone, never above the live pin); later domains move the
+   live pin without a row here. Trade-off, recorded: a kit change that forgets its row is no
+   longer caught mechanically (the table may lag the live pin) — the review step covers it.
+   Rejected alternative (review): deriving the kit pin as "live pin minus the registered
+   domains' `tests/test_domain_<name>.py` counts" would catch that, but it would force a row
+   here for ANY later non-kit, non-domain test (a BoxPush regression test, say) — a new hidden
+   obligation on ordinary maintenance.
+
+No change to `kit/`, `app/`, `maaos/`, the guide or any domain. Suite 1002 → 1004 (the two probes).
+
+Onboarding findings from that domain, DEFERRED to a guide fix (owner-scheduled): where a
+domain-owned simulator or demo lives (`functional_layer/custom_env/<name>/` is a BoxPush
+precedent the guide never states; DK081 keys on the `functional_layer` root, not on the
+framework); `assemble_loop`'s one-component keyword overrides and keyword defaults on
+`make_environment`; when to OMIT `apply_world` (the scaffold hard-codes the with-`apply_world`
+form) — and one ACCURACY defect, not a gap: the guide's "otherwise the monitor reports a
+world-basis mismatch on the successful call" reads as "if you do not declare `apply_world`",
+which is false (without it both world keys are `None` and no world-basis mismatch can arise;
+the clause means "if you declare it without predicting the change there"); "any third-party
+package" instead of a four-framework list in the module-role table;
+`_render` as a hook. Kit notes from review: no backend re-read after a mid-attempt raise for
+external mutable simulators (that domain is the first real instance of the deferral), the
+loop never consults `is_terminal()`, and `failed()` makes the author pre-decide whether the
+world changed for multi-primitive skills.
 
 ## Deferred (owner-scheduled, not accepted indefinitely)
 

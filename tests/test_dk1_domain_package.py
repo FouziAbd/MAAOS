@@ -63,6 +63,7 @@ from symbolic import ExactSymbolicBelief                                 # noqa:
 from tests.test_no_backend_imports import (                              # noqa: E402
     DOMAIN_ENVIRONMENT_MODULES,
     FORBIDDEN_PREFIXES,
+    NEVER_EXEMPT_ROOTS,
     backend_violations,
     discovered_guarded_packages,
     domain_role_violations,
@@ -143,6 +144,25 @@ class TestDomainPackageIsANeutralRecord(unittest.TestCase):
 
 # ── 2. module roles inside domains/<x>/ ───────────────────────────────────────────────
 
+def _doors_are_load_bearing(found, doors):
+    """The withdrawn-exemption predicate the real-tree test and the probes share: every
+    enumerated door is reported (each guard line is load-bearing), nothing outside a door
+    is, and every reported root is one the exemption legitimately covers. Returns the list
+    of reasons it fails (empty = holds)."""
+    reasons = []
+    by_door = {line.split(":")[0] for line in found}
+    for dead in sorted(set(doors) - by_door):
+        reasons.append(f"dead door (imports no backend root): {dead}")
+    for stray in sorted(by_door - set(doors)):
+        reasons.append(f"backend import outside a door: {stray}")
+    covered = FORBIDDEN_PREFIXES - NEVER_EXEMPT_ROOTS
+    for line in found:
+        root = line.split(" imports ")[1].split(".")[0]
+        if root not in covered:
+            reasons.append(f"never exempt root in a door: {line}")
+    return reasons
+
+
 class TestDomainModuleRoles(unittest.TestCase):
     def test_the_real_tree_has_no_role_violations(self):
         self.assertEqual(domain_role_violations(), [])
@@ -164,13 +184,60 @@ class TestDomainModuleRoles(unittest.TestCase):
         for rel in DOMAIN_ENVIRONMENT_MODULES:
             self.assertTrue((_REPO_ROOT / rel).is_file(), rel)
 
-    def test_the_exemption_is_load_bearing_and_covers_exactly_one_line(self):
-        """Withdraw the exemption: the real tree must report exactly the door's one adapter
-        import — one door, one line — and nothing else."""
+    def test_the_exemption_is_load_bearing_for_every_door_and_nothing_outside(self):
+        """Withdraw the exemption: the real tree must report EVERY enumerated door (each line
+        is load-bearing), NOTHING outside a door, and only imports the exemption legitimately
+        covers (`FORBIDDEN_PREFIXES` minus `NEVER_EXEMPT_ROOTS`). The ADR adds one GUARD line
+        per backend-wrapping domain, and a door may import its simulator AND a framework
+        (`numpy`, `pettingzoo`), so neither the door count nor the import count is a literal
+        (the 2026-09-21 second-domain regression: the first version of this test pinned `1`
+        line, BoxPush's). The BoxPush door itself stays pinned to its one adapter import."""
         found = backend_violations(discovered_guarded_packages(), exempt_modules=frozenset())
-        self.assertEqual(len(found), 1, found)
-        self.assertTrue(found[0].startswith("domains/box_push/environment.py:"), found)
-        self.assertIn("imports functional_layer.custom_env.box_push.env.box_push_v1_adapter", found[0])
+        self.assertEqual(_doors_are_load_bearing(found, DOMAIN_ENVIRONMENT_MODULES), [], found)
+        box_push = [line for line in found if line.startswith("domains/box_push/environment.py:")]
+        self.assertEqual(len(box_push), 1, found)
+        self.assertIn("imports functional_layer.custom_env.box_push.env.box_push_v1_adapter", box_push[0])
+
+    def _two_door_tree(self, stack, second_environment="import pettingzoo\nimport functional_layer.x\n"):
+        root = self._probe(stack, {"environment.py": "import numpy\n"})
+        second = root / "domains" / "probe_two"
+        second.mkdir()
+        for name in ("__init__.py", "types.py", "model.py"):
+            (second / name).write_text("", encoding="utf-8")
+        (second / "environment.py").write_text(second_environment, encoding="utf-8")
+        return root
+
+    _TWO_DOORS = frozenset({"domains/probe_dom/environment.py", "domains/probe_two/environment.py"})
+
+    def test_two_doors_are_load_bearing_and_a_door_may_import_more_than_one_root(self):
+        """The real-tree predicate on a probe tree with TWO backend-wrapping domains: with both
+        doors exempt nothing is reported; withdrawn, every door is reported (one line per
+        import, so a door importing its simulator and a framework is two lines) and the
+        predicate accepts the tree."""
+        with contextlib.ExitStack() as stack:
+            root = self._two_door_tree(stack)
+            self.assertEqual(backend_violations(("domains",), root, exempt_modules=self._TWO_DOORS), [])
+            found = backend_violations(("domains",), root, exempt_modules=frozenset())
+        self.assertEqual(len(found), 3, found)
+        self.assertEqual(sum(line.startswith("domains/probe_two/") for line in found), 2, found)
+        self.assertEqual(_doors_are_load_bearing(found, self._TWO_DOORS), [], found)
+
+    def test_the_load_bearing_predicate_fails_closed(self):
+        """A DEAD door (enumerated, imports no backend) and a backend import OUTSIDE a door are
+        each rejected by the predicate the real-tree test uses; a never-exempt root too."""
+        with contextlib.ExitStack() as stack:
+            root = self._two_door_tree(stack, second_environment="from .types import State\n")
+            found = backend_violations(("domains",), root, exempt_modules=frozenset())
+        self.assertTrue(any("dead door" in why for why in _doors_are_load_bearing(found, self._TWO_DOORS)))
+        with contextlib.ExitStack() as stack:
+            root = self._two_door_tree(stack)
+            (root / "domains" / "probe_two" / "types.py").write_text("import numpy\n", encoding="utf-8")
+            found = backend_violations(("domains",), root, exempt_modules=frozenset())
+        self.assertTrue(any("outside a door" in why for why in _doors_are_load_bearing(found, self._TWO_DOORS)))
+        with contextlib.ExitStack() as stack:
+            root = self._two_door_tree(stack, second_environment="import legacy\n")
+            found = backend_violations(("domains",), root, exempt_modules=frozenset())
+        self.assertTrue(any("never exempt" in why for why in _doors_are_load_bearing(found, self._TWO_DOORS)))
 
     def test_the_boxpush_door_imports_the_backend_only_inside_the_factory(self):
         source = (_REPO_ROOT / "domains" / "box_push" / "environment.py").read_text("utf-8")
