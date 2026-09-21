@@ -16,9 +16,11 @@ from typing import Any, Mapping
 from app.domain_package import DomainPackage
 
 from domains.box_push import DOMAIN as _BOX_PUSH
+from domains.cooperative_grid import DOMAIN as _COOPERATIVE_GRID
 
 REGISTRY: Mapping[str, DomainPackage[Any, Any, Any, Any, Any]] = MappingProxyType({
     "box_push": _BOX_PUSH,
+    "cooperative_grid": _COOPERATIVE_GRID,
 })
 
 __all__ = ["REGISTRY"]

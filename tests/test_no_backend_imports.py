@@ -63,6 +63,7 @@ COMPOSITION_PACKAGES = frozenset({"app", "domains", "maaos"})
 #: dynamic-import ban, the sys.path ban and the runtime/app ban still apply to these files.
 DOMAIN_ENVIRONMENT_MODULES = frozenset({
     "domains/box_push/environment.py",
+    "domains/cooperative_grid/environment.py",
 })
 #: Never exempt, even for the door: the legacy trees, and the LM frameworks — an environment
 #: module is a simulator binding, never an LM binding (R6 kept the dspy seam outside the
