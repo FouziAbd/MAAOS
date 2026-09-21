@@ -125,7 +125,22 @@ class TestTheRepositoryPointsAtTheGuide(unittest.TestCase):
             self.assertIn(needle, record, needle)
         pinned = re.search(r"Current offline suite: (\d+) tests", (_REPO_ROOT / "docs" / "refactor" / "REFACTOR_STATUS.md").read_text(encoding="utf-8"))
         self.assertIsNotNone(pinned)
-        self.assertIn(f"| {pinned.group(1)} |", record)          # the phase table names the final pin
+        # The phase table carries the pin at the end of each kit change, in order; the LIVE
+        # pin lives in REFACTOR_STATUS.md and every later domain moves it WITHOUT a row here
+        # (the 2026-09-21 second-domain regression: the first version of this test required
+        # the live pin in the table, so following the author guide's pin step broke it).
+        table = re.findall(r"^\| (?:DK\d|fix) \| .* \| (\d+) \|$", record, flags=re.M)
+        self.assertGreaterEqual(len(table), 7, table)                  # DK0-DK5 and the fixes
+        # every row of the phase table is one of those labels — a differently labelled kit
+        # row would otherwise drop out of the monotone check silently
+        section = record.split("## Phase table", 1)[1].split("\n## ", 1)[0]
+        rows = [r for r in section.splitlines() if r.startswith("| ") and not r.startswith("| Phase")]
+        self.assertEqual(len(rows), len(table), rows)
+        pins = [int(n) for n in table]
+        self.assertEqual(pins, sorted(pins), pins)                     # monotone, one per row
+        self.assertLessEqual(pins[-1], int(pinned.group(1)), (pins[-1], pinned.group(1)))
+        self.assertIn("docs/refactor/REFACTOR_STATUS.md", record)      # names the live authority
+        self.assertIn("without a row", record)                         # and says domains move it
 
 
 if __name__ == "__main__":
