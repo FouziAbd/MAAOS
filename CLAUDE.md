@@ -296,6 +296,13 @@ it, is recorded in:
 
 `docs/refactor/REFACTORING_IMPLEMENTATION.md`
 
+## Thesis work (POMDP extension) — planning docs
+Plan: docs/thesis/pomdp-plan-time-estimate.md
+Design: docs/thesis/pomdp-julia-dspy-plan.md
+Decisions and approval status: docs/thesis/HANDOFF.md
+Read these before any thesis task. V1 scope rules still apply until the user
+confirms the supervisor's approval.
+
 ## Primary manual workflows
 
 Normal maintenance workflows:
