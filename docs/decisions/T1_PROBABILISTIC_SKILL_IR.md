@@ -55,21 +55,28 @@ A `DomainIR` is either a **registry domain** or a **declared domain**.
   registry. A registry domain **may not use any field added by this ADR**. Construction raises
   `ValueError` otherwise. `symbolic/` therefore never meets semantics it would silently ignore.
 - **Declared domain (new).** Every skill's signature is a new
-  `ActionSignature(name: str, parameters: Tuple[ActionParameter, ...], cost: int = 1)`, with
-  `ActionParameter(name: str, type: str)`. The name is an identifier, and no packing or agent-pair
-  expansion happens. `SkillIR.parameters` and `parameter_types` must equal the signature's names
-  and types, in order. Types must be members of `DomainIR.types`, which is checked by `DomainIR`
+  `ActionSignature(name: str, cost: int = 1)`. The name is an identifier. The skill's parameters
+  are stated once, in `SkillIR.parameters` and `SkillIR.parameter_types`, which are already
+  canonical fields; the signature does not repeat them, so there is nothing to keep in sync and
+  `from_canonical` rebuilds the signature from `name` and `cost` alone. No packing or agent-pair
+  expansion happens. Parameter types must be members of `DomainIR.types`, which `DomainIR` checks
   because the domain owns its universe.
 - A domain that mixes the two kinds raises `ValueError`.
-- `DomainIR.types` keeps its default `TYPE_UNIVERSE`. Predicate and skill type checks read
-  `self.types` instead of the module constant. For BoxPush the two are the same tuple, so its
-  behavior does not change.
+- `DomainIR.types` keeps its default `TYPE_UNIVERSE`. A **registry domain must have
+  `types == TYPE_UNIVERSE`** (`ValueError` otherwise), so the predicate type check keeps rejecting
+  anything outside agent/box/zone exactly as today. Only a declared domain may choose its own
+  `types`, and its predicate and parameter type checks read `self.types`.
 - For declared-domain skills, `bind`/`unbind` raise `TypeError`. A new
   `SkillIR.bind_values(values: Sequence[str]) -> Dict[str, str]` binds positionally. Each domain
   package maps its own call type to that value tuple. For example, cooperative_grid_po maps
   `Call.op` plus its fields.
 - On a declared domain, `resolve()` returns the skill or raises `KeyError`. It never consults the
   registry.
+- `DomainIR.canonical()` has never carried the domain's own `provenance`. A declared domain's
+  canonical form adds it as a `"provenance"` key (`source`, `model_version`), so a generated or
+  repaired domain carries its own record. A registry domain's canonical form stays as it is, and
+  its `from_canonical` therefore takes `provenance` as a required keyword argument from the
+  caller instead of inventing one.
 
 ### 2. New declarations on `DomainIR` (all default to empty)
 
@@ -77,11 +84,14 @@ A `DomainIR` is either a **registry domain** or a **declared domain**.
   that skills may mention, as PDDL `:constants` are. Lifted arguments may name a skill parameter
   or a constant.
 - `parameters: Tuple[ParameterDecl, ...]`, with
-  `ParameterDecl(name, prior, value: Optional[...] = None, note="")`. The prior is a
-  `BetaPrior(a, b)` or a `DirichletPrior(alphas)`, and every number is a positive rational.
-  `value` is the given or fitted value: one probability for a Beta parameter, a tuple summing to 1
-  for a Dirichlet. When `value` is absent, consumers use the prior mean. The pseudo-count cap of 2
-  for LLM-written priors is a generation rule, enforced by the generator and not by the IR.
+  `ParameterDecl(name, prior: BetaPrior, value: Optional[Fraction] = None, note="")`, with
+  `BetaPrior(a, b)` over positive rationals. `value` is the given or fitted probability and must
+  lie **strictly between 0 and 1**; a certainty is written as a `Deterministic` distribution, not
+  as a parameter. When `value` is absent, consumers use the prior mean `a / (a + b)`, which is also
+  strictly inside the interval. The pseudo-count cap of 2 for LLM-written priors is a generation
+  rule, enforced by the generator and not by the IR. Dirichlet parameters and categorical
+  distributions are deferred to extension package X3: neither thesis domain has a skill with more
+  than two outcomes in one case.
 - `observation_channels: Tuple[ObservationChannelDecl, ...]`, with
   `ObservationChannelDecl(name, symbols)`. The first symbol is the channel's default. It is
   reported when no observation case applies and when the action is inapplicable.
@@ -99,12 +109,18 @@ A `DomainIR` is either a **registry domain** or a **declared domain**.
 - `outcome_cases: Tuple[OutcomeCase, ...]`, a decision list with
   `OutcomeCase(when: Tuple[Atom, ...], distribution)`. The first case whose `when` holds in the
   pre-state applies. The last case must have an empty `when`, so the list is exhaustive and
-  exclusive by construction. A skill with exactly one outcome needs no cases.
-- `observation_cases: Tuple[Tuple[str, Tuple[ObservationCase, ...]], ...]`, one decision list per
-  channel the skill reports on. Each has the shape `ObservationCase(when, distribution)`. A
-  channel's `when` atoms are evaluated on the **post-state** and the bound parameters only. This
-  is O(o | a, s′), the `observation(m, a, sp)` convention of POMDPs.jl. A channel the skill does
-  not list reports its default symbol.
+  exclusive by construction. A skill with **two or more outcomes must have outcome cases**
+  (`ValueError` otherwise). A skill with exactly one outcome has no cases: that outcome always
+  applies.
+- `observation_cases: Tuple[ChannelObservations, ...]`, with
+  `ChannelObservations(channel: str, cases: Tuple[ObservationCase, ...])`: one decision list per
+  channel the skill reports on, each case shaped `ObservationCase(when, distribution)`. Channel
+  names must be declared and may appear at most once per skill (`ValueError` otherwise), and the
+  tuple is kept in the domain's channel declaration order, so the canonical JSON object (keyed by
+  channel name) and the in-memory record always agree. A channel's `when` atoms are evaluated on
+  the **post-state** and the bound parameters only. This is O(o | a, s′), the
+  `observation(m, a, sp)` convention of POMDPs.jl. A channel the skill does not list reports its
+  default symbol.
 - **Atoms** are the following:
   - `LiftedLiteral(predicate: Predicate, positive: bool = True)`.
   - `ParameterEquals(parameter, constant)`, allowed only in case conditions.
@@ -114,11 +130,10 @@ A `DomainIR` is either a **registry domain** or a **declared domain**.
   - In a negative effect it means "delete every grounding". For example, `not at(agent, *)`
     leaves every place before `at(agent, place)` is added.
   - It is allowed nowhere else.
-- **Distributions** come in three forms, each normalized by construction:
+- **Distributions** come in two forms, each normalized by construction:
   - `Deterministic(label)`;
-  - `Bernoulli(p, then_label, else_label)`, where `p` names a Beta parameter or is a rational
-    constant;
-  - `Categorical(parameter, labels)`, over a Dirichlet parameter of matching arity.
+  - `Bernoulli(p, then_label, else_label)`, where `p` names a declared parameter or is a rational
+    constant strictly between 0 and 1, and the two labels differ.
 
   The labels are outcome labels in outcome cases and channel symbols in observation cases. One
   parameter may appear in several cases. For example, rattle accuracy is used in both branches,
@@ -134,9 +149,12 @@ A `DomainIR` is either a **registry domain** or a **declared domain**.
 - `name`;
 - `domain`, the domain name;
 - `objects`, extra `ObjectDecl`s beyond the domain constants;
-- `init`, the observable ground literals true at reset; static predicates are given here too;
+- `init`, the **observable** ground literals true at reset, static ones included. A hidden
+  literal in `init` raises `ValueError`;
 - `hidden_prior: Tuple[HiddenPrior, ...]`, where `HiddenPrior(literal, p)` makes the hidden ground
-  literals independent Bernoullis;
+  literals independent Bernoullis. Each literal must be a grounding of a hidden predicate, fluent
+  or static, and may appear at most once. A hidden ground literal with no entry is false at reset.
+  This is how BoxPush-PO-lite states its hidden, static `heavy(box)`;
 - `goal`, a conjunction of ground literals;
 - `rewards: RewardModel(step, skills, goal)`, all rational constants copied from the
   specification: `step` per cycle, `skills` as an extra amount per skill name, `goal` on arrival;
@@ -147,10 +165,16 @@ Ground literals reuse the `Predicate` canonical shape, with object names as argu
 ### 5. Semantics the compiler and reference evaluator implement (T4)
 
 **State and actions.**
-- A state is the set of true ground literals of the fluent predicates, observable and hidden.
-  Static predicates come from `init` and never change.
+- A state is the set of true ground literals of every **fluent** predicate (observable or hidden)
+  and of every **hidden** predicate (fluent or static). Only observable static predicates are kept
+  out of the state: they come from `init` and never change. A hidden static literal, such as a box
+  weight, is therefore a state variable whose value is fixed by the initial draw; no effect may
+  change it (effects may touch only fluents).
 - Actions are all groundings of the skills over the objects, in a deterministic order: skill
-  order, then lexicographic argument order.
+  order, then argument tuples in lexicographic order of object names. The compiler drops a
+  grounding only when one of its **static** preconditions fails (for example `ClearJam(A, goal,
+  door)`, because `handle(goal)` is false). That depends on the IR and `init` alone, never on
+  parameter values or on reachability.
 
 **Transition, for a state s and an action a.**
 - If any precondition fails in s, the action is inapplicable. Then s′ = s, every channel reports
@@ -168,7 +192,17 @@ that is not a goal state. This folds the arrival reward into E[r | s, a], the fo
 observations.
 
 **Initial belief.** The observable `init` combined with the product of the hidden priors.
-Reachable states are enumerated from the support of that belief.
+
+**Structural support, and why indices are stable.** The state set is enumerated from the
+**structural** support: every assignment of the hidden literals that have a prior, then every state
+reachable through any outcome or symbol that a distribution's form can produce. Because parameter
+values and Bernoulli constants lie strictly between 0 and 1, every branch the form allows has
+positive probability for every legal value, so the structural support equals the actual support
+for all parameter values. A refit therefore changes the numbers in T, Z, R and b0, never the
+state, action or observation lists or their order. Every compiled-tables and policy artifact
+records those three ordered lists and the IR digest that produced them. Policy replay compares
+them with the tables it is applied to and raises on any mismatch, so a policy can never be
+silently applied to renumbered tables.
 
 **The derived DBN view (`pomdp/dbn.py`).** It is a function of the IR, never stored:
 - the parents of each skill's outcome are the literals and equalities in its outcome cases and
@@ -177,16 +211,18 @@ Reachable states are enumerated from the support of that belief.
 - the observation parents are the literals in its observation cases, read on s′.
 
 Its checks: no hidden predicate in a precondition; no literal both added and deleted within one
-outcome; every observation parent is a post-state literal; and every effect predicate is a
-declared fluent. A two-slice model with these rules has no intra-slice edges, so acyclicity holds
-by construction.
+outcome; and every effect predicate is a declared fluent. Observation cases read only s′ and the
+action by construction, so that rule needs no separate check. A two-slice model with these rules
+has no intra-slice edges between state variables, so acyclicity holds by construction.
 
 ### 6. Canonical form is the LLM schema
 
 - `canonical()` emits a new key only when its value differs from the default. For BoxPush the
   canonical JSON, and therefore the digest, is byte-identical.
-- A new `DomainIR.from_canonical(data)` and `ProblemIR.from_canonical(data)` rebuild the
-  records. For a registry domain, skill signatures are looked up by name in `REGISTRY`.
+- A new `DomainIR.from_canonical(data, *, provenance=None)` and `ProblemIR.from_canonical(data)`
+  rebuild the records. For a registry domain, skill signatures are looked up by name in
+  `REGISTRY`, and the caller must pass `provenance` (its canonical form has none). For a declared
+  domain, `provenance` comes from the canonical `"provenance"` key, and passing one raises.
 - Required property: `from_canonical(x.canonical()).digest() == x.digest()` for BoxPush and for
   every declared fixture. The result is equal by digest, not object-equal:
   `PredicateDecl.description` and `Provenance.note` are not canonical, which is unchanged V1
@@ -288,8 +324,13 @@ differs from the V1 cooperative_grid on purpose: that package stays frozen, and 
   between two models.
 - **Free probability expressions** (`Param`, `OneMinus`, `Product`) checked for summing to 1.
   Rejected. They need symbolic or sampled identity checks, give the LLM more ways to be wrong,
-  and lose the conjugate Beta/Dirichlet counting the fitter relies on. Three normalized
-  distribution forms cover both thesis domains.
+  and lose the conjugate Beta counting the fitter relies on. Two normalized distribution forms
+  cover both thesis domains.
+- **Categorical outcomes with Dirichlet parameters.** Deferred to extension package X3 (full
+  BoxPush-PO: lane blockage, push slip and confusable failure labels give three or more outcomes
+  in one case). Neither thesis domain needs them, and the project rule forbids machinery added
+  only to look general. Adding them later is additive: a third distribution form and a second
+  prior kind.
 - **Exhaustive parent-assignment tables** instead of decision lists. Rejected: the table grows as
   2^k in the number of parents, while a decision list with a mandatory default case is compact,
   exclusive and exhaustive.
@@ -317,15 +358,16 @@ differs from the V1 cooperative_grid on purpose: that package stays frozen, and 
 - New debt, with its cleanup:
   - **DEBT-T3-REGISTRY:** two validation paths inside `DomainIR`. Cleanup: `box_push_po_lite`
     (weeks 9–11) is a declared domain, and the registry path is then reviewed for retirement.
-  - **DEBT-T1-SAS:** boolean predicates only. Cleanup: revisit SAS+ variables if
-    `box_push_po_lite` needs them for pose.
+  - **DEBT-T1-SAS:** boolean predicates only. Cleanup: decided in extension package X3, where pose
+    becomes a partially observed factor, with a dated review at gate G-W3 of whether CoopGrid-Jam-PO
+    showed a need earlier.
 
 ## Code/schema impact
 
-- **`shared/skill_ir.py`:** gains `ActionParameter`, `ActionSignature`, `ObjectDecl`,
-  `BetaPrior`, `DirichletPrior`, `ParameterDecl`, `ObservationChannelDecl`, `LiftedLiteral`,
-  `ParameterEquals`, `Deterministic`, `Bernoulli`, `Categorical`, `Outcome`, `OutcomeCase`,
-  `ObservationCase`, `HiddenPrior`, `RewardModel` and `ProblemIR`, plus the `WILDCARD` constant.
+- **`shared/skill_ir.py`:** gains `ActionSignature`, `ObjectDecl`, `BetaPrior`, `ParameterDecl`,
+  `ObservationChannelDecl`, `LiftedLiteral`, `ParameterEquals`, `Deterministic`, `Bernoulli`,
+  `Outcome`, `OutcomeCase`, `ObservationCase`, `ChannelObservations`, `HiddenPrior`, `RewardModel`
+  and `ProblemIR`, plus the `WILDCARD` constant.
   `SkillIR`, `PredicateDecl` and `DomainIR` get the new fields with empty defaults, plus
   `bind_values`, `from_canonical` and the `is_registry_domain` property. `shared` stays
   stdlib-only.
@@ -345,14 +387,24 @@ differs from the V1 cooperative_grid on purpose: that package stays frozen, and 
 - **New `tests/test_t3_skill_ir.py`:**
   - BoxPush canonical JSON has none of the new keys, and its `from_canonical` round trip has an
     equal digest.
-  - A registry domain that uses any new field raises.
+  - A registry domain that uses any new field raises, and so does a registry domain whose `types`
+    is not `TYPE_UNIVERSE`.
   - A mixed domain raises.
+  - A registry `from_canonical` without `provenance` raises; a declared one round-trips its own
+    canonical `provenance`.
   - The CoopGrid-Jam-PO fixture above builds, and its round trip has an equal digest.
   - Each of these raises `ValueError`: a hidden predicate in a precondition; a wildcard outside
     the two allowed places; `ParameterEquals` outside a case; a last case that is not
-    unconditional; an unknown outcome label or channel symbol; an undeclared parameter; a
-    Bernoulli over a Dirichlet parameter; a Dirichlet value that does not sum to 1; a duplicate
-    outcome label; a nominal label that is not an outcome; outcomes declared together with V1
-    `effects`; and an undeclared constant or type.
+    unconditional; two or more outcomes with no outcome cases; an unknown outcome label or
+    channel symbol; an undeclared or duplicated channel name in one skill; an undeclared
+    parameter; a parameter value or Bernoulli constant of 0, 1 or outside that range; a Bernoulli
+    with equal labels; a duplicate outcome label; a nominal label that is not an outcome; outcomes
+    declared together with V1 `effects`; an effect on a static predicate; a hidden literal in
+    `init`; a `hidden_prior` entry on an observable predicate or listed twice; and an undeclared
+    constant or type.
+  - A BoxPush-PO-lite-shaped fixture with a hidden static `heavy(box)` builds, and its hidden
+    literal is a state variable (checked in T4 by the enumerator).
+  - T4 adds: the compiled state, action and observation lists are identical for two different
+    parameter values of the same IR, and policy replay raises on a list or digest mismatch.
   - `bind_values` binds positionally, and `bind`/`unbind` raise `TypeError` on a declared skill.
 - **Suite-count pin** updated in `docs/refactor/REFACTOR_STATUS.md` in the same change set.
