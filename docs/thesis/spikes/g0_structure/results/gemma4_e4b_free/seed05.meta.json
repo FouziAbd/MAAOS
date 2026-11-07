@@ -1,0 +1,9 @@
+{
+ "model": "gemma4:e4b (free text)",
+ "seed": 5,
+ "temperature": 0.7,
+ "seconds": 36.9,
+ "error": null,
+ "eval_count": 3334,
+ "prompt_eval_count": 2015
+}

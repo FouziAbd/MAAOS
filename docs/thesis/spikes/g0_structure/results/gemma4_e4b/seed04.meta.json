@@ -1,0 +1,9 @@
+{
+ "model": "gemma4:e4b (JSON mode)",
+ "seed": 4,
+ "temperature": 0.7,
+ "seconds": 65.8,
+ "error": null,
+ "eval_count": 4646,
+ "prompt_eval_count": 2020
+}

@@ -1,0 +1,19 @@
+{"domain": {"name": "cooperative-door-po", "model_version": "cooperative-door-po.r1", "types": ["agent"], "constants": [{"name": "hall", "type": "place"}, {"name": "handle_left", "type": "place"}, {"name": "handle_right", "type": "place"}, {"name": "goal_room", "type": "place"}, {"name": "door", "type": "object"}], "parameters": [{"name": "initial_jam_prior", "prior": {"beta": ["1", "1"]}}, {"name": "cooperate_success_prob", "prior": {"beta": ["1", "1"]}}, {"name": "shake_success_prob", "prior": {"beta": ["1", "1"]}}, {"name": "rattle_accuracy_prob", "prior": {"beta": ["1", "1"]}}], "observation_channels": [{"name": "status", "symbols": ["none", "ok", "fail"]}, {"name": "location", "symbols": ["none", "hall", "handle_left", "handle_right", "goal_room"]}, {"name": "door_state", "symbols": ["none", "open", "closed"]}, {"name": "rattle", "symbols": ["none", "rattle_jam", "rattle_free"]}], "predicates": [{"name": "at", "param_types": ["agent", "place"], "fluent": true}, {"name": "door_state", "param_types": ["object"], "fluent": true, "observable": true}, {"name": "door_jammed", "param_types": ["object"], "fluent": true, "observable": false}, {"name": "door_open", "param_types": ["object"], "fluent": true, "observable": false}], "skills": [{"name": "Goto", "parameters": ["agent", "place"], "parameter_types": ["agent", "place"], "preconditions": [], "effects": [{"predicate": {"name": "at", "args": ["agent", "*"]}, "positive": false}], "outcome_label": "moved", "negative_preconditions": [{"name": "at", "args": ["agent", "handle_left"]}]
+    }, {"name": "Goto", "parameters": ["agent", "place"], "parameter_types": ["agent", "place"], "preconditions": [], "effects": [{"predicate": {"name": "at", "args": ["agent", "*"]}, "positive": false}], "outcome_label": "moved", "negative_preconditions": [{"name": "at", "args": ["agent", "handle_right"]}]
+    }, {"name": "Enter", "parameters": ["agent", "door"], "parameter_types": ["agent", "object"], "preconditions": [{"literal": {"name": "at", "args": ["agent", "hall"]}, "positive": true}, {"literal": {"name": "door_open", "args": ["door"]}, "positive": true}], "effects": [{"predicate": {"name": "at", "args": ["agent", "*"]}, "positive": true}], "outcome_label": "entered", "negative_preconditions": [], "outcome_cases": [{"when": [], "distribution": {"deterministic": "entered"}}], "observation_cases": {"location": [{"when":[{"literal":{"name":"at","args":["agent","goal_room"],"positive":true}
+    }],"distribution":{"deterministic":"none"}},{"when":[],"distribution":{"deterministic":"none"}}], "status": [{"when":[],"distribution":{"deterministic":"ok"}}], "door_state": [{"when":[],"distribution":{"deterministic":"none"}}]},
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    

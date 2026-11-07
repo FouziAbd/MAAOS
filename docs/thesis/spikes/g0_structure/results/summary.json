@@ -1,0 +1,496 @@
+[
+ {
+  "model": "gemma4:e4b (JSON mode)",
+  "seed": 1,
+  "seconds": 52.1,
+  "score": 0,
+  "checks": {
+   "json": false,
+   "schema_valid": false,
+   "skill_vocabulary": false,
+   "one_hidden_var": false,
+   "hidden_prior_param": false,
+   "pull_stochastic": false,
+   "shake_frees_hidden": false,
+   "rattle_noisy": false,
+   "numbers_withheld": false,
+   "rewards_transcribed": false,
+   "corridor_refusals": false,
+   "goal_both_agents": false
+  },
+  "n_errors": 1,
+  "first_errors": [
+   "not parseable as JSON"
+  ]
+ },
+ {
+  "model": "gemma4:e4b (JSON mode)",
+  "seed": 2,
+  "seconds": 64.1,
+  "score": 6,
+  "checks": {
+   "json": true,
+   "schema_valid": false,
+   "skill_vocabulary": true,
+   "one_hidden_var": true,
+   "hidden_prior_param": false,
+   "pull_stochastic": false,
+   "shake_frees_hidden": false,
+   "rattle_noisy": true,
+   "numbers_withheld": true,
+   "rewards_transcribed": false,
+   "corridor_refusals": false,
+   "goal_both_agents": true
+  },
+  "n_errors": 32,
+  "first_errors": [
+   "constant A: unknown type agent",
+   "constant B: unknown type agent",
+   "constant hall: unknown type place"
+  ]
+ },
+ {
+  "model": "gemma4:e4b (JSON mode)",
+  "seed": 3,
+  "seconds": 36.3,
+  "score": 1,
+  "checks": {
+   "json": true,
+   "schema_valid": false,
+   "skill_vocabulary": false,
+   "one_hidden_var": false,
+   "hidden_prior_param": false,
+   "pull_stochastic": false,
+   "shake_frees_hidden": false,
+   "rattle_noisy": false,
+   "numbers_withheld": false,
+   "rewards_transcribed": false,
+   "corridor_refusals": false,
+   "goal_both_agents": false
+  },
+  "n_errors": 1,
+  "first_errors": [
+   "top level must be {\"domain\": {...}, \"problem\": {...}}"
+  ]
+ },
+ {
+  "model": "gemma4:e4b (JSON mode)",
+  "seed": 4,
+  "seconds": 65.8,
+  "score": 1,
+  "checks": {
+   "json": true,
+   "schema_valid": false,
+   "skill_vocabulary": false,
+   "one_hidden_var": false,
+   "hidden_prior_param": false,
+   "pull_stochastic": false,
+   "shake_frees_hidden": false,
+   "rattle_noisy": false,
+   "numbers_withheld": false,
+   "rewards_transcribed": false,
+   "corridor_refusals": false,
+   "goal_both_agents": false
+  },
+  "n_errors": 1,
+  "first_errors": [
+   "top level must be {\"domain\": {...}, \"problem\": {...}}"
+  ]
+ },
+ {
+  "model": "gemma4:e4b (JSON mode)",
+  "seed": 5,
+  "seconds": 36.9,
+  "score": 0,
+  "checks": {
+   "json": false,
+   "schema_valid": false,
+   "skill_vocabulary": false,
+   "one_hidden_var": false,
+   "hidden_prior_param": false,
+   "pull_stochastic": false,
+   "shake_frees_hidden": false,
+   "rattle_noisy": false,
+   "numbers_withheld": false,
+   "rewards_transcribed": false,
+   "corridor_refusals": false,
+   "goal_both_agents": false
+  },
+  "n_errors": 1,
+  "first_errors": [
+   "not parseable as JSON"
+  ]
+ },
+ {
+  "model": "gemma4:e4b (JSON mode)",
+  "seed": 6,
+  "seconds": 25.2,
+  "score": 0,
+  "checks": {
+   "json": false,
+   "schema_valid": false,
+   "skill_vocabulary": false,
+   "one_hidden_var": false,
+   "hidden_prior_param": false,
+   "pull_stochastic": false,
+   "shake_frees_hidden": false,
+   "rattle_noisy": false,
+   "numbers_withheld": false,
+   "rewards_transcribed": false,
+   "corridor_refusals": false,
+   "goal_both_agents": false
+  },
+  "n_errors": 1,
+  "first_errors": [
+   "not parseable as JSON"
+  ]
+ },
+ {
+  "model": "gemma4:e4b (JSON mode)",
+  "seed": 7,
+  "seconds": 17.2,
+  "score": 0,
+  "checks": {
+   "json": false,
+   "schema_valid": false,
+   "skill_vocabulary": false,
+   "one_hidden_var": false,
+   "hidden_prior_param": false,
+   "pull_stochastic": false,
+   "shake_frees_hidden": false,
+   "rattle_noisy": false,
+   "numbers_withheld": false,
+   "rewards_transcribed": false,
+   "corridor_refusals": false,
+   "goal_both_agents": false
+  },
+  "n_errors": 1,
+  "first_errors": [
+   "not parseable as JSON"
+  ]
+ },
+ {
+  "model": "gemma4:e4b (JSON mode)",
+  "seed": 8,
+  "seconds": 27.0,
+  "score": 0,
+  "checks": {
+   "json": false,
+   "schema_valid": false,
+   "skill_vocabulary": false,
+   "one_hidden_var": false,
+   "hidden_prior_param": false,
+   "pull_stochastic": false,
+   "shake_frees_hidden": false,
+   "rattle_noisy": false,
+   "numbers_withheld": false,
+   "rewards_transcribed": false,
+   "corridor_refusals": false,
+   "goal_both_agents": false
+  },
+  "n_errors": 1,
+  "first_errors": [
+   "not parseable as JSON"
+  ]
+ },
+ {
+  "model": "gemma4:e4b (JSON mode)",
+  "seed": 9,
+  "seconds": 28.9,
+  "score": 0,
+  "checks": {
+   "json": false,
+   "schema_valid": false,
+   "skill_vocabulary": false,
+   "one_hidden_var": false,
+   "hidden_prior_param": false,
+   "pull_stochastic": false,
+   "shake_frees_hidden": false,
+   "rattle_noisy": false,
+   "numbers_withheld": false,
+   "rewards_transcribed": false,
+   "corridor_refusals": false,
+   "goal_both_agents": false
+  },
+  "n_errors": 1,
+  "first_errors": [
+   "not parseable as JSON"
+  ]
+ },
+ {
+  "model": "gemma4:e4b (JSON mode)",
+  "seed": 10,
+  "seconds": 17.7,
+  "score": 0,
+  "checks": {
+   "json": false,
+   "schema_valid": false,
+   "skill_vocabulary": false,
+   "one_hidden_var": false,
+   "hidden_prior_param": false,
+   "pull_stochastic": false,
+   "shake_frees_hidden": false,
+   "rattle_noisy": false,
+   "numbers_withheld": false,
+   "rewards_transcribed": false,
+   "corridor_refusals": false,
+   "goal_both_agents": false
+  },
+  "n_errors": 1,
+  "first_errors": [
+   "not parseable as JSON"
+  ]
+ },
+ {
+  "model": "gemma4:e4b (free text)",
+  "seed": 1,
+  "seconds": 52.1,
+  "score": 6,
+  "checks": {
+   "json": true,
+   "schema_valid": false,
+   "skill_vocabulary": true,
+   "one_hidden_var": true,
+   "hidden_prior_param": true,
+   "pull_stochastic": false,
+   "shake_frees_hidden": false,
+   "rattle_noisy": false,
+   "numbers_withheld": true,
+   "rewards_transcribed": true,
+   "corridor_refusals": false,
+   "goal_both_agents": false
+  },
+  "n_errors": 22,
+  "first_errors": [
+   "Goto.pre: bad literal {'literal': {'name': 'at', 'args': ['agent', 'place']}, 'positive': False}",
+   "Goto: outcome_cases without outcomes",
+   "Goto.obs.location[0]: unknown label 'moved'"
+  ]
+ },
+ {
+  "model": "gemma4:e4b (free text)",
+  "seed": 2,
+  "seconds": 56.8,
+  "score": 0,
+  "checks": {
+   "json": false,
+   "schema_valid": false,
+   "skill_vocabulary": false,
+   "one_hidden_var": false,
+   "hidden_prior_param": false,
+   "pull_stochastic": false,
+   "shake_frees_hidden": false,
+   "rattle_noisy": false,
+   "numbers_withheld": false,
+   "rewards_transcribed": false,
+   "corridor_refusals": false,
+   "goal_both_agents": false
+  },
+  "n_errors": 1,
+  "first_errors": [
+   "not parseable as JSON"
+  ]
+ },
+ {
+  "model": "gemma4:e4b (free text)",
+  "seed": 3,
+  "seconds": 49.2,
+  "score": 5,
+  "checks": {
+   "json": true,
+   "schema_valid": false,
+   "skill_vocabulary": true,
+   "one_hidden_var": true,
+   "hidden_prior_param": true,
+   "pull_stochastic": false,
+   "shake_frees_hidden": false,
+   "rattle_noisy": false,
+   "numbers_withheld": true,
+   "rewards_transcribed": false,
+   "corridor_refusals": false,
+   "goal_both_agents": false
+  },
+  "n_errors": 26,
+  "first_errors": [
+   "Goto.pre: bad literal {'literal': {'name': 'at', 'args': ['agent', '*']}, 'positive': True}",
+   "Goto.pre: bad literal {'literal': {'name': 'at', 'args': ['agent', 'place']}, 'positive': False}",
+   "Goto.negpre: bad literal {'literal': {'name': 'at', 'args': ['agent', 'place']}, 'positive': True}"
+  ]
+ },
+ {
+  "model": "gemma4:e4b (free text)",
+  "seed": 4,
+  "seconds": 41.1,
+  "score": 0,
+  "checks": {
+   "json": false,
+   "schema_valid": false,
+   "skill_vocabulary": false,
+   "one_hidden_var": false,
+   "hidden_prior_param": false,
+   "pull_stochastic": false,
+   "shake_frees_hidden": false,
+   "rattle_noisy": false,
+   "numbers_withheld": false,
+   "rewards_transcribed": false,
+   "corridor_refusals": false,
+   "goal_both_agents": false
+  },
+  "n_errors": 1,
+  "first_errors": [
+   "not parseable as JSON"
+  ]
+ },
+ {
+  "model": "gemma4:e4b (free text)",
+  "seed": 5,
+  "seconds": 36.9,
+  "score": 4,
+  "checks": {
+   "json": true,
+   "schema_valid": false,
+   "skill_vocabulary": true,
+   "one_hidden_var": true,
+   "hidden_prior_param": false,
+   "pull_stochastic": false,
+   "shake_frees_hidden": false,
+   "rattle_noisy": false,
+   "numbers_withheld": true,
+   "rewards_transcribed": false,
+   "corridor_refusals": false,
+   "goal_both_agents": false
+  },
+  "n_errors": 25,
+  "first_errors": [
+   "Goto.pre: bad literal {'literal': {'name': 'at', 'args': ['agent', '*'], 'positive': True}}",
+   "Goto.pre: bad literal {'literal': {'name': 'at', 'args': ['place', '*'], 'positive': True}, 'not': True}",
+   "Goto.effects: bad effect {'predicate': {'name': 'at', 'args': ['agent', 'place'], 'positive': True}}"
+  ]
+ },
+ {
+  "model": "gemma4:e4b (free text)",
+  "seed": 6,
+  "seconds": 47.1,
+  "score": 0,
+  "checks": {
+   "json": false,
+   "schema_valid": false,
+   "skill_vocabulary": false,
+   "one_hidden_var": false,
+   "hidden_prior_param": false,
+   "pull_stochastic": false,
+   "shake_frees_hidden": false,
+   "rattle_noisy": false,
+   "numbers_withheld": false,
+   "rewards_transcribed": false,
+   "corridor_refusals": false,
+   "goal_both_agents": false
+  },
+  "n_errors": 1,
+  "first_errors": [
+   "not parseable as JSON"
+  ]
+ },
+ {
+  "model": "gemma4:e4b (free text)",
+  "seed": 7,
+  "seconds": 38.5,
+  "score": 4,
+  "checks": {
+   "json": true,
+   "schema_valid": false,
+   "skill_vocabulary": true,
+   "one_hidden_var": false,
+   "hidden_prior_param": true,
+   "pull_stochastic": false,
+   "shake_frees_hidden": false,
+   "rattle_noisy": false,
+   "numbers_withheld": true,
+   "rewards_transcribed": false,
+   "corridor_refusals": false,
+   "goal_both_agents": false
+  },
+  "n_errors": 49,
+  "first_errors": [
+   "constant A: unknown type agent",
+   "constant B: unknown type agent",
+   "constant hall: unknown type place"
+  ]
+ },
+ {
+  "model": "gemma4:e4b (free text)",
+  "seed": 8,
+  "seconds": 59.9,
+  "score": 9,
+  "checks": {
+   "json": true,
+   "schema_valid": false,
+   "skill_vocabulary": true,
+   "one_hidden_var": true,
+   "hidden_prior_param": true,
+   "pull_stochastic": true,
+   "shake_frees_hidden": true,
+   "rattle_noisy": true,
+   "numbers_withheld": true,
+   "rewards_transcribed": true,
+   "corridor_refusals": false,
+   "goal_both_agents": false
+  },
+  "n_errors": 33,
+  "first_errors": [
+   "constant door: unknown type door",
+   "predicate door_open: unknown type door",
+   "predicate door_jammed: unknown type door"
+  ]
+ },
+ {
+  "model": "gemma4:e4b (free text)",
+  "seed": 9,
+  "seconds": 63.8,
+  "score": 0,
+  "checks": {
+   "json": false,
+   "schema_valid": false,
+   "skill_vocabulary": false,
+   "one_hidden_var": false,
+   "hidden_prior_param": false,
+   "pull_stochastic": false,
+   "shake_frees_hidden": false,
+   "rattle_noisy": false,
+   "numbers_withheld": false,
+   "rewards_transcribed": false,
+   "corridor_refusals": false,
+   "goal_both_agents": false
+  },
+  "n_errors": 1,
+  "first_errors": [
+   "not parseable as JSON"
+  ]
+ },
+ {
+  "model": "gemma4:e4b (free text)",
+  "seed": 10,
+  "seconds": 47.8,
+  "score": 5,
+  "checks": {
+   "json": true,
+   "schema_valid": false,
+   "skill_vocabulary": true,
+   "one_hidden_var": false,
+   "hidden_prior_param": true,
+   "pull_stochastic": false,
+   "shake_frees_hidden": false,
+   "rattle_noisy": false,
+   "numbers_withheld": true,
+   "rewards_transcribed": false,
+   "corridor_refusals": false,
+   "goal_both_agents": true
+  },
+  "n_errors": 22,
+  "first_errors": [
+   "Goto.pre: bad literal {'literal': {'name': 'at', 'args': ['agent', 'hall'], 'positive': True}}",
+   "Goto.pre: bad literal {'literal': {'name': 'at', 'args': ['agent', 'place'], 'positive': False}}",
+   "Goto.effects: bad effect {'predicate': {'name': 'at', 'args': ['agent', 'place'], 'positive': True}}"
+  ]
+ }
+]

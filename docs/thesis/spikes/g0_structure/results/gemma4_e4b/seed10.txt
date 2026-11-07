@@ -1,0 +1,18 @@
+{"domain": {"name": "coop-door-po", "model_version": "coop-door-po.r1", "types": ["agent", "place"], "constants": [{"name": "hall", "type": "place"}, {"name": "handle_left", "type": "place"}, {"name": "handle_right", "type": "place"}, {"name": "goal_room", "type": "place"}, {"name": "door", "type": "fluent"}], "parameters": [{"name": "jam_prior", "prior": {"beta": ["1", "1"]}}, {"name": "pull_success_prior", "prior": {"beta": ["1", "1"]}}, {"name": "clearjam_success_prior", "prior": {"beta": ["1", "1"]}}, {"name": "rattle_accuracy_prior", "prior": {"beta": ["1", "1"]}}], "observation_channels": [{"name": "location", "symbols": ["none", "hall", "handle_left", "handle_right", "goal_room"]}, {"name": "door_state", "symbols": ["none", "open", "closed"]}, {"name": "skill_status", "symbols": ["none", "ok", "fail"]}, {"name": "rattle", "symbols": ["none", "rattle_jam", "rattle_free"]}], "predicates": [{"name": "at", "param_types": ["agent", "place"], "fluent": true}, {"name": "holding", "param_types": ["agent", "place"], "fluent": true}, {"name": "door_open", "param_types": ["door"], "fluent": true}, {"name": "door_jammed", "param_types": ["door"], "fluent": true, "observable": false}], "skills": [{"name": "Goto", "parameters": ["agent", "place"], "parameter_types": ["agent", "place"], "preconditions": [{"name": "at", "args": ["agent", "*"]}, {"name": "not_at", "args": ["agent", "place"]}, {"name": "not_holding", "args": ["agent"]}, {"name": "not_holding", "args": ["agent"]}], "effects": [{"predicate": {"name": "at", "args": ["agent", "place"], "positive": true}}, {"predicate": {"name": "holding", "args": ["agent", "place"], "positive": true}
+}, {"name": "Enter", "parameters": ["agent", "door"], "parameter_types": ["agent", "door"], "preconditions": [{"name": "at", "args": ["agent", "*"]}, {"name": "door_open", "args": ["door"]}, {"name": "not_at", "args": ["agent", "goal_room"]}], "effects": [{"predicate": {"name": "at", "args": ["agent", "goal_room"], "positive": true}}, {"predicate": {"name": "door_open", "args": ["door"], "positive": false}}
+], "outcome_label": "entered", "outcome_cases": [{"when":[{"literal": {"name": "door_open", "args": ["door"]}, "positive": true}],"distribution":{"deterministic": "entered"}}], "observation_cases": {"location":[{"when":[{"literal": {"name": "at", "args": ["agent", "place"]}, "positive": true}],"distribution":{"deterministic": "none"}}], "door_state":[{"when":[{"literal": {"name": "door_open", "args": ["door"]}, "positive": true}],"distribution":{"deterministic": "none"}}], "skill_status":[{"when":[],"distribution":{"deterministic": "ok"}}]},
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  

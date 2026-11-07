@@ -1,0 +1,566 @@
+```json
+{
+  "domain": {
+    "name": "cooperative-door-po",
+    "model_version": "door-po.r1",
+    "types": [
+      "agent",
+      "place"
+    ],
+    "constants": [
+      {
+        "name": "A",
+        "type": "agent"
+      },
+      {
+        "name": "B",
+        "type": "agent"
+      },
+      {
+        "name": "hall",
+        "type": "place"
+      },
+      {
+        "name": "handle_left",
+        "type": "place"
+      },
+      {
+        "name": "handle_right",
+        "type": "place"
+      },
+      {
+        "name": "goal_room",
+        "type": "place"
+      }
+    ],
+    "parameters": [
+      {
+        "name": "p_jam_init",
+        "prior": {
+          "beta": [
+            "1",
+            "1"
+          ]
+        }
+      },
+      {
+        "name": "p_pull_success",
+        "prior": {
+          "beta": [
+            "1",
+            "1"
+          ]
+        }
+      },
+      {
+        "name": "p_shake_free",
+        "prior": {
+          "beta": [
+            "1",
+            "1"
+          ]
+        }
+      },
+      {
+        "name": "p_rattle_truth",
+        "prior": {
+          "beta": [
+            "1",
+            "1"
+          ]
+        }
+      }
+    ],
+    "observation_channels": [
+      {
+        "name": "status",
+        "symbols": [
+          "none",
+          "ok",
+          "fail"
+        ]
+      },
+      {
+        "name": "rattle",
+        "symbols": [
+          "none",
+          "rattle_jam",
+          "rattle_free"
+        ]
+      }
+    ],
+    "predicates": [
+      {
+        "name": "at",
+        "param_types": [
+          "agent",
+          "place"
+        ],
+        "fluent": true
+      },
+      {
+        "name": "door_open",
+        "param_types": [],
+        "fluent": true
+      },
+      {
+        "name": "door_jammed",
+        "param_types": [],
+        "fluent": true,
+        "observable": false
+      }
+    ],
+    "skills": [
+      {
+        "name": "Goto",
+        "parameters": [
+          "agent",
+          "place"
+        ],
+        "parameter_types": [
+          "agent",
+          "place"
+        ],
+        "preconditions": [
+          {
+            "literal": {
+              "name": "at",
+              "args": [
+                "agent",
+                "*"
+              ]
+            },
+            "positive": true
+          },
+          {
+            "literal": {
+              "name": "at",
+              "args": [
+                "agent",
+                "place"
+              ]
+            },
+            "positive": false
+          }
+        ],
+        "negative_preconditions": [
+          {
+            "literal": {
+              "name": "at",
+              "args": [
+                "agent",
+                "place"
+              ]
+            },
+            "positive": true
+          }
+        ],
+        "effects": [
+          {
+            "predicate": {
+              "name": "at",
+              "args": [
+                "agent",
+                "place"
+              ]
+            },
+            "positive": true
+          },
+          {
+            "predicate": {
+              "name": "at",
+              "args": [
+                "agent",
+                "*"
+              ]
+            },
+            "positive": false
+          }
+        ],
+        "outcome_label": "goto_success",
+        "outcome_cases": [
+          {
+            "when": [],
+            "distribution": {
+              "deterministic": "goto_success"
+            }
+          }
+        ],
+        "observation_cases": {
+          "status": [
+            {
+              "when": [],
+              "distribution": {
+                "deterministic": "goto_success"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "Enter",
+        "parameters": [
+          "agent",
+          "door"
+        ],
+        "parameter_types": [
+          "agent",
+          "place"
+        ],
+        "preconditions": [
+          {
+            "literal": {
+              "name": "at",
+              "args": [
+                "agent",
+                "hall"
+              ]
+            },
+            "positive": true
+          },
+          {
+            "literal": {
+              "name": "door_open",
+              "args": []
+            },
+            "positive": true
+          }
+        ],
+        "effects": [
+          {
+            "predicate": {
+              "name": "at",
+              "args": [
+                "agent",
+                "goal_room"
+              ]
+            },
+            "positive": true
+          },
+          {
+            "predicate": {
+              "name": "at",
+              "args": [
+                "agent",
+                "hall"
+              ]
+            },
+            "positive": false
+          }
+        ],
+        "outcome_label": "entered",
+        "outcome_cases": [
+          {
+            "when": [],
+            "distribution": {
+              "deterministic": "entered"
+            }
+          }
+        ],
+        "observation_cases": {
+          "status": [
+            {
+              "when": [],
+              "distribution": {
+                "deterministic": "entered"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "CooperateOpen",
+        "parameters": [
+          "agent",
+          "door",
+          "partner"
+        ],
+        "parameter_types": [
+          "agent",
+          "place",
+          "agent"
+        ],
+        "preconditions": [
+          {
+            "literal": {
+              "name": "at",
+              "args": [
+                "agent",
+                "handle_left"
+              ]
+            },
+            "positive": true
+          },
+          {
+            "literal": {
+              "name": "at",
+              "args": [
+                "partner",
+                "handle_right"
+              ]
+            },
+            "positive": true
+          },
+          {
+            "literal": {
+              "name": "door_open",
+              "args": []
+            },
+            "positive": false
+          }
+        ],
+        "negative_preconditions": [],
+        "effects": [
+          {
+            "predicate": {
+              "name": "door_open",
+              "args": []
+            },
+            "positive": false
+          }
+        ],
+        "outcomes": [
+          {
+            "label": "success",
+            "effects": [
+              {
+                "predicate": {
+                  "name": "door_open",
+                  "args": []
+                },
+                "positive": true
+              }
+            ]
+          },
+          {
+            "label": "fail",
+            "effects": []
+          }
+        ],
+        "outcome_label": "cooperate_open",
+        "outcome_cases": [
+          {
+            "when": [],
+            "distribution": {
+              "bernoulli": {
+                "p": {
+                  "parameter": "p_pull_success"
+                },
+                "then": "success",
+                "else": "fail"
+              }
+            }
+          }
+        ],
+        "observation_cases": {
+          "status": [
+            {
+              "when": [],
+              "distribution": {
+                "bernoulli": {
+                  "p": {
+                    "parameter": "p_pull_success"
+                  },
+                  "then": "ok",
+                  "else": "fail"
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "ClearJam",
+        "parameters": [
+          "agent",
+          "place",
+          "door"
+        ],
+        "parameter_types": [
+          "agent",
+          "place",
+          "place"
+        ],
+        "preconditions": [
+          {
+            "literal": {
+              "name": "at",
+              "args": [
+                "agent",
+                "place"
+              ]
+            },
+            "positive": true
+          },
+          {
+            "literal": {
+              "name": "door_open",
+              "args": []
+            },
+            "positive": false
+          }
+        ],
+        "negative_preconditions": [],
+        "effects": [
+          {
+            "predicate": {
+              "name": "door_jammed",
+              "args": []
+            },
+            "positive": false
+          }
+        ],
+        "outcomes": [
+          {
+            "label": "jam_cleared",
+            "effects": [
+              {
+                "predicate": {
+                  "name": "door_open",
+                  "args": []
+                },
+                "positive": true
+              },
+              {
+                "predicate": {
+                  "name": "door_jammed",
+                  "args": []
+                },
+                "positive": false
+              }
+            ]
+          },
+          {
+            "label": "still_jammed",
+            "effects": []
+          }
+        ],
+        "outcome_label": "clear_jam",
+        "outcome_cases": [
+          {
+            "when": [],
+            "distribution": {
+              "bernoulli": {
+                "p": {
+                  "parameter": "p_shake_free"
+                },
+                "then": "jam_cleared",
+                "else": "still_jammed"
+              }
+            }
+          }
+        ],
+        "observation_cases": {
+          "status": [
+            {
+              "when": [],
+              "distribution": {
+                "deterministic": "ok"
+              }
+            }
+          ],
+          "rattle": [
+            {
+              "when": [],
+              "distribution": {
+                "bernoulli": {
+                  "p": {
+                    "parameter": "p_rattle_truth"
+                  },
+                  "then": "rattle_truth_reads",
+                  "else": "rattle_lie_reads"
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "problem": {
+    "name": "cooperative-door",
+    "domain": "cooperative-door-po",
+    "objects": [
+      {
+        "name": "A",
+        "type": "agent"
+      },
+      {
+        "name": "B",
+        "type": "agent"
+      }
+    ],
+    "init": [
+      {
+        "literal": {
+          "name": "at",
+          "args": [
+            "A",
+            "hall"
+          ]
+        },
+        "positive": true
+      },
+      {
+        "literal": {
+          "name": "at",
+          "args": [
+            "B",
+            "hall"
+          ]
+        },
+        "positive": true
+      },
+      {
+        "literal": {
+          "name": "door_open",
+          "args": []
+        },
+        "positive": false
+      }
+    ],
+    "hidden_prior": [
+      {
+        "literal": {
+          "name": "door_jammed",
+          "args": []
+        },
+        "p": {
+          "parameter": "p_jam_init"
+        }
+      }
+    ],
+    "goal": [
+      {
+        "literal": {
+          "name": "at",
+          "args": [
+            "A",
+            "goal_room"
+          ]
+        },
+        "positive": true
+      },
+      {
+        "literal": {
+          "name": "at",
+          "args": [
+            "B",
+            "goal_room"
+          ]
+        },
+        "positive": true
+      }
+    ],
+    "rewards": {
+      "step": "-0.01/2",
+      "skills": {
+        "ClearJam": "-0.05",
+        "CooperateOpen": "0"
+      },
+      "goal": "2"
+    },
+    "discount": "95/100"
+  }
+}
+```
