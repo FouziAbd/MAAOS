@@ -44,15 +44,15 @@ The supervisor's spec is already in the repo:
 
 ## Status of approvals
 
-Pending the supervisor's sign-off (email sent ~2026-10-11):
+**Approved as written (project owner, 2026-11-07).** The supervisor signed off on all four items:
 - scope and the 5-month timeline;
 - unfreezing `skill_ir` and adding runtime seams for the new domains;
 - recording the PO domains as the "real next domain" in `docs/refactor/NEXT_DOMAIN.md`;
 - using a stronger hosted LLM if gemma4:e4b cannot write model structure.
 
-**Until the user confirms approval, current project rules still apply:** `CLAUDE.md` and
-`.claude/rules/v1-scope.md` forbid probabilistic semantics and Julia compilation. Do not start
-POMDP implementation work before that.
+Project rules were relaxed for the new domains only on 2026-11-07 (`.claude/rules/v1-scope.md`
+"Thesis exception"). The running record of the implementation is
+`docs/thesis/THESIS_IMPLEMENTATION.md`.
 
 ## Tasks for Claude Code now
 
@@ -72,6 +72,9 @@ POMDP implementation work before that.
 
 ## Later, once the user says the supervisor approved
 
-- Update `docs/refactor/NEXT_DOMAIN.md` (Observability = partial, Uncertainty = stochastic,
-  Concurrency = sequential skills) and relax `.claude/rules/v1-scope.md` for the new domains only.
-- Start week 1–3 work from the schedule in `pomdp-plan-time-estimate.md`.
+Done 2026-11-07 (phase T0 in `docs/thesis/THESIS_IMPLEMENTATION.md`):
+- `docs/refactor/NEXT_DOMAIN.md` updated (Observability = partial, Uncertainty = stochastic,
+  Concurrency = sequential skills) and `.claude/rules/v1-scope.md` relaxed for the new domains only.
+
+In progress: week 1-3 work from the schedule in `pomdp-plan-time-estimate.md`, as phases T1-T5
+of the running record.

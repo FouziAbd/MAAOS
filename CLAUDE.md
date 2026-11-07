@@ -252,7 +252,9 @@ before the final policy decision (R3). Preserve this lifecycle.
 
 ## Out of scope
 
-Unless explicitly requested as a new domain requirement, do not implement:
+Unless explicitly requested as a new domain requirement, do not implement
+(the one standing exception is the approved thesis POMDP extension, scoped in
+`.claude/rules/v1-scope.md` "Thesis exception" and the section "Thesis work" below):
 
 - belief reconciliation;
 - probabilistic/stochastic transitions;
@@ -296,12 +298,25 @@ it, is recorded in:
 
 `docs/refactor/REFACTORING_IMPLEMENTATION.md`
 
-## Thesis work (POMDP extension) — planning docs
-Plan: docs/thesis/pomdp-plan-time-estimate.md
-Design: docs/thesis/pomdp-julia-dspy-plan.md
-Decisions and approval status: docs/thesis/HANDOFF.md
-Read these before any thesis task. V1 scope rules still apply until the user
-confirms the supervisor's approval.
+## Thesis work (POMDP extension)
+
+Supervisor approval was recorded by the project owner on 2026-11-07 (scope, the 22-week
+timeline, unfreezing `shared/skill_ir.py` and the runtime seams for the new domains, the
+partially observable domains as the real next domain in `docs/refactor/NEXT_DOMAIN.md`).
+
+- Plan: `docs/thesis/pomdp-plan-time-estimate.md`
+- Design: `docs/thesis/pomdp-julia-dspy-plan.md`
+- Fixed decisions: `docs/thesis/HANDOFF.md` (do not reopen without the owner)
+- Running record, phases T0-T5 and gates: `docs/thesis/THESIS_IMPLEMENTATION.md`
+- ADRs: `docs/decisions/T*_*.md`
+- Scope of what the thesis may change: `.claude/rules/v1-scope.md` "Thesis exception"
+
+Read these before any thesis task. The thesis works in **new** packages (`pomdp/`, `julia/`,
+`domains/cooperative_grid_po/`, `domains/box_push_po_lite/`) plus the in-place extension of
+`shared/skill_ir.py`. The standing gate is byte-identity of V1: the golden domain digest,
+both demo transcripts, the acceptance traces and the PDDL artifacts must not change, and the
+default suite stays offline (no Julia, no Ollama). One phase per turn; each phase ends with
+a dated summary in the running record and a stop for owner approval.
 
 ## Primary manual workflows
 
