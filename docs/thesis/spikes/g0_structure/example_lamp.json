@@ -1,0 +1,325 @@
+{
+ "domain": {
+  "name": "lamp-fault-po",
+  "model_version": "lamp-po.r1",
+  "types": [
+   "agent",
+   "lamp"
+  ],
+  "provenance": {
+   "source": "spike example (hand-written)",
+   "model_version": "lamp-po.r1"
+  },
+  "constants": [
+   {
+    "name": "R",
+    "type": "agent"
+   },
+   {
+    "name": "lamp",
+    "type": "lamp"
+   }
+  ],
+  "parameters": [
+   {
+    "name": "broken_prior",
+    "prior": {
+     "beta": [
+      "1",
+      "1"
+     ]
+    }
+   },
+   {
+    "name": "switch_success",
+    "prior": {
+     "beta": [
+      "1",
+      "1"
+     ]
+    }
+   },
+   {
+    "name": "inspect_accuracy",
+    "prior": {
+     "beta": [
+      "1",
+      "1"
+     ]
+    }
+   }
+  ],
+  "observation_channels": [
+   {
+    "name": "status",
+    "symbols": [
+     "none",
+     "ok",
+     "fail"
+    ]
+   },
+   {
+    "name": "look",
+    "symbols": [
+     "none",
+     "looks_broken",
+     "looks_fine"
+    ]
+   }
+  ],
+  "predicates": [
+   {
+    "name": "lit",
+    "param_types": [
+     "lamp"
+    ],
+    "fluent": true
+   },
+   {
+    "name": "broken",
+    "param_types": [
+     "lamp"
+    ],
+    "fluent": true,
+    "observable": false
+   }
+  ],
+  "skills": [
+   {
+    "name": "Switch",
+    "parameters": [
+     "agent",
+     "lamp"
+    ],
+    "parameter_types": [
+     "agent",
+     "lamp"
+    ],
+    "preconditions": [],
+    "effects": [],
+    "outcome_label": "lit",
+    "negative_preconditions": [
+     {
+      "name": "lit",
+      "args": [
+       "lamp"
+      ]
+     }
+    ],
+    "outcomes": [
+     {
+      "label": "lit",
+      "effects": [
+       {
+        "predicate": {
+         "name": "lit",
+         "args": [
+          "lamp"
+         ]
+        },
+        "positive": true
+       }
+      ]
+     },
+     {
+      "label": "dark",
+      "effects": []
+     }
+    ],
+    "outcome_cases": [
+     {
+      "when": [
+       {
+        "literal": {
+         "name": "broken",
+         "args": [
+          "lamp"
+         ]
+        },
+        "positive": true
+       }
+      ],
+      "distribution": {
+       "deterministic": "dark"
+      }
+     },
+     {
+      "when": [],
+      "distribution": {
+       "bernoulli": {
+        "p": {
+         "parameter": "switch_success"
+        },
+        "then": "lit",
+        "else": "dark"
+       }
+      }
+     }
+    ],
+    "observation_cases": {
+     "status": [
+      {
+       "when": [
+        {
+         "literal": {
+          "name": "lit",
+          "args": [
+           "lamp"
+          ]
+         },
+         "positive": true
+        }
+       ],
+       "distribution": {
+        "deterministic": "ok"
+       }
+      },
+      {
+       "when": [],
+       "distribution": {
+        "deterministic": "fail"
+       }
+      }
+     ]
+    }
+   },
+   {
+    "name": "Inspect",
+    "parameters": [
+     "agent",
+     "lamp"
+    ],
+    "parameter_types": [
+     "agent",
+     "lamp"
+    ],
+    "preconditions": [],
+    "effects": [],
+    "outcome_label": "looked",
+    "observation_cases": {
+     "status": [
+      {
+       "when": [],
+       "distribution": {
+        "deterministic": "ok"
+       }
+      }
+     ],
+     "look": [
+      {
+       "when": [
+        {
+         "literal": {
+          "name": "broken",
+          "args": [
+           "lamp"
+          ]
+         },
+         "positive": true
+        }
+       ],
+       "distribution": {
+        "bernoulli": {
+         "p": {
+          "parameter": "inspect_accuracy"
+         },
+         "then": "looks_broken",
+         "else": "looks_fine"
+        }
+       }
+      },
+      {
+       "when": [],
+       "distribution": {
+        "bernoulli": {
+         "p": {
+          "parameter": "inspect_accuracy"
+         },
+         "then": "looks_fine",
+         "else": "looks_broken"
+        }
+       }
+      }
+     ]
+    }
+   },
+   {
+    "name": "Replace",
+    "parameters": [
+     "agent",
+     "lamp"
+    ],
+    "parameter_types": [
+     "agent",
+     "lamp"
+    ],
+    "preconditions": [],
+    "effects": [
+     {
+      "predicate": {
+       "name": "broken",
+       "args": [
+        "lamp"
+       ]
+      },
+      "positive": false
+     }
+    ],
+    "outcome_label": "replaced",
+    "negative_preconditions": [
+     {
+      "name": "lit",
+      "args": [
+       "lamp"
+      ]
+     }
+    ],
+    "observation_cases": {
+     "status": [
+      {
+       "when": [],
+       "distribution": {
+        "deterministic": "ok"
+       }
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "problem": {
+  "name": "light-the-lamp",
+  "domain": "lamp-fault-po",
+  "objects": [],
+  "init": [],
+  "hidden_prior": [
+   {
+    "literal": {
+     "name": "broken",
+     "args": [
+      "lamp"
+     ]
+    },
+    "p": {
+     "parameter": "broken_prior"
+    }
+   }
+  ],
+  "goal": [
+   {
+    "name": "lit",
+    "args": [
+     "lamp"
+    ]
+   }
+  ],
+  "rewards": {
+   "step": "-1/100",
+   "skills": {
+    "Replace": "-1/2"
+   },
+   "goal": "1"
+  },
+  "discount": "19/20"
+ }
+}

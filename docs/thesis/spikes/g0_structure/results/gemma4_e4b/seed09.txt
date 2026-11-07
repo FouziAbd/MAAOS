@@ -1,0 +1,17 @@
+{"domain": {"name": "cooperative-door-po", "model_version": "cooperative-door-po.r1", "types": ["agent", "place"], "constants": [{"name": "hall", "type": "place"}, {"name": "handle_left", "type": "place"}, {"name": "handle_right", "type": "place"}, {"name": "goal_room", "type": "place"}, {"name": "door", "type": "place"}], "parameters": [{"name": "initial_jam_prior", "prior": {"beta": ["1", "1"]}}, {"name": "cooperate_slip_prob", "prior": {"beta": ["1", "1"]}}, {"name": "shake_free_prob", "prior": {"beta": ["1", "1"]}}, {"name": "rattle_truth_prob", "prior": {"beta": ["1", "1"]}}], "observation_channels": [{"name": "agent_location", "symbols": ["none", "hall", "handle_left", "handle_right", "goal_room"]}, {"name": "door_state", "symbols": ["none", "open", "closed"]}, {"name": "skill_status", "symbols": ["none", "ok", "fail"]}, {"name": "rattle_reading", "symbols": ["none", "rattle_jam", "rattle_free"]}], "predicates": [{"name": "at", "param_types": ["agent", "place"], "fluent": true}, {"name": "door_open", "param_types": ["door"], "fluent": true}, {"name": "door_jammed", "param_types": ["door"], "fluent": true, "observable": false}], "skills": [{"name": "Goto", "parameters": ["agent", "place"], "parameter_types": ["agent", "place"], "preconditions": [{"name": "at", "args": ["agent", "*"]}, {"name": "door_open", "args": ["door"], "positive": true}], "effects": [{"predicate": {"name": "at", "args": ["agent", "place"], "positive": true}, "positive": true}], "outcome_label": "goto", "negative_preconditions": [{"name": "at", "args": ["agent", "*"]}, {"name": "at", "args": ["agent", "place"]}], "outcome_cases": [{"when": [{"literal": {"name": "at", "args": ["agent", "place"]}, "positive": true}], "distribution": {"deterministic": "goto"}}, {"when": [], "distribution": {"deterministic": "goto"}}], "observation_cases": {"agent_location": [{"when": [{"literal": {"name": "at", "args": ["agent", "place"]}, "positive": true}], "distribution": {"deterministic": "none"}}, {"when": [], "distribution": {"deterministic": "none"}}], "observation_cases": {"door_state": [{"when": [], "distribution": {"deterministic": "none"}}], "observation_cases": {"skill_status": [{"when": [], "distribution": {"deterministic": "none"}}]}, "observation_cases": {"rattle_reading": [{"when": [], "distribution": {"deterministic": "none"}}]}
+    },
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    

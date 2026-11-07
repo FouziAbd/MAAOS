@@ -30,10 +30,10 @@ from `origin/main` (T0 used `thesis/plan-docs`; from T1 on, never a reused branc
 | Phase | Week | Deliverable | Gate | Status |
 |---|---|---|---|---|
 | T0 | 1 | Open the gate: `NEXT_DOMAIN.md`, `v1-scope.md` thesis exception, `CLAUDE.md`, `refactor-architecture.md`, `HANDOFF.md` status, this record | suite unchanged (1032 OK); doc needles intact; pushed | **done 2026-11-07** |
-| T1 | 1 | ADR `docs/decisions/T1_PROBABILISTIC_SKILL_IR.md`: generalize `shared/skill_ir.py` in place (domain-supplied type universe and signature source, BoxPush defaults) and extend it (named outcomes with normalized distributions, deterministic or Bernoulli; per-channel observations; Beta-prior parameters; hidden predicates; initial belief); canonical form = the LLM JSON schema; derived DBN view | owner accepts the ADR | **written 2026-11-07, ADR Proposed; awaiting owner acceptance** |
-| T2 | 1 | Spikes, no production code: pinned Julia project under `julia/` (one exact 1.10 LTS version, committed Manifest; POMDPs, POMDPTools, NativeSARSOP, JSON3, StableRNGs) with a Tiger solve; LLM structure spike, gemma4:e4b vs gemma3:27b-cloud through local ollama, 10 samples each, scored against the ADR's draft schema | G0 recorded here | planned |
+| T1 | 1 | ADR `docs/decisions/T1_PROBABILISTIC_SKILL_IR.md`: generalize `shared/skill_ir.py` in place (domain-supplied type universe and signature source, BoxPush defaults) and extend it (named outcomes with normalized distributions, deterministic or Bernoulli; per-channel observations; Beta-prior parameters; hidden predicates; initial belief); canonical form = the LLM JSON schema; derived DBN view | owner accepts the ADR | **done 2026-11-07; ADR Accepted (PR #26 merged)** |
+| T2 | 1 | Spikes, no production code: pinned Julia project under `julia/` (one exact 1.10 LTS version, committed Manifest; POMDPs, POMDPTools, NativeSARSOP, JSON3, StableRNGs) with a Tiger solve; LLM structure spike, gemma4:e4b vs gemma3:27b-cloud through local ollama, 10 samples each, scored against the ADR's draft schema | G0 recorded here | **done 2026-11-07; G0 half-decided: gemma4:e4b cannot write the structure; the stronger model is blocked on an Ollama sign-in** |
 | T3 | 2 | `shared/skill_ir.py` generalized and extended per the ADR; `shared/__init__.py` exports; canonical-faithfulness cases; new tests | golden digest, demos, traces, PDDL unchanged; mypy/ruff clean | planned |
-| T4 | 2-3 | `pomdp/` package (stdlib + `shared` only, added to the ruff/mypy gates and the import guard): DBN view, state enumeration, table compiler (JSON matching the Julia reader), `fractions`-exact reference evaluator, exact belief update and alpha-vector replay; Tiger and CoopGrid-Jam-PO IR fixtures; `julia/` bridge (opt-in `MAAOS_JULIA=1`) | compiled tables equal the evaluator on every row; Tiger policy replays without Julia | planned |
+| T4 | 2-3 | `pomdp/` package (stdlib + `shared` only, added to the ruff/mypy gates and the import guard): DBN view, state enumeration, table compiler (JSON matching the Julia reader), `fractions`-exact reference evaluator, exact belief update and alpha-vector replay; CoopGrid-Jam-PO and the lamp example as IR fixtures, Tiger as a table-level fixture only (its rewards depend on the hidden state, which the T1 reward model does not express; see the T2 entry); `julia/` bridge (opt-in `MAAOS_JULIA=1`) | compiled tables equal the evaluator on every row; Tiger policy replays without Julia | planned |
 | T5 | 3 | Seeded PO wrapper `functional_layer/custom_env/cooperative_grid/grid_env_po.py`; `domains/cooperative_grid_po/` via `create-domain` (jam hidden by projection and by `_observe`; rattle reading in the state, set on shake; `ClearJam` succeeds iff the shake was performed); committed true-model tables and MDP/POMDP policies; still `ProjectionTrack` + `bfs_plan` in this phase | G-W3 | planned |
 
 Weeks 4-5 (planner seam, belief track, `observe()` path, likelihood-based discrepancy,
@@ -138,3 +138,89 @@ A high-effort code review of the branch found 10 issues in the record; all were 
 Command and result after the fixes: `python -B -m unittest discover -s tests -t .` gave
 `Ran 1032 tests ... OK (skipped=1)`, unchanged. The ADR stays Proposed; the gate is still the
 owner's acceptance.
+
+## Phase T2 — done 2026-11-07 (branch `thesis/t2-spikes`)
+
+Week-1 spikes. No production code; nothing here runs in the offline suite.
+
+### Julia toolchain
+
+- Julia **1.10.13** (LTS) installed user-locally under `~/.local/opt/julia-1.10.13` from the
+  official tarball, SHA-256 verified, no PATH or shell-profile change (steps in `julia/README.md`).
+- `julia/Project.toml` + committed `julia/Manifest.toml`: POMDPs 1.0.0, POMDPTools 1.1.0,
+  NativeSARSOP 0.1.4, POMDPModels 0.4.22, JSON3 1.14.4, StableRNGs 1.1.0; compat `julia = "1.10"`.
+- `julia/tiger.jl`: NativeSARSOP on `POMDPModels.TigerPOMDP` with iteration budgets and no
+  wall-clock cap.
+
+| Tiger check | Result |
+|---|---|
+| value at the uniform initial belief | 19.371368 (the known Tiger value at discount 0.95) |
+| same model through `SparseTabularPOMDP` | 19.371368 |
+| alpha vectors, two independent solves | 5, identical |
+| action at the initial belief | listen |
+| mean discounted return, 2000 episodes, `StableRNG(2026)` | 19.4661 |
+
+Finding for T4: Tiger cannot be written in the T1 IR. Its rewards depend on the hidden state
+(opening the tiger's door costs 100), and the T1 `RewardModel` holds only constant step, skill and
+goal rewards. Tiger is therefore a table-level fixture in T4 (exported from POMDPModels through
+`SparseTabularPOMDP`), and the IR fixtures are CoopGrid-Jam-PO and the lamp example. The T4 row
+above was corrected. No thesis domain needs state-dependent rewards, so the ADR is unchanged.
+
+### G0 — can the model write the structure?
+
+Files: `docs/thesis/spikes/g0_structure/` (see its README). The prompt gives the T1 format rules,
+one worked example of a different domain (a lamp with a hidden fault and a noisy inspection) and
+the sole-input description with all probabilities withheld. A 12-point, name-agnostic rubric
+scores each reply; the hand-written true model scores 12/12. The standalone validator was checked
+by ten deliberate mutations of the true model, each caught. Settings: seeds 1-10, temperature
+0.7, context 16384, at most 8192 output tokens, local ollama 0.21.0.
+
+| model | samples | mean score /12 | best | valid against the T1 rules | parsed as JSON | seconds per sample |
+|---|---|---|---|---|---|---|
+| gemma4:e4b, ollama JSON mode | 10 | 0.8 | 6 | 0 | 3 | 17-66 |
+| gemma4:e4b, free text | 10 | 3.3 | 9 | 0 | 6 | 37-64 |
+| gemma3:27b-cloud | 0 | - | - | - | - | every call refused: HTTP 401, the machine is not signed in to Ollama |
+
+| rubric check (count of 10) | JSON mode | free text |
+|---|---|---|
+| parses | 3 | 6 |
+| valid against the T1 rules | 0 | 0 |
+| exact skill vocabulary | 1 | 6 |
+| exactly one hidden variable | 1 | 4 |
+| hidden prior is a parameter | 0 | 5 |
+| pull stochastic, conditioned on the hidden variable | 0 | 1 |
+| shake clears the hidden variable with a parameter | 0 | 1 |
+| rattle is a noisy observation of it | 1 | 1 |
+| no probability values written | 1 | 6 |
+| rewards and discount exact | 0 | 2 |
+| corridor refusals modelled | 0 | 0 |
+| goal names both agents | 1 | 1 |
+
+What went wrong:
+- In JSON mode, 7 of 10 replies are malformed or truncated; several end in a run of blank lines
+  up to the token limit, a known failure of constrained JSON decoding with small models.
+- In free text, the commonest error is writing a case atom (`{"literal": ..., "positive": ...}`)
+  where a precondition (`{"name", "args"}`) belongs (4 of 6 parsed replies), then types used but
+  not declared.
+- No reply models the corridor refusals, and only one gets the stochastic pull right.
+
+**G0 verdict (half): gemma4:e4b cannot write CoopGrid-Jam-PO's model structure zero-shot**: 0 of
+20 replies are valid, and the best is 9 of 12 on semantics with a broken format. This is the
+plan's risk 2: a stronger model writes structure and the failure is reported as a finding. The
+stronger model's run is blocked until the owner signs this machine in to Ollama (`ollama
+signin`); then `MAAOS_LIVE_LM=1 python run_spike.py --models gemma3:27b-cloud --seeds 10` and
+`python score.py results` complete G0. Not tried, and out of T2 scope: feeding validator errors
+back for repair rounds (the cascaded metric of weeks 6-8), which may rescue the small model.
+
+Two observations for later phases, not changes now:
+- Precondition literals and case atoms use different JSON shapes (the V1 canonical form keeps
+  `{"name","args"}` for preconditions). A generator-side normalizer, or one validator-feedback
+  round, is the cheap fix; it belongs to the generation work of weeks 6-8, not to the IR.
+- The two JSON-mode and free-text conditions differ only in decoding, so later model comparisons
+  should report both.
+
+Tests added/changed: none; the spike scripts live under `docs/` and pass the import-guard tests.
+Commands and results: `julia --project=julia julia/tiger.jl` as above; `python -B -m unittest
+discover -s tests -t .` gave `Ran 1032 tests ... OK (skipped=1)`, unchanged. Behavior
+differences: none. Debt: none new. Next: T3 (implement the ADR in `shared/skill_ir.py`), which
+needs the owner's go-ahead; the G0 cloud run can be finished in parallel once Ollama is signed in.

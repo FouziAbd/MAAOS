@@ -1,6 +1,6 @@
 # ADR-T1 — Probabilistic, domain-generic skill IR
 
-- Status: Proposed
+- Status: Accepted (owner, 2026-11-07: PR #26 merged and phase T2 started on it)
 - Date: 2026-11-07
 - Scope: thesis phase T1 (design only; implemented in T3, consumed by T4 and T5). Covered by the
   "Thesis exception" in `.claude/rules/v1-scope.md`.
