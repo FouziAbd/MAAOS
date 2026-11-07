@@ -41,3 +41,34 @@ architectural substitutability. It must not become production functionality.
 Preserve later-useful legacy/POMDP research code unless the project owner
 explicitly requests the recorded post-R6 relocation as a separate reviewable
 hygiene change (see `legacy-packages.md`).
+
+## Thesis exception (project owner, 2026-11-07; supervisor-approved)
+
+The real next domain has been chosen (`docs/refactor/NEXT_DOMAIN.md`, 2026-11-07): the
+thesis POMDP extension, planned in `docs/thesis/pomdp-plan-time-estimate.md` and
+`docs/thesis/pomdp-julia-dspy-plan.md`, with fixed decisions in `docs/thesis/HANDOFF.md`
+and the running record in `docs/thesis/THESIS_IMPLEMENTATION.md`.
+
+The ban above on stochastic DBNs, learned structure, Julia MDP/POMDP compilation,
+partial-observation belief reconciliation and calibrated uncertainty is lifted **only** for:
+
+- (a) the in-place extension of `shared/skill_ir.py` (named outcomes with probability
+  expressions, per-outcome observations, named parameters, a domain-supplied type universe
+  and signature source), under the byte-identity gate: every V1 domain loads unchanged as the
+  single-outcome case, the golden domain digest, the V1 demos, the acceptance traces and the
+  PDDL artifacts stay byte-identical;
+- (b) the new thesis packages: `pomdp/` (DBN view, table compiler, reference evaluator, belief
+  update, policy replay; stdlib + `shared` only), `julia/` (the pinned Julia project and the
+  opt-in juliacall bridge, outside the guarded packages like the dspy live seam),
+  `domains/cooperative_grid_po/` and `domains/box_push_po_lite/`;
+- (c) runtime seams for those domains, added as opt-in paths that V1 domains do not take
+  (belief-holding track, planner behind `DomainServices.plan`, an optional `observe()` path, a
+  likelihood-based discrepancy in the monitor, a belief-aware failure policy registered next to
+  the V1 policies).
+
+Still forbidden: behavior changes to `domain/`, `symbolic/`, `nl/`, `domains/box_push`,
+`domains/cooperative_grid`, the V1 runner and the frozen demos; default tests that need Julia,
+juliacall, Ollama or any network (solved policies ship as committed artifacts replayed in pure
+Python; regeneration is opt-in); temporal/duration models, concurrent executive execution,
+VLM input, and any semantics beyond what the two named domains need (supervisor P7 and the
+extension packages X1-X11 stay future work).

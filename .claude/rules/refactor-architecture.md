@@ -66,6 +66,10 @@ Do not introduce dynamic plugin discovery, asynchronous track execution, a
 configuration language, probabilistic semantics, belief reconciliation, or
 other speculative frameworks unless explicitly required by a real domain.
 
+The approved thesis domains (`docs/refactor/NEXT_DOMAIN.md`, 2026-11-07) are such a
+real domain for probabilistic semantics and belief tracking; what they may change is
+scoped by the "Thesis exception" in `v1-scope.md`. Everything else above still holds.
+
 Prefer explicit Python composition at the application boundary.
 
 ## Compatibility
