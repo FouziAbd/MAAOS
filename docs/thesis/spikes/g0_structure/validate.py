@@ -17,7 +17,15 @@ def _frac(x: Any) -> Fraction:
     return Fraction(x)
 
 
-def validate(doc: Any) -> List[str]:  # noqa: C901 - a flat rule list reads best here
+def validate(doc: Any) -> List[str]:
+    """Never raises on malformed input: anything the rules below do not anticipate is reported."""
+    try:
+        return _validate(doc)
+    except Exception as e:  # a generated document can be malformed in ways no rule names
+        return [f"malformed document: {e!r}"]
+
+
+def _validate(doc: Any) -> List[str]:  # noqa: C901 - a flat rule list reads best here
     errs: List[str] = []
     if not isinstance(doc, dict) or not isinstance(doc.get("domain"), dict) \
             or not isinstance(doc.get("problem"), dict):
@@ -79,6 +87,9 @@ def validate(doc: Any) -> List[str]:  # noqa: C901 - a flat rule list reads best
         if not isinstance(lit, dict) or "name" not in lit:
             errs.append(f"{where}: bad literal {lit!r}")
             return ""
+        if not isinstance(lit["name"], str):
+            errs.append(f"{where}: predicate name {lit['name']!r} must be a string")
+            return ""
         decl = preds.get(lit["name"])
         if decl is None:
             errs.append(f"{where}: undeclared predicate {lit['name']}")
@@ -88,6 +99,9 @@ def validate(doc: Any) -> List[str]:  # noqa: C901 - a flat rule list reads best
             errs.append(f"{where}: {lit['name']} arity {len(args)}, declared {len(decl['types'])}")
             return lit["name"]
         for arg, want in zip(args, decl["types"]):
+            if not isinstance(arg, str):
+                errs.append(f"{where}: {lit['name']} argument {arg!r} must be a name")
+                continue
             if arg == WILD:
                 if not wild_ok:
                     errs.append(f"{where}: wildcard not allowed here")
