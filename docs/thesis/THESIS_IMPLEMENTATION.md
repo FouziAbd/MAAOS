@@ -33,6 +33,7 @@ from `origin/main` (T0 used `thesis/plan-docs`; from T1 on, never a reused branc
 | T1 | 1 | ADR `docs/decisions/T1_PROBABILISTIC_SKILL_IR.md`: generalize `shared/skill_ir.py` in place (domain-supplied type universe and signature source, BoxPush defaults) and extend it (named outcomes with normalized distributions, deterministic or Bernoulli; per-channel observations; Beta-prior parameters; hidden predicates; initial belief); canonical form = the LLM JSON schema; derived DBN view | owner accepts the ADR | **done 2026-11-07; ADR Accepted (PR #26 merged)** |
 | T2 | 1 | Spikes, no production code: pinned Julia project under `julia/` (one exact 1.10 LTS version, committed Manifest; POMDPs, POMDPTools, NativeSARSOP, JSON3, StableRNGs) with a Tiger solve; LLM structure spike, gemma4:e4b vs gemma3:27b-cloud through local ollama, 10 samples each, scored against the ADR's draft schema | G0 recorded here | **done 2026-11-07; G0 half-decided: gemma4:e4b cannot write the structure; the stronger model is blocked on an Ollama sign-in** |
 | T2b | 1 | Route A after G0 (owner, 2026-11-07): a 40-pair training corpus and a DSPy optimizer ladder (zero-shot, few-shot, BootstrapFewShot, GEPA) on gemma4:e4b, `docs/thesis/spikes/g0_dspy/` | measured valid-model rate on CoopGrid-Jam-PO | **done 2026-11-08; prompt optimization alone: 0/50 valid; Route B (LoRA) pending the owner** |
+| T2c | 1 | Route B (owner, 2026-11-08): QLoRA fine-tuning of `google/gemma-4-e4b-it` (the base of gemma4:e4b) on 277 corpus examples, evaluated against the untrained base in the same runtime, `docs/thesis/spikes/g0_lora/` | valid-model rate on CoopGrid-Jam-PO | **done 2026-11-08; format fixed and structure nearly right (test rubric 9.8/12), 0/10 strictly valid; next step pending the owner** |
 | T3 | 2 | `shared/skill_ir.py` generalized and extended per the ADR; `shared/__init__.py` exports; canonical-faithfulness cases; new tests | golden digest, demos, traces, PDDL unchanged; mypy/ruff clean | planned |
 | T4 | 2-3 | `pomdp/` package (stdlib + `shared` only, added to the ruff/mypy gates and the import guard): DBN view, state enumeration, table compiler (JSON matching the Julia reader), `fractions`-exact reference evaluator, exact belief update and alpha-vector replay; CoopGrid-Jam-PO and the lamp example as IR fixtures, Tiger as a table-level fixture only (its rewards depend on the hidden state, which the T1 reward model does not express; see the T2 entry); `julia/` bridge (opt-in `MAAOS_JULIA=1`) | compiled tables equal the evaluator on every row; Tiger policy replays without Julia | planned |
 | T5 | 3 | Seeded PO wrapper `functional_layer/custom_env/cooperative_grid/grid_env_po.py`; `domains/cooperative_grid_po/` via `create-domain` (jam hidden by projection and by `_observe`; rattle reading in the state, set on shake; `ClearJam` succeeds iff the shake was performed); committed true-model tables and MDP/POMDP policies; still `ProjectionTrack` + `bfs_plan` in this phase | G-W3 | planned |
@@ -280,3 +281,56 @@ Tests added/changed: none. Commands and results: as in the table (`python rescor
 `python -B -m unittest discover -s tests -t .` gave `Ran 1032 tests ... OK (skipped=1)`, unchanged.
 Behavior differences: none. Debt: none new. Next: the owner's Route B decision (needs a Hugging
 Face account and the Gemma licence accepted), then T3.
+
+## Phase T2c — done 2026-11-08 (branch `thesis/t2c-lora`)
+
+Route B: LoRA fine-tuning of the gemma4:e4b base checkpoint. Files: `docs/thesis/spikes/g0_lora/`
+(see its README). Opt-in only; nothing runs in the offline suite; adapter weights are not committed.
+
+Setup:
+- Base `google/gemma-4-e4b-it` (Apache-2.0, not gated): the same architecture as ollama's
+  `gemma4:e4b` (gemma4, 8.0B raw parameters, hidden size 2560, 131072 context); ollama serves it as
+  Q4_K_M. Downloaded with the owner's Hugging Face token, which lives only in
+  `~/.cache/huggingface/token`.
+- Separate environment `~/.venvs/maaos-ft`, installed by the owner (the project denies `pip install`
+  to Claude): torch 2.11.0+cu128, transformers 5.22.2, peft 0.21.2, bitsandbytes 0.50.2, on the local
+  RTX 5070 Ti (12 GB, compute capability 12.0).
+- Data: the five T2b families expanded to 277 training examples (47 variants dropped for sharing a
+  name with a validation item); chat format = the T2 format rules plus the description, answered by
+  the gold model as indented JSON. CoopGrid-Jam-PO is in no training file.
+- Training: QLoRA (nf4), rank 16, alpha 32, on the language model's attention and MLP projections
+  (34.9M trainable parameters), 2 epochs, lr 2e-4, batch 1 x 8 accumulation, loss on the answer only.
+  Two memory measures were needed on 12 GB: Gemma 4's 5.6 GB per-layer embedding table stays in system
+  RAM behind a row-lookup wrapper during training, and the loss is computed in 512-token chunks with
+  Gemma 4's logit soft-cap (30). 70 optimizer steps in 49 minutes, peak GPU 9.3 GB; the training loss
+  fell from 0.26 to 0.0004.
+- Evaluation: the base and the fine-tuned model in the same runtime (transformers, 4-bit), so only
+  the fine-tuning differs; the 10 T2b validation items (seed 1) and 10 seeded CoopGrid-Jam-PO test
+  runs; temperature 0.7, top-p 0.95, top-k 64; the Route A metric and the T2 rubric.
+
+| condition | val metric | val valid | test metric | test rubric /12 (best) | test valid | test valid after json_repair | seconds per reply |
+|---|---|---|---|---|---|---|---|
+| base (control) | 0.40 | 0/10 | 0.34 | 3.6 (4) | 0/10 | 0/10 | 86 |
+| LoRA r16 | 0.98 | 9/10 | 0.72 | 9.8 (11) | 0/10 | 0/10 | 204 |
+
+What fine-tuning changed:
+- **JSON well-formedness is fixed**: every fine-tuned reply parses; `json_repair` changes nothing.
+- **In-family validation is solved**: 9 of 10 validation models are valid (the base: 0).
+- **On the held-out test domain the structure is nearly right**: 9.8 of 12 rubric points on average
+  (the base: 3.6; Route A's best rung: 2.5 strict, 4.2 after repair); the four skills, their
+  parameters, the hidden jam with a parameter prior, the rewards and the goal are right in most runs.
+- **But no test model is strictly valid**: each has 1 to 6 rule errors (median 3). The commonest:
+  the hidden prior names `door` without declaring it as a constant (6 of 10); an `equals` atom with
+  its arguments in the wrong order (3); outcome cases written next to plain effects (3); type errors
+  in `CooperateOpen`'s preconditions (2). The stochastic pull is wrong in 5 runs and the shake in 4.
+- **A sign of overfitting**: one test model also declares the vault family's hidden `locked`.
+
+Verdict for G0: fine-tuning turns gemma4:e4b from "cannot write the format" into "writes the format
+and nearly the right structure on an unseen domain, with a few local rule errors". The remaining
+errors are exactly what the validator reports precisely, so a validator-feedback repair round is the
+natural next measurement. It is not run here; it is the owner's decision.
+
+Tests added/changed: none. Commands and results: `python3 summarize.py` gives the table above;
+`python -B -m unittest discover -s tests -t .` gave `Ran 1032 tests ... OK (skipped=1)`, unchanged.
+Behavior differences: none. Debt: none new. Cloud comparison: blocked, since every Ollama cloud model,
+including gemma4:31b, now requires paid credits, and `gemma3:27b-cloud` was retired on 2026-07-15.

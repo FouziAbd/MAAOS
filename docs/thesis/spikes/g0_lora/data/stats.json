@@ -1,0 +1,37 @@
+{
+ "train": 277,
+ "val": 10,
+ "dropped_for_leakage": 47,
+ "train_by_family": {
+  "device": 64,
+  "lid": 64,
+  "rooms": 32,
+  "lift": 53,
+  "node": 64
+ },
+ "banned_names": [
+  "boat",
+  "boat-lift-po",
+  "bottom",
+  "delta",
+  "delta-node-po",
+  "dock",
+  "edge",
+  "edge-node-po",
+  "heater",
+  "heater-fault-po",
+  "kettle",
+  "kettle-fault-po",
+  "piano",
+  "piano-lift-po",
+  "store",
+  "tin",
+  "tin-lid-po",
+  "top",
+  "trunk",
+  "trunk-lid-po",
+  "vault-rooms-po-1-dock",
+  "vault-rooms-po-2-dock",
+  "yard"
+ ]
+}
