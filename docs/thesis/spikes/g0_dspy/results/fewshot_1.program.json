@@ -1,0 +1,408 @@
+{
+  "write": {
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "description": "LAMP WITH A HIDDEN FAULT, PARTIALLY OBSERVABLE\n\nOne agent, R, must get the lamp running. The lamp may have a fault.\n\nSkills (one skill per decision cycle):\n  Start(agent, lamp): try to start the lamp. A faulty lamp never starts, and even a\n    healthy one sometimes fails to start. The status is ok if the lamp is running afterwards.\n  Inspect(agent, lamp): look the lamp over. The reading (looks_faulty | looks_fine) is\n    usually, but not always, right about whether it is faulty. Status ok.\n  Repair(agent, lamp): work on the stopped lamp. Repairing sometimes clears a fault and\n    never causes one. Status ok whenever the repair was carried out.\n\nHidden: whether the lamp is faulty is decided at random at the start and never shown directly.\n\nObserved after every skill: whether the lamp is running, the skill's status (ok | fail), and after Inspect the reading.\n\nRewards: -0.01 per cycle, an extra -0.05 per repair, +1 when the lamp runs. Discount 0.95.\n\nThe probabilities are NOT given: model each one as a named parameter.",
+        "gold": {
+          "domain": {
+            "name": "lamp-fault-po",
+            "model_version": "lamp-fault-po.r1",
+            "types": [
+              "agent",
+              "device"
+            ],
+            "provenance": {
+              "source": "docs/thesis/spikes/g0_dspy/corpus.py",
+              "model_version": "lamp-fault-po.r1"
+            },
+            "constants": [
+              {
+                "name": "R",
+                "type": "agent"
+              },
+              {
+                "name": "lamp",
+                "type": "device"
+              }
+            ],
+            "parameters": [
+              {
+                "name": "fault_prior",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              },
+              {
+                "name": "start_success",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              },
+              {
+                "name": "inspect_accuracy",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              },
+              {
+                "name": "repair_success",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              }
+            ],
+            "observation_channels": [
+              {
+                "name": "status",
+                "symbols": [
+                  "none",
+                  "ok",
+                  "fail"
+                ]
+              },
+              {
+                "name": "reading",
+                "symbols": [
+                  "none",
+                  "looks_faulty",
+                  "looks_fine"
+                ]
+              }
+            ],
+            "predicates": [
+              {
+                "name": "running",
+                "param_types": [
+                  "device"
+                ],
+                "fluent": true
+              },
+              {
+                "name": "faulty",
+                "param_types": [
+                  "device"
+                ],
+                "fluent": true,
+                "observable": false
+              }
+            ],
+            "skills": [
+              {
+                "name": "Start",
+                "parameters": [
+                  "agent",
+                  "lamp"
+                ],
+                "parameter_types": [
+                  "agent",
+                  "device"
+                ],
+                "preconditions": [],
+                "effects": [],
+                "outcome_label": "started",
+                "negative_preconditions": [
+                  {
+                    "name": "running",
+                    "args": [
+                      "lamp"
+                    ]
+                  }
+                ],
+                "outcomes": [
+                  {
+                    "label": "started",
+                    "effects": [
+                      {
+                        "predicate": {
+                          "name": "running",
+                          "args": [
+                            "lamp"
+                          ]
+                        },
+                        "positive": true
+                      }
+                    ]
+                  },
+                  {
+                    "label": "idle",
+                    "effects": []
+                  }
+                ],
+                "outcome_cases": [
+                  {
+                    "when": [
+                      {
+                        "literal": {
+                          "name": "faulty",
+                          "args": [
+                            "lamp"
+                          ]
+                        },
+                        "positive": true
+                      }
+                    ],
+                    "distribution": {
+                      "deterministic": "idle"
+                    }
+                  },
+                  {
+                    "when": [],
+                    "distribution": {
+                      "bernoulli": {
+                        "p": {
+                          "parameter": "start_success"
+                        },
+                        "then": "started",
+                        "else": "idle"
+                      }
+                    }
+                  }
+                ],
+                "observation_cases": {
+                  "status": [
+                    {
+                      "when": [
+                        {
+                          "literal": {
+                            "name": "running",
+                            "args": [
+                              "lamp"
+                            ]
+                          },
+                          "positive": true
+                        }
+                      ],
+                      "distribution": {
+                        "deterministic": "ok"
+                      }
+                    },
+                    {
+                      "when": [],
+                      "distribution": {
+                        "deterministic": "fail"
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "Inspect",
+                "parameters": [
+                  "agent",
+                  "lamp"
+                ],
+                "parameter_types": [
+                  "agent",
+                  "device"
+                ],
+                "preconditions": [],
+                "effects": [],
+                "outcome_label": "inspected",
+                "observation_cases": {
+                  "status": [
+                    {
+                      "when": [],
+                      "distribution": {
+                        "deterministic": "ok"
+                      }
+                    }
+                  ],
+                  "reading": [
+                    {
+                      "when": [
+                        {
+                          "literal": {
+                            "name": "faulty",
+                            "args": [
+                              "lamp"
+                            ]
+                          },
+                          "positive": true
+                        }
+                      ],
+                      "distribution": {
+                        "bernoulli": {
+                          "p": {
+                            "parameter": "inspect_accuracy"
+                          },
+                          "then": "looks_faulty",
+                          "else": "looks_fine"
+                        }
+                      }
+                    },
+                    {
+                      "when": [],
+                      "distribution": {
+                        "bernoulli": {
+                          "p": {
+                            "parameter": "inspect_accuracy"
+                          },
+                          "then": "looks_fine",
+                          "else": "looks_faulty"
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "Repair",
+                "parameters": [
+                  "agent",
+                  "lamp"
+                ],
+                "parameter_types": [
+                  "agent",
+                  "device"
+                ],
+                "preconditions": [],
+                "effects": [],
+                "outcome_label": "fixed",
+                "negative_preconditions": [
+                  {
+                    "name": "running",
+                    "args": [
+                      "lamp"
+                    ]
+                  }
+                ],
+                "outcomes": [
+                  {
+                    "label": "fixed",
+                    "effects": [
+                      {
+                        "predicate": {
+                          "name": "faulty",
+                          "args": [
+                            "lamp"
+                          ]
+                        },
+                        "positive": false
+                      }
+                    ]
+                  },
+                  {
+                    "label": "unchanged",
+                    "effects": []
+                  }
+                ],
+                "outcome_cases": [
+                  {
+                    "when": [
+                      {
+                        "literal": {
+                          "name": "faulty",
+                          "args": [
+                            "lamp"
+                          ]
+                        },
+                        "positive": true
+                      }
+                    ],
+                    "distribution": {
+                      "bernoulli": {
+                        "p": {
+                          "parameter": "repair_success"
+                        },
+                        "then": "fixed",
+                        "else": "unchanged"
+                      }
+                    }
+                  },
+                  {
+                    "when": [],
+                    "distribution": {
+                      "deterministic": "unchanged"
+                    }
+                  }
+                ],
+                "observation_cases": {
+                  "status": [
+                    {
+                      "when": [],
+                      "distribution": {
+                        "deterministic": "ok"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "problem": {
+            "name": "start-the-lamp",
+            "domain": "lamp-fault-po",
+            "objects": [],
+            "init": [],
+            "hidden_prior": [
+              {
+                "literal": {
+                  "name": "faulty",
+                  "args": [
+                    "lamp"
+                  ]
+                },
+                "p": {
+                  "parameter": "fault_prior"
+                }
+              }
+            ],
+            "goal": [
+              {
+                "name": "running",
+                "args": [
+                  "lamp"
+                ]
+              }
+            ],
+            "rewards": {
+              "step": "-1/100",
+              "skills": {
+                "Repair": "-1/20"
+              },
+              "goal": "1"
+            },
+            "discount": "19/20"
+          }
+        },
+        "id": "device-00",
+        "model_json": "{\"domain\":{\"name\":\"lamp-fault-po\",\"model_version\":\"lamp-fault-po.r1\",\"types\":[\"agent\",\"device\"],\"provenance\":{\"source\":\"docs/thesis/spikes/g0_dspy/corpus.py\",\"model_version\":\"lamp-fault-po.r1\"},\"constants\":[{\"name\":\"R\",\"type\":\"agent\"},{\"name\":\"lamp\",\"type\":\"device\"}],\"parameters\":[{\"name\":\"fault_prior\",\"prior\":{\"beta\":[\"1\",\"1\"]}},{\"name\":\"start_success\",\"prior\":{\"beta\":[\"1\",\"1\"]}},{\"name\":\"inspect_accuracy\",\"prior\":{\"beta\":[\"1\",\"1\"]}},{\"name\":\"repair_success\",\"prior\":{\"beta\":[\"1\",\"1\"]}}],\"observation_channels\":[{\"name\":\"status\",\"symbols\":[\"none\",\"ok\",\"fail\"]},{\"name\":\"reading\",\"symbols\":[\"none\",\"looks_faulty\",\"looks_fine\"]}],\"predicates\":[{\"name\":\"running\",\"param_types\":[\"device\"],\"fluent\":true},{\"name\":\"faulty\",\"param_types\":[\"device\"],\"fluent\":true,\"observable\":false}],\"skills\":[{\"name\":\"Start\",\"parameters\":[\"agent\",\"lamp\"],\"parameter_types\":[\"agent\",\"device\"],\"preconditions\":[],\"effects\":[],\"outcome_label\":\"started\",\"negative_preconditions\":[{\"name\":\"running\",\"args\":[\"lamp\"]}],\"outcomes\":[{\"label\":\"started\",\"effects\":[{\"predicate\":{\"name\":\"running\",\"args\":[\"lamp\"]},\"positive\":true}]},{\"label\":\"idle\",\"effects\":[]}],\"outcome_cases\":[{\"when\":[{\"literal\":{\"name\":\"faulty\",\"args\":[\"lamp\"]},\"positive\":true}],\"distribution\":{\"deterministic\":\"idle\"}},{\"when\":[],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"start_success\"},\"then\":\"started\",\"else\":\"idle\"}}}],\"observation_cases\":{\"status\":[{\"when\":[{\"literal\":{\"name\":\"running\",\"args\":[\"lamp\"]},\"positive\":true}],\"distribution\":{\"deterministic\":\"ok\"}},{\"when\":[],\"distribution\":{\"deterministic\":\"fail\"}}]}},{\"name\":\"Inspect\",\"parameters\":[\"agent\",\"lamp\"],\"parameter_types\":[\"agent\",\"device\"],\"preconditions\":[],\"effects\":[],\"outcome_label\":\"inspected\",\"observation_cases\":{\"status\":[{\"when\":[],\"distribution\":{\"deterministic\":\"ok\"}}],\"reading\":[{\"when\":[{\"literal\":{\"name\":\"faulty\",\"args\":[\"lamp\"]},\"positive\":true}],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"inspect_accuracy\"},\"then\":\"looks_faulty\",\"else\":\"looks_fine\"}}},{\"when\":[],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"inspect_accuracy\"},\"then\":\"looks_fine\",\"else\":\"looks_faulty\"}}}]}},{\"name\":\"Repair\",\"parameters\":[\"agent\",\"lamp\"],\"parameter_types\":[\"agent\",\"device\"],\"preconditions\":[],\"effects\":[],\"outcome_label\":\"fixed\",\"negative_preconditions\":[{\"name\":\"running\",\"args\":[\"lamp\"]}],\"outcomes\":[{\"label\":\"fixed\",\"effects\":[{\"predicate\":{\"name\":\"faulty\",\"args\":[\"lamp\"]},\"positive\":false}]},{\"label\":\"unchanged\",\"effects\":[]}],\"outcome_cases\":[{\"when\":[{\"literal\":{\"name\":\"faulty\",\"args\":[\"lamp\"]},\"positive\":true}],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"repair_success\"},\"then\":\"fixed\",\"else\":\"unchanged\"}}},{\"when\":[],\"distribution\":{\"deterministic\":\"unchanged\"}}],\"observation_cases\":{\"status\":[{\"when\":[],\"distribution\":{\"deterministic\":\"ok\"}}]}}]},\"problem\":{\"name\":\"start-the-lamp\",\"domain\":\"lamp-fault-po\",\"objects\":[],\"init\":[],\"hidden_prior\":[{\"literal\":{\"name\":\"faulty\",\"args\":[\"lamp\"]},\"p\":{\"parameter\":\"fault_prior\"}}],\"goal\":[{\"name\":\"running\",\"args\":[\"lamp\"]}],\"rewards\":{\"step\":\"-1/100\",\"skills\":{\"Repair\":\"-1/20\"},\"goal\":\"1\"},\"discount\":\"19/20\"}}"
+      }
+    ],
+    "signature": {
+      "instructions": "You are a POMDP modeling engineer. Convert the ENVIRONMENT DESCRIPTION below into a factored\nPOMDP model written ONLY as one JSON object {\"domain\": {...}, \"problem\": {...}} in the MAAOS\nskill-IR format. A deterministic compiler (not you) turns it into tables for a POMDP solver, and\na statistical fitter (not you) estimates every probability from data. YOUR JOB IS STRUCTURE.\n\nFORMAT RULES\nF1  domain keys: name, model_version, types, constants, parameters, observation_channels,\n    predicates, skills, provenance. problem keys: name, domain, objects, init, hidden_prior,\n    goal, rewards, discount.\nF2  Every object you mention is a constant {\"name\",\"type\"} with a declared type.\nF3  Predicates are boolean: {\"name\",\"param_types\",\"fluent\"} plus \"observable\": false for a\n    variable that is never shown. fluent=false means the value never changes.\nF4  A skill has \"name\", \"parameters\" (names), \"parameter_types\" (parallel types),\n    \"preconditions\" and optional \"negative_preconditions\" (lists of {\"name\",\"args\"}), and either\n    plain \"effects\" (one certain outcome) or \"outcomes\": [{\"label\",\"effects\"}] with\n    \"outcome_label\" naming the outcome a planner should hope for. An effect is\n    {\"predicate\": {\"name\",\"args\"}, \"positive\": true|false}. Args are parameter names or constants.\nF5  \"*\" as an argument is allowed ONLY in a negative precondition (no grounding holds) or a\n    negative effect (delete every grounding), e.g. not at(agent, *) before adding at(agent, place).\nF6  Hidden (observable=false) predicates must NEVER appear in preconditions. They may appear in\n    outcome cases, effects and observation cases.\nF7  With two or more outcomes, give \"outcome_cases\": a decision list\n    [{\"when\": [atoms], \"distribution\": D}], first match wins, the LAST case has \"when\": [].\n    An atom is {\"literal\": {\"name\",\"args\"}, \"positive\": bool} or {\"equals\": [parameter, constant]}.\nF8  D is {\"deterministic\": label} or\n    {\"bernoulli\": {\"p\": {\"parameter\": name}, \"then\": label1, \"else\": label2}}.\n    Every probability you were not given is a NAMED PARAMETER declared in \"parameters\" as\n    {\"name\": ..., \"prior\": {\"beta\": [\"1\", \"1\"]}}. Never write a number for it.\nF9  \"observation_channels\": [{\"name\", \"symbols\"}]; the first symbol is \"none\". A skill's\n    \"observation_cases\" is an object {channel: decision list}; conditions are read on the state\n    AFTER the skill. Positions and other observable predicates are observed automatically.\nF10 problem: \"init\" = observable ground literals true at the start (static ones included);\n    \"hidden_prior\" = [{\"literal\": {\"name\",\"args\"}, \"p\": {\"parameter\": name}}];\n    \"goal\" = ground literals; \"rewards\" = {\"step\": r, \"skills\": {skill: extra}, \"goal\": r} as\n    exact fraction strings such as \"-1/50\"; \"discount\" as a fraction string.\nF11 Use exactly the skill names and parameters given in the description. Output ONLY the JSON.",
+      "fields": [
+        {
+          "prefix": "Description:",
+          "description": "the environment description, the sole input"
+        },
+        {
+          "prefix": "Model Json:",
+          "description": "one JSON object {\"domain\": {...}, \"problem\": {...}} in the MAAOS skill-IR format, nothing else"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.12",
+      "dspy": "3.1.0",
+      "cloudpickle": "3.1"
+    }
+  }
+}

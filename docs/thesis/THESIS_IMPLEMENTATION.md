@@ -32,6 +32,7 @@ from `origin/main` (T0 used `thesis/plan-docs`; from T1 on, never a reused branc
 | T0 | 1 | Open the gate: `NEXT_DOMAIN.md`, `v1-scope.md` thesis exception, `CLAUDE.md`, `refactor-architecture.md`, `HANDOFF.md` status, this record | suite unchanged (1032 OK); doc needles intact; pushed | **done 2026-11-07** |
 | T1 | 1 | ADR `docs/decisions/T1_PROBABILISTIC_SKILL_IR.md`: generalize `shared/skill_ir.py` in place (domain-supplied type universe and signature source, BoxPush defaults) and extend it (named outcomes with normalized distributions, deterministic or Bernoulli; per-channel observations; Beta-prior parameters; hidden predicates; initial belief); canonical form = the LLM JSON schema; derived DBN view | owner accepts the ADR | **done 2026-11-07; ADR Accepted (PR #26 merged)** |
 | T2 | 1 | Spikes, no production code: pinned Julia project under `julia/` (one exact 1.10 LTS version, committed Manifest; POMDPs, POMDPTools, NativeSARSOP, JSON3, StableRNGs) with a Tiger solve; LLM structure spike, gemma4:e4b vs gemma3:27b-cloud through local ollama, 10 samples each, scored against the ADR's draft schema | G0 recorded here | **done 2026-11-07; G0 half-decided: gemma4:e4b cannot write the structure; the stronger model is blocked on an Ollama sign-in** |
+| T2b | 1 | Route A after G0 (owner, 2026-11-07): a 40-pair training corpus and a DSPy optimizer ladder (zero-shot, few-shot, BootstrapFewShot, GEPA) on gemma4:e4b, `docs/thesis/spikes/g0_dspy/` | measured valid-model rate on CoopGrid-Jam-PO | **done 2026-11-08; prompt optimization alone: 0/50 valid; Route B (LoRA) pending the owner** |
 | T3 | 2 | `shared/skill_ir.py` generalized and extended per the ADR; `shared/__init__.py` exports; canonical-faithfulness cases; new tests | golden digest, demos, traces, PDDL unchanged; mypy/ruff clean | planned |
 | T4 | 2-3 | `pomdp/` package (stdlib + `shared` only, added to the ruff/mypy gates and the import guard): DBN view, state enumeration, table compiler (JSON matching the Julia reader), `fractions`-exact reference evaluator, exact belief update and alpha-vector replay; CoopGrid-Jam-PO and the lamp example as IR fixtures, Tiger as a table-level fixture only (its rewards depend on the hidden state, which the T1 reward model does not express; see the T2 entry); `julia/` bridge (opt-in `MAAOS_JULIA=1`) | compiled tables equal the evaluator on every row; Tiger policy replays without Julia | planned |
 | T5 | 3 | Seeded PO wrapper `functional_layer/custom_env/cooperative_grid/grid_env_po.py`; `domains/cooperative_grid_po/` via `create-domain` (jam hidden by projection and by `_observe`; rattle reading in the state, set on shake; `ClearJam` succeeds iff the shake was performed); committed true-model tables and MDP/POMDP policies; still `ProjectionTrack` + `bfs_plan` in this phase | G-W3 | planned |
@@ -224,3 +225,58 @@ Commands and results: `julia --project=julia julia/tiger.jl` as above; `python -
 discover -s tests -t .` gave `Ran 1032 tests ... OK (skipped=1)`, unchanged. Behavior
 differences: none. Debt: none new. Next: T3 (implement the ADR in `shared/skill_ir.py`), which
 needs the owner's go-ahead; the G0 cloud run can be finished in parallel once Ollama is signed in.
+
+## Phase T2b — done 2026-11-08 (branch `thesis/t2b-dspy-structure`)
+
+Route A of the owner's plan after G0 (2026-11-07): can DSPy prompt optimization alone make the
+local gemma4:e4b write CoopGrid-Jam-PO's model structure? No weight change; Route B (LoRA
+fine-tuning on the local RTX 5070 Ti, 12 GB) is decided after this. Files:
+`docs/thesis/spikes/g0_dspy/` (see its README). Opt-in only; nothing runs in the offline suite.
+
+What was built:
+- `corpus.json`: 40 description/true-model pairs from five domain families (hidden device fault,
+  stuck lid, possibly locked vault door with one or two agents, possibly heavy crate lifted by two
+  agents, possibly hung network node), eight variants each, every model valid against the T1
+  rules; 30 train, 10 validation. CoopGrid-Jam-PO is the test domain only and is in no prompt.
+- A DSPy module `ModelStructureGenerator` (one predictor; the T2 format rules as instructions),
+  a gold-comparison metric with written feedback, and a five-rung ladder: zero-shot, one and three
+  labelled examples, BootstrapFewShot, GEPA (100 metric calls, gemma4:e4b also reflecting).
+
+Results (strict = the reply as written; repaired = re-parsed with `json_repair` first, shown only
+to see the structure behind syntax slips; one sample per validation item, ten seeded test runs):
+
+| rung | val metric | val valid | test rubric /12 (best) | test valid | val metric, repaired | val valid, repaired | test rubric, repaired (best) |
+|---|---|---|---|---|---|---|---|
+| zero_shot | 0.30 | 0/10 | 2.5 (6) | 0/10 | 0.36 | 0/10 | 3.3 (6) |
+| fewshot_1 | 0.00 | 0/10 | 2.1 (6) | 0/10 | 0.15 | 0/10 | 2.7 (6) |
+| fewshot_3 | 0.07 | 0/10 | 0.0 (0) | 0/10 | 0.54 | 1/10 | 4.2 (11) |
+| bootstrap | 0.00 | 0/10 | 0.0 (0) | 0/10 | 0.44 | 0/10 | 3.5 (8) |
+| gepa | 0.31 | 1/10 | 0.0 (0) | 0/10 | 0.78 | 2/10 | 3.7 (9) |
+
+**Route A verdict: prompt optimization does not make gemma4:e4b write a valid CoopGrid-Jam-PO
+model** — 0 valid test models in 50 strict attempts across all rungs. What the examples do teach
+is the structure: with three examples, after syntax repair, test replies reach 11 of 12 rubric
+points, and one (seed 2) has a single rule error left (a wrong nominal outcome label). The blocker
+is JSON well-formedness: examples make the model copy their compact one-line JSON and slip
+(a missing comma, or a precondition written half as a case atom), and one slip voids the reply.
+GEPA proposed 10 instructions but its validation score never rose above the starting program's
+(0.58 on its repair-aware metric); a 4B model reflecting on its own errors did not find better
+instructions within 100 calls. BootstrapFewShot found no self-written demo scoring 0.9 or more.
+
+Harness problems found and fixed during the run (the first runs were discarded):
+- demos were dropped by DSPy because they lacked the output field (`model_json`);
+- DSPy's field parser raised on replies without its markers; the raw reply is now scored;
+- the T2 validator crashed on an object where an argument name belongs (fixed on PR #28);
+- GEPA's proposer crashed because ollama returns gemma4 replies as text+reasoning dicts; the
+  reflection model is wrapped to return plain text.
+
+Implication for the Route B decision: the remaining failure is output-format consistency, which is
+what supervised LoRA fine-tuning on the 30 training pairs targets most directly. Two cheaper
+alternatives stay open and can be combined with it: a generator-side `json_repair` plus a
+precondition-shape normalizer (turns most near-misses into one-error replies), and a validator-
+feedback repair round. The stronger cloud model still waits on `ollama signin`.
+
+Tests added/changed: none. Commands and results: as in the table (`python rescore.py`);
+`python -B -m unittest discover -s tests -t .` gave `Ran 1032 tests ... OK (skipped=1)`, unchanged.
+Behavior differences: none. Debt: none new. Next: the owner's Route B decision (needs a Hugging
+Face account and the Gemma licence accepted), then T3.
