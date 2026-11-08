@@ -1,0 +1,1278 @@
+{
+  "write": {
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "description": "LAMP WITH A HIDDEN FAULT, PARTIALLY OBSERVABLE\n\nOne agent, R, must get the lamp running. The lamp may have a fault.\n\nSkills (one skill per decision cycle):\n  Start(agent, lamp): try to start the lamp. A faulty lamp never starts, and even a\n    healthy one sometimes fails to start. The status is ok if the lamp is running afterwards.\n  Inspect(agent, lamp): look the lamp over. The reading (looks_faulty | looks_fine) is\n    usually, but not always, right about whether it is faulty. Status ok.\n  Repair(agent, lamp): work on the stopped lamp. Repairing sometimes clears a fault and\n    never causes one. Status ok whenever the repair was carried out.\n\nHidden: whether the lamp is faulty is decided at random at the start and never shown directly.\n\nObserved after every skill: whether the lamp is running, the skill's status (ok | fail), and after Inspect the reading.\n\nRewards: -0.01 per cycle, an extra -0.05 per repair, +1 when the lamp runs. Discount 0.95.\n\nThe probabilities are NOT given: model each one as a named parameter.",
+        "gold": {
+          "domain": {
+            "name": "lamp-fault-po",
+            "model_version": "lamp-fault-po.r1",
+            "types": [
+              "agent",
+              "device"
+            ],
+            "provenance": {
+              "source": "docs/thesis/spikes/g0_dspy/corpus.py",
+              "model_version": "lamp-fault-po.r1"
+            },
+            "constants": [
+              {
+                "name": "R",
+                "type": "agent"
+              },
+              {
+                "name": "lamp",
+                "type": "device"
+              }
+            ],
+            "parameters": [
+              {
+                "name": "fault_prior",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              },
+              {
+                "name": "start_success",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              },
+              {
+                "name": "inspect_accuracy",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              },
+              {
+                "name": "repair_success",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              }
+            ],
+            "observation_channels": [
+              {
+                "name": "status",
+                "symbols": [
+                  "none",
+                  "ok",
+                  "fail"
+                ]
+              },
+              {
+                "name": "reading",
+                "symbols": [
+                  "none",
+                  "looks_faulty",
+                  "looks_fine"
+                ]
+              }
+            ],
+            "predicates": [
+              {
+                "name": "running",
+                "param_types": [
+                  "device"
+                ],
+                "fluent": true
+              },
+              {
+                "name": "faulty",
+                "param_types": [
+                  "device"
+                ],
+                "fluent": true,
+                "observable": false
+              }
+            ],
+            "skills": [
+              {
+                "name": "Start",
+                "parameters": [
+                  "agent",
+                  "lamp"
+                ],
+                "parameter_types": [
+                  "agent",
+                  "device"
+                ],
+                "preconditions": [],
+                "effects": [],
+                "outcome_label": "started",
+                "negative_preconditions": [
+                  {
+                    "name": "running",
+                    "args": [
+                      "lamp"
+                    ]
+                  }
+                ],
+                "outcomes": [
+                  {
+                    "label": "started",
+                    "effects": [
+                      {
+                        "predicate": {
+                          "name": "running",
+                          "args": [
+                            "lamp"
+                          ]
+                        },
+                        "positive": true
+                      }
+                    ]
+                  },
+                  {
+                    "label": "idle",
+                    "effects": []
+                  }
+                ],
+                "outcome_cases": [
+                  {
+                    "when": [
+                      {
+                        "literal": {
+                          "name": "faulty",
+                          "args": [
+                            "lamp"
+                          ]
+                        },
+                        "positive": true
+                      }
+                    ],
+                    "distribution": {
+                      "deterministic": "idle"
+                    }
+                  },
+                  {
+                    "when": [],
+                    "distribution": {
+                      "bernoulli": {
+                        "p": {
+                          "parameter": "start_success"
+                        },
+                        "then": "started",
+                        "else": "idle"
+                      }
+                    }
+                  }
+                ],
+                "observation_cases": {
+                  "status": [
+                    {
+                      "when": [
+                        {
+                          "literal": {
+                            "name": "running",
+                            "args": [
+                              "lamp"
+                            ]
+                          },
+                          "positive": true
+                        }
+                      ],
+                      "distribution": {
+                        "deterministic": "ok"
+                      }
+                    },
+                    {
+                      "when": [],
+                      "distribution": {
+                        "deterministic": "fail"
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "Inspect",
+                "parameters": [
+                  "agent",
+                  "lamp"
+                ],
+                "parameter_types": [
+                  "agent",
+                  "device"
+                ],
+                "preconditions": [],
+                "effects": [],
+                "outcome_label": "inspected",
+                "observation_cases": {
+                  "status": [
+                    {
+                      "when": [],
+                      "distribution": {
+                        "deterministic": "ok"
+                      }
+                    }
+                  ],
+                  "reading": [
+                    {
+                      "when": [
+                        {
+                          "literal": {
+                            "name": "faulty",
+                            "args": [
+                              "lamp"
+                            ]
+                          },
+                          "positive": true
+                        }
+                      ],
+                      "distribution": {
+                        "bernoulli": {
+                          "p": {
+                            "parameter": "inspect_accuracy"
+                          },
+                          "then": "looks_faulty",
+                          "else": "looks_fine"
+                        }
+                      }
+                    },
+                    {
+                      "when": [],
+                      "distribution": {
+                        "bernoulli": {
+                          "p": {
+                            "parameter": "inspect_accuracy"
+                          },
+                          "then": "looks_fine",
+                          "else": "looks_faulty"
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "Repair",
+                "parameters": [
+                  "agent",
+                  "lamp"
+                ],
+                "parameter_types": [
+                  "agent",
+                  "device"
+                ],
+                "preconditions": [],
+                "effects": [],
+                "outcome_label": "fixed",
+                "negative_preconditions": [
+                  {
+                    "name": "running",
+                    "args": [
+                      "lamp"
+                    ]
+                  }
+                ],
+                "outcomes": [
+                  {
+                    "label": "fixed",
+                    "effects": [
+                      {
+                        "predicate": {
+                          "name": "faulty",
+                          "args": [
+                            "lamp"
+                          ]
+                        },
+                        "positive": false
+                      }
+                    ]
+                  },
+                  {
+                    "label": "unchanged",
+                    "effects": []
+                  }
+                ],
+                "outcome_cases": [
+                  {
+                    "when": [
+                      {
+                        "literal": {
+                          "name": "faulty",
+                          "args": [
+                            "lamp"
+                          ]
+                        },
+                        "positive": true
+                      }
+                    ],
+                    "distribution": {
+                      "bernoulli": {
+                        "p": {
+                          "parameter": "repair_success"
+                        },
+                        "then": "fixed",
+                        "else": "unchanged"
+                      }
+                    }
+                  },
+                  {
+                    "when": [],
+                    "distribution": {
+                      "deterministic": "unchanged"
+                    }
+                  }
+                ],
+                "observation_cases": {
+                  "status": [
+                    {
+                      "when": [],
+                      "distribution": {
+                        "deterministic": "ok"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "problem": {
+            "name": "start-the-lamp",
+            "domain": "lamp-fault-po",
+            "objects": [],
+            "init": [],
+            "hidden_prior": [
+              {
+                "literal": {
+                  "name": "faulty",
+                  "args": [
+                    "lamp"
+                  ]
+                },
+                "p": {
+                  "parameter": "fault_prior"
+                }
+              }
+            ],
+            "goal": [
+              {
+                "name": "running",
+                "args": [
+                  "lamp"
+                ]
+              }
+            ],
+            "rewards": {
+              "step": "-1/100",
+              "skills": {
+                "Repair": "-1/20"
+              },
+              "goal": "1"
+            },
+            "discount": "19/20"
+          }
+        },
+        "id": "device-00",
+        "model_json": "{\"domain\":{\"name\":\"lamp-fault-po\",\"model_version\":\"lamp-fault-po.r1\",\"types\":[\"agent\",\"device\"],\"provenance\":{\"source\":\"docs/thesis/spikes/g0_dspy/corpus.py\",\"model_version\":\"lamp-fault-po.r1\"},\"constants\":[{\"name\":\"R\",\"type\":\"agent\"},{\"name\":\"lamp\",\"type\":\"device\"}],\"parameters\":[{\"name\":\"fault_prior\",\"prior\":{\"beta\":[\"1\",\"1\"]}},{\"name\":\"start_success\",\"prior\":{\"beta\":[\"1\",\"1\"]}},{\"name\":\"inspect_accuracy\",\"prior\":{\"beta\":[\"1\",\"1\"]}},{\"name\":\"repair_success\",\"prior\":{\"beta\":[\"1\",\"1\"]}}],\"observation_channels\":[{\"name\":\"status\",\"symbols\":[\"none\",\"ok\",\"fail\"]},{\"name\":\"reading\",\"symbols\":[\"none\",\"looks_faulty\",\"looks_fine\"]}],\"predicates\":[{\"name\":\"running\",\"param_types\":[\"device\"],\"fluent\":true},{\"name\":\"faulty\",\"param_types\":[\"device\"],\"fluent\":true,\"observable\":false}],\"skills\":[{\"name\":\"Start\",\"parameters\":[\"agent\",\"lamp\"],\"parameter_types\":[\"agent\",\"device\"],\"preconditions\":[],\"effects\":[],\"outcome_label\":\"started\",\"negative_preconditions\":[{\"name\":\"running\",\"args\":[\"lamp\"]}],\"outcomes\":[{\"label\":\"started\",\"effects\":[{\"predicate\":{\"name\":\"running\",\"args\":[\"lamp\"]},\"positive\":true}]},{\"label\":\"idle\",\"effects\":[]}],\"outcome_cases\":[{\"when\":[{\"literal\":{\"name\":\"faulty\",\"args\":[\"lamp\"]},\"positive\":true}],\"distribution\":{\"deterministic\":\"idle\"}},{\"when\":[],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"start_success\"},\"then\":\"started\",\"else\":\"idle\"}}}],\"observation_cases\":{\"status\":[{\"when\":[{\"literal\":{\"name\":\"running\",\"args\":[\"lamp\"]},\"positive\":true}],\"distribution\":{\"deterministic\":\"ok\"}},{\"when\":[],\"distribution\":{\"deterministic\":\"fail\"}}]}},{\"name\":\"Inspect\",\"parameters\":[\"agent\",\"lamp\"],\"parameter_types\":[\"agent\",\"device\"],\"preconditions\":[],\"effects\":[],\"outcome_label\":\"inspected\",\"observation_cases\":{\"status\":[{\"when\":[],\"distribution\":{\"deterministic\":\"ok\"}}],\"reading\":[{\"when\":[{\"literal\":{\"name\":\"faulty\",\"args\":[\"lamp\"]},\"positive\":true}],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"inspect_accuracy\"},\"then\":\"looks_faulty\",\"else\":\"looks_fine\"}}},{\"when\":[],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"inspect_accuracy\"},\"then\":\"looks_fine\",\"else\":\"looks_faulty\"}}}]}},{\"name\":\"Repair\",\"parameters\":[\"agent\",\"lamp\"],\"parameter_types\":[\"agent\",\"device\"],\"preconditions\":[],\"effects\":[],\"outcome_label\":\"fixed\",\"negative_preconditions\":[{\"name\":\"running\",\"args\":[\"lamp\"]}],\"outcomes\":[{\"label\":\"fixed\",\"effects\":[{\"predicate\":{\"name\":\"faulty\",\"args\":[\"lamp\"]},\"positive\":false}]},{\"label\":\"unchanged\",\"effects\":[]}],\"outcome_cases\":[{\"when\":[{\"literal\":{\"name\":\"faulty\",\"args\":[\"lamp\"]},\"positive\":true}],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"repair_success\"},\"then\":\"fixed\",\"else\":\"unchanged\"}}},{\"when\":[],\"distribution\":{\"deterministic\":\"unchanged\"}}],\"observation_cases\":{\"status\":[{\"when\":[],\"distribution\":{\"deterministic\":\"ok\"}}]}}]},\"problem\":{\"name\":\"start-the-lamp\",\"domain\":\"lamp-fault-po\",\"objects\":[],\"init\":[],\"hidden_prior\":[{\"literal\":{\"name\":\"faulty\",\"args\":[\"lamp\"]},\"p\":{\"parameter\":\"fault_prior\"}}],\"goal\":[{\"name\":\"running\",\"args\":[\"lamp\"]}],\"rewards\":{\"step\":\"-1/100\",\"skills\":{\"Repair\":\"-1/20\"},\"goal\":\"1\"},\"discount\":\"19/20\"}}"
+      },
+      {
+        "description": "CHEST WITH A STICKY LID, PARTIALLY OBSERVABLE\n\nOne agent, R, must open the chest.\n\nSkills (one skill per decision cycle):\n  OpenLid(agent, chest): lift the closed lid. A stuck lid never opens. Even a free lid sometimes does not come up.\n    The status is ok if the lid is open afterwards.\n  Tap(agent, chest): tap the closed lid. Tapping sometimes frees a stuck lid and never sticks a free\n    one. Status ok whenever the tap was made.\n    The agent then hears a sound (thud | click) that usually, but not always, tells whether the\n    lid is still stuck afterwards.\n\nHidden: whether the lid starts stuck is decided at random and never shown directly.\n\nObserved after every skill: whether the lid is open, the skill's status (ok | fail), and after Tap the sound.\n\nRewards: -0.02 per cycle, an extra -0.1 per tap, +2 when the chest is open. Discount 0.9.\n\nThe probabilities are NOT given: model each one as a named parameter.",
+        "gold": {
+          "domain": {
+            "name": "chest-lid-po",
+            "model_version": "chest-lid-po.r1",
+            "types": [
+              "agent",
+              "container"
+            ],
+            "provenance": {
+              "source": "docs/thesis/spikes/g0_dspy/corpus.py",
+              "model_version": "chest-lid-po.r1"
+            },
+            "constants": [
+              {
+                "name": "R",
+                "type": "agent"
+              },
+              {
+                "name": "chest",
+                "type": "container"
+              }
+            ],
+            "parameters": [
+              {
+                "name": "stuck_prior",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              },
+              {
+                "name": "tap_success",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              },
+              {
+                "name": "open_success",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              },
+              {
+                "name": "sound_accuracy",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              }
+            ],
+            "observation_channels": [
+              {
+                "name": "status",
+                "symbols": [
+                  "none",
+                  "ok",
+                  "fail"
+                ]
+              },
+              {
+                "name": "sound",
+                "symbols": [
+                  "none",
+                  "thud",
+                  "click"
+                ]
+              }
+            ],
+            "predicates": [
+              {
+                "name": "open",
+                "param_types": [
+                  "container"
+                ],
+                "fluent": true
+              },
+              {
+                "name": "stuck",
+                "param_types": [
+                  "container"
+                ],
+                "fluent": true,
+                "observable": false
+              }
+            ],
+            "skills": [
+              {
+                "name": "OpenLid",
+                "parameters": [
+                  "agent",
+                  "chest"
+                ],
+                "parameter_types": [
+                  "agent",
+                  "container"
+                ],
+                "preconditions": [],
+                "effects": [],
+                "outcome_label": "opened",
+                "negative_preconditions": [
+                  {
+                    "name": "open",
+                    "args": [
+                      "chest"
+                    ]
+                  }
+                ],
+                "outcomes": [
+                  {
+                    "label": "opened",
+                    "effects": [
+                      {
+                        "predicate": {
+                          "name": "open",
+                          "args": [
+                            "chest"
+                          ]
+                        },
+                        "positive": true
+                      }
+                    ]
+                  },
+                  {
+                    "label": "shut",
+                    "effects": []
+                  }
+                ],
+                "outcome_cases": [
+                  {
+                    "when": [
+                      {
+                        "literal": {
+                          "name": "stuck",
+                          "args": [
+                            "chest"
+                          ]
+                        },
+                        "positive": true
+                      }
+                    ],
+                    "distribution": {
+                      "deterministic": "shut"
+                    }
+                  },
+                  {
+                    "when": [],
+                    "distribution": {
+                      "bernoulli": {
+                        "p": {
+                          "parameter": "open_success"
+                        },
+                        "then": "opened",
+                        "else": "shut"
+                      }
+                    }
+                  }
+                ],
+                "observation_cases": {
+                  "status": [
+                    {
+                      "when": [
+                        {
+                          "literal": {
+                            "name": "open",
+                            "args": [
+                              "chest"
+                            ]
+                          },
+                          "positive": true
+                        }
+                      ],
+                      "distribution": {
+                        "deterministic": "ok"
+                      }
+                    },
+                    {
+                      "when": [],
+                      "distribution": {
+                        "deterministic": "fail"
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "Tap",
+                "parameters": [
+                  "agent",
+                  "chest"
+                ],
+                "parameter_types": [
+                  "agent",
+                  "container"
+                ],
+                "preconditions": [],
+                "effects": [],
+                "outcome_label": "freed",
+                "negative_preconditions": [
+                  {
+                    "name": "open",
+                    "args": [
+                      "chest"
+                    ]
+                  }
+                ],
+                "outcomes": [
+                  {
+                    "label": "freed",
+                    "effects": [
+                      {
+                        "predicate": {
+                          "name": "stuck",
+                          "args": [
+                            "chest"
+                          ]
+                        },
+                        "positive": false
+                      }
+                    ]
+                  },
+                  {
+                    "label": "unchanged",
+                    "effects": []
+                  }
+                ],
+                "outcome_cases": [
+                  {
+                    "when": [
+                      {
+                        "literal": {
+                          "name": "stuck",
+                          "args": [
+                            "chest"
+                          ]
+                        },
+                        "positive": true
+                      }
+                    ],
+                    "distribution": {
+                      "bernoulli": {
+                        "p": {
+                          "parameter": "tap_success"
+                        },
+                        "then": "freed",
+                        "else": "unchanged"
+                      }
+                    }
+                  },
+                  {
+                    "when": [],
+                    "distribution": {
+                      "deterministic": "unchanged"
+                    }
+                  }
+                ],
+                "observation_cases": {
+                  "status": [
+                    {
+                      "when": [],
+                      "distribution": {
+                        "deterministic": "ok"
+                      }
+                    }
+                  ],
+                  "sound": [
+                    {
+                      "when": [
+                        {
+                          "literal": {
+                            "name": "stuck",
+                            "args": [
+                              "chest"
+                            ]
+                          },
+                          "positive": true
+                        }
+                      ],
+                      "distribution": {
+                        "bernoulli": {
+                          "p": {
+                            "parameter": "sound_accuracy"
+                          },
+                          "then": "thud",
+                          "else": "click"
+                        }
+                      }
+                    },
+                    {
+                      "when": [],
+                      "distribution": {
+                        "bernoulli": {
+                          "p": {
+                            "parameter": "sound_accuracy"
+                          },
+                          "then": "click",
+                          "else": "thud"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "problem": {
+            "name": "open-the-chest",
+            "domain": "chest-lid-po",
+            "objects": [],
+            "init": [],
+            "hidden_prior": [
+              {
+                "literal": {
+                  "name": "stuck",
+                  "args": [
+                    "chest"
+                  ]
+                },
+                "p": {
+                  "parameter": "stuck_prior"
+                }
+              }
+            ],
+            "goal": [
+              {
+                "name": "open",
+                "args": [
+                  "chest"
+                ]
+              }
+            ],
+            "rewards": {
+              "step": "-1/50",
+              "skills": {
+                "Tap": "-1/10"
+              },
+              "goal": "2"
+            },
+            "discount": "9/10"
+          }
+        },
+        "id": "lid-08",
+        "model_json": "{\"domain\":{\"name\":\"chest-lid-po\",\"model_version\":\"chest-lid-po.r1\",\"types\":[\"agent\",\"container\"],\"provenance\":{\"source\":\"docs/thesis/spikes/g0_dspy/corpus.py\",\"model_version\":\"chest-lid-po.r1\"},\"constants\":[{\"name\":\"R\",\"type\":\"agent\"},{\"name\":\"chest\",\"type\":\"container\"}],\"parameters\":[{\"name\":\"stuck_prior\",\"prior\":{\"beta\":[\"1\",\"1\"]}},{\"name\":\"tap_success\",\"prior\":{\"beta\":[\"1\",\"1\"]}},{\"name\":\"open_success\",\"prior\":{\"beta\":[\"1\",\"1\"]}},{\"name\":\"sound_accuracy\",\"prior\":{\"beta\":[\"1\",\"1\"]}}],\"observation_channels\":[{\"name\":\"status\",\"symbols\":[\"none\",\"ok\",\"fail\"]},{\"name\":\"sound\",\"symbols\":[\"none\",\"thud\",\"click\"]}],\"predicates\":[{\"name\":\"open\",\"param_types\":[\"container\"],\"fluent\":true},{\"name\":\"stuck\",\"param_types\":[\"container\"],\"fluent\":true,\"observable\":false}],\"skills\":[{\"name\":\"OpenLid\",\"parameters\":[\"agent\",\"chest\"],\"parameter_types\":[\"agent\",\"container\"],\"preconditions\":[],\"effects\":[],\"outcome_label\":\"opened\",\"negative_preconditions\":[{\"name\":\"open\",\"args\":[\"chest\"]}],\"outcomes\":[{\"label\":\"opened\",\"effects\":[{\"predicate\":{\"name\":\"open\",\"args\":[\"chest\"]},\"positive\":true}]},{\"label\":\"shut\",\"effects\":[]}],\"outcome_cases\":[{\"when\":[{\"literal\":{\"name\":\"stuck\",\"args\":[\"chest\"]},\"positive\":true}],\"distribution\":{\"deterministic\":\"shut\"}},{\"when\":[],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"open_success\"},\"then\":\"opened\",\"else\":\"shut\"}}}],\"observation_cases\":{\"status\":[{\"when\":[{\"literal\":{\"name\":\"open\",\"args\":[\"chest\"]},\"positive\":true}],\"distribution\":{\"deterministic\":\"ok\"}},{\"when\":[],\"distribution\":{\"deterministic\":\"fail\"}}]}},{\"name\":\"Tap\",\"parameters\":[\"agent\",\"chest\"],\"parameter_types\":[\"agent\",\"container\"],\"preconditions\":[],\"effects\":[],\"outcome_label\":\"freed\",\"negative_preconditions\":[{\"name\":\"open\",\"args\":[\"chest\"]}],\"outcomes\":[{\"label\":\"freed\",\"effects\":[{\"predicate\":{\"name\":\"stuck\",\"args\":[\"chest\"]},\"positive\":false}]},{\"label\":\"unchanged\",\"effects\":[]}],\"outcome_cases\":[{\"when\":[{\"literal\":{\"name\":\"stuck\",\"args\":[\"chest\"]},\"positive\":true}],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"tap_success\"},\"then\":\"freed\",\"else\":\"unchanged\"}}},{\"when\":[],\"distribution\":{\"deterministic\":\"unchanged\"}}],\"observation_cases\":{\"status\":[{\"when\":[],\"distribution\":{\"deterministic\":\"ok\"}}],\"sound\":[{\"when\":[{\"literal\":{\"name\":\"stuck\",\"args\":[\"chest\"]},\"positive\":true}],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"sound_accuracy\"},\"then\":\"thud\",\"else\":\"click\"}}},{\"when\":[],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"sound_accuracy\"},\"then\":\"click\",\"else\":\"thud\"}}}]}}]},\"problem\":{\"name\":\"open-the-chest\",\"domain\":\"chest-lid-po\",\"objects\":[],\"init\":[],\"hidden_prior\":[{\"literal\":{\"name\":\"stuck\",\"args\":[\"chest\"]},\"p\":{\"parameter\":\"stuck_prior\"}}],\"goal\":[{\"name\":\"open\",\"args\":[\"chest\"]}],\"rewards\":{\"step\":\"-1/50\",\"skills\":{\"Tap\":\"-1/10\"},\"goal\":\"2\"},\"discount\":\"9/10\"}}"
+      },
+      {
+        "description": "VAULT BEHIND A DOOR THAT MAY BE LOCKED, PARTIALLY OBSERVABLE\n\nTwo agents, P and Q, start in the corridor. Rooms hall_a and hall_b lie along it, and the vault lies behind a door\nthat opens from hall_b. The task succeeds when both agents are in the vault.\n\nSkills (one skill per decision cycle):\n  Goto(agent, room), room in {hall_a, hall_b}: walk to a room. A room holds one agent at\n    a time, and an agent never goes to the room it is already in.\n    The passage is one person wide: P cannot get past Q into hall_b while Q is in hall_a;\n    such a Goto fails and the agent stays.\n  EnterVault(agent, door): from hall_b, step through the door into the vault. A locked door\n    refuses entry and the agent stays. An agent in the vault stays there.\n  Unlock(agent, door): from hall_b, unlock the door with the key; afterwards it is certainly\n    unlocked. Status ok.\n  Knock(agent, door): from hall_b, knock on the door. The echo (dull | hollow) is usually, but\n    not always, dull when the door is locked and hollow when it is not. Status ok.\n\nHidden: whether the door starts locked is decided at random and never shown directly.\n\nObserved after every skill: where each agent is (a room, the vault, or the corridor), the skill's\nstatus (ok | fail), and after Knock the echo.\n\nRewards: -0.05 per agent per cycle, an extra -0.02 per unlock, +5 per agent when both are in the vault. Discount 0.98.\n\nThe probabilities are NOT given: model each one as a named parameter.",
+        "gold": {
+          "domain": {
+            "name": "vault-rooms-po-2-hall_a",
+            "model_version": "vault-rooms-po-2-hall_a.r1",
+            "types": [
+              "agent",
+              "room",
+              "door"
+            ],
+            "provenance": {
+              "source": "docs/thesis/spikes/g0_dspy/corpus.py",
+              "model_version": "vault-rooms-po-2-hall_a.r1"
+            },
+            "constants": [
+              {
+                "name": "P",
+                "type": "agent"
+              },
+              {
+                "name": "Q",
+                "type": "agent"
+              },
+              {
+                "name": "hall_a",
+                "type": "room"
+              },
+              {
+                "name": "hall_b",
+                "type": "room"
+              },
+              {
+                "name": "vault",
+                "type": "room"
+              },
+              {
+                "name": "door",
+                "type": "door"
+              }
+            ],
+            "parameters": [
+              {
+                "name": "locked_prior",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              },
+              {
+                "name": "knock_accuracy",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              }
+            ],
+            "observation_channels": [
+              {
+                "name": "status",
+                "symbols": [
+                  "none",
+                  "ok",
+                  "fail"
+                ]
+              },
+              {
+                "name": "echo",
+                "symbols": [
+                  "none",
+                  "dull",
+                  "hollow"
+                ]
+              }
+            ],
+            "predicates": [
+              {
+                "name": "in",
+                "param_types": [
+                  "agent",
+                  "room"
+                ],
+                "fluent": true
+              },
+              {
+                "name": "walkable",
+                "param_types": [
+                  "room"
+                ],
+                "fluent": false
+              },
+              {
+                "name": "locked",
+                "param_types": [
+                  "door"
+                ],
+                "fluent": true,
+                "observable": false
+              }
+            ],
+            "skills": [
+              {
+                "name": "Goto",
+                "parameters": [
+                  "agent",
+                  "room"
+                ],
+                "parameter_types": [
+                  "agent",
+                  "room"
+                ],
+                "preconditions": [
+                  {
+                    "name": "walkable",
+                    "args": [
+                      "room"
+                    ]
+                  }
+                ],
+                "effects": [],
+                "outcome_label": "moved",
+                "negative_preconditions": [
+                  {
+                    "name": "in",
+                    "args": [
+                      "*",
+                      "room"
+                    ]
+                  }
+                ],
+                "outcomes": [
+                  {
+                    "label": "moved",
+                    "effects": [
+                      {
+                        "predicate": {
+                          "name": "in",
+                          "args": [
+                            "agent",
+                            "*"
+                          ]
+                        },
+                        "positive": false
+                      },
+                      {
+                        "predicate": {
+                          "name": "in",
+                          "args": [
+                            "agent",
+                            "room"
+                          ]
+                        },
+                        "positive": true
+                      }
+                    ]
+                  },
+                  {
+                    "label": "blocked",
+                    "effects": []
+                  }
+                ],
+                "outcome_cases": [
+                  {
+                    "when": [
+                      {
+                        "equals": [
+                          "agent",
+                          "P"
+                        ]
+                      },
+                      {
+                        "equals": [
+                          "room",
+                          "hall_b"
+                        ]
+                      },
+                      {
+                        "literal": {
+                          "name": "in",
+                          "args": [
+                            "Q",
+                            "hall_a"
+                          ]
+                        },
+                        "positive": true
+                      }
+                    ],
+                    "distribution": {
+                      "deterministic": "blocked"
+                    }
+                  },
+                  {
+                    "when": [],
+                    "distribution": {
+                      "deterministic": "moved"
+                    }
+                  }
+                ],
+                "observation_cases": {
+                  "status": [
+                    {
+                      "when": [
+                        {
+                          "literal": {
+                            "name": "in",
+                            "args": [
+                              "agent",
+                              "room"
+                            ]
+                          },
+                          "positive": true
+                        }
+                      ],
+                      "distribution": {
+                        "deterministic": "ok"
+                      }
+                    },
+                    {
+                      "when": [],
+                      "distribution": {
+                        "deterministic": "fail"
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "EnterVault",
+                "parameters": [
+                  "agent",
+                  "door"
+                ],
+                "parameter_types": [
+                  "agent",
+                  "door"
+                ],
+                "preconditions": [
+                  {
+                    "name": "in",
+                    "args": [
+                      "agent",
+                      "hall_b"
+                    ]
+                  }
+                ],
+                "effects": [],
+                "outcome_label": "entered",
+                "negative_preconditions": [
+                  {
+                    "name": "in",
+                    "args": [
+                      "agent",
+                      "vault"
+                    ]
+                  }
+                ],
+                "outcomes": [
+                  {
+                    "label": "entered",
+                    "effects": [
+                      {
+                        "predicate": {
+                          "name": "in",
+                          "args": [
+                            "agent",
+                            "*"
+                          ]
+                        },
+                        "positive": false
+                      },
+                      {
+                        "predicate": {
+                          "name": "in",
+                          "args": [
+                            "agent",
+                            "vault"
+                          ]
+                        },
+                        "positive": true
+                      }
+                    ]
+                  },
+                  {
+                    "label": "refused",
+                    "effects": []
+                  }
+                ],
+                "outcome_cases": [
+                  {
+                    "when": [
+                      {
+                        "literal": {
+                          "name": "locked",
+                          "args": [
+                            "door"
+                          ]
+                        },
+                        "positive": true
+                      }
+                    ],
+                    "distribution": {
+                      "deterministic": "refused"
+                    }
+                  },
+                  {
+                    "when": [],
+                    "distribution": {
+                      "deterministic": "entered"
+                    }
+                  }
+                ],
+                "observation_cases": {
+                  "status": [
+                    {
+                      "when": [
+                        {
+                          "literal": {
+                            "name": "in",
+                            "args": [
+                              "agent",
+                              "vault"
+                            ]
+                          },
+                          "positive": true
+                        }
+                      ],
+                      "distribution": {
+                        "deterministic": "ok"
+                      }
+                    },
+                    {
+                      "when": [],
+                      "distribution": {
+                        "deterministic": "fail"
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "Unlock",
+                "parameters": [
+                  "agent",
+                  "door"
+                ],
+                "parameter_types": [
+                  "agent",
+                  "door"
+                ],
+                "preconditions": [
+                  {
+                    "name": "in",
+                    "args": [
+                      "agent",
+                      "hall_b"
+                    ]
+                  }
+                ],
+                "effects": [
+                  {
+                    "predicate": {
+                      "name": "locked",
+                      "args": [
+                        "door"
+                      ]
+                    },
+                    "positive": false
+                  }
+                ],
+                "outcome_label": "unlocked",
+                "observation_cases": {
+                  "status": [
+                    {
+                      "when": [],
+                      "distribution": {
+                        "deterministic": "ok"
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "Knock",
+                "parameters": [
+                  "agent",
+                  "door"
+                ],
+                "parameter_types": [
+                  "agent",
+                  "door"
+                ],
+                "preconditions": [
+                  {
+                    "name": "in",
+                    "args": [
+                      "agent",
+                      "hall_b"
+                    ]
+                  }
+                ],
+                "effects": [],
+                "outcome_label": "knocked",
+                "observation_cases": {
+                  "status": [
+                    {
+                      "when": [],
+                      "distribution": {
+                        "deterministic": "ok"
+                      }
+                    }
+                  ],
+                  "echo": [
+                    {
+                      "when": [
+                        {
+                          "literal": {
+                            "name": "locked",
+                            "args": [
+                              "door"
+                            ]
+                          },
+                          "positive": true
+                        }
+                      ],
+                      "distribution": {
+                        "bernoulli": {
+                          "p": {
+                            "parameter": "knock_accuracy"
+                          },
+                          "then": "dull",
+                          "else": "hollow"
+                        }
+                      }
+                    },
+                    {
+                      "when": [],
+                      "distribution": {
+                        "bernoulli": {
+                          "p": {
+                            "parameter": "knock_accuracy"
+                          },
+                          "then": "hollow",
+                          "else": "dull"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "problem": {
+            "name": "reach-the-vault",
+            "domain": "vault-rooms-po-2-hall_a",
+            "objects": [],
+            "init": [
+              {
+                "name": "walkable",
+                "args": [
+                  "hall_a"
+                ]
+              },
+              {
+                "name": "walkable",
+                "args": [
+                  "hall_b"
+                ]
+              }
+            ],
+            "hidden_prior": [
+              {
+                "literal": {
+                  "name": "locked",
+                  "args": [
+                    "door"
+                  ]
+                },
+                "p": {
+                  "parameter": "locked_prior"
+                }
+              }
+            ],
+            "goal": [
+              {
+                "name": "in",
+                "args": [
+                  "P",
+                  "vault"
+                ]
+              },
+              {
+                "name": "in",
+                "args": [
+                  "Q",
+                  "vault"
+                ]
+              }
+            ],
+            "rewards": {
+              "step": "-1/10",
+              "skills": {
+                "Unlock": "-1/50"
+              },
+              "goal": "10"
+            },
+            "discount": "49/50"
+          }
+        },
+        "id": "rooms-16",
+        "model_json": "{\"domain\":{\"name\":\"vault-rooms-po-2-hall_a\",\"model_version\":\"vault-rooms-po-2-hall_a.r1\",\"types\":[\"agent\",\"room\",\"door\"],\"provenance\":{\"source\":\"docs/thesis/spikes/g0_dspy/corpus.py\",\"model_version\":\"vault-rooms-po-2-hall_a.r1\"},\"constants\":[{\"name\":\"P\",\"type\":\"agent\"},{\"name\":\"Q\",\"type\":\"agent\"},{\"name\":\"hall_a\",\"type\":\"room\"},{\"name\":\"hall_b\",\"type\":\"room\"},{\"name\":\"vault\",\"type\":\"room\"},{\"name\":\"door\",\"type\":\"door\"}],\"parameters\":[{\"name\":\"locked_prior\",\"prior\":{\"beta\":[\"1\",\"1\"]}},{\"name\":\"knock_accuracy\",\"prior\":{\"beta\":[\"1\",\"1\"]}}],\"observation_channels\":[{\"name\":\"status\",\"symbols\":[\"none\",\"ok\",\"fail\"]},{\"name\":\"echo\",\"symbols\":[\"none\",\"dull\",\"hollow\"]}],\"predicates\":[{\"name\":\"in\",\"param_types\":[\"agent\",\"room\"],\"fluent\":true},{\"name\":\"walkable\",\"param_types\":[\"room\"],\"fluent\":false},{\"name\":\"locked\",\"param_types\":[\"door\"],\"fluent\":true,\"observable\":false}],\"skills\":[{\"name\":\"Goto\",\"parameters\":[\"agent\",\"room\"],\"parameter_types\":[\"agent\",\"room\"],\"preconditions\":[{\"name\":\"walkable\",\"args\":[\"room\"]}],\"effects\":[],\"outcome_label\":\"moved\",\"negative_preconditions\":[{\"name\":\"in\",\"args\":[\"*\",\"room\"]}],\"outcomes\":[{\"label\":\"moved\",\"effects\":[{\"predicate\":{\"name\":\"in\",\"args\":[\"agent\",\"*\"]},\"positive\":false},{\"predicate\":{\"name\":\"in\",\"args\":[\"agent\",\"room\"]},\"positive\":true}]},{\"label\":\"blocked\",\"effects\":[]}],\"outcome_cases\":[{\"when\":[{\"equals\":[\"agent\",\"P\"]},{\"equals\":[\"room\",\"hall_b\"]},{\"literal\":{\"name\":\"in\",\"args\":[\"Q\",\"hall_a\"]},\"positive\":true}],\"distribution\":{\"deterministic\":\"blocked\"}},{\"when\":[],\"distribution\":{\"deterministic\":\"moved\"}}],\"observation_cases\":{\"status\":[{\"when\":[{\"literal\":{\"name\":\"in\",\"args\":[\"agent\",\"room\"]},\"positive\":true}],\"distribution\":{\"deterministic\":\"ok\"}},{\"when\":[],\"distribution\":{\"deterministic\":\"fail\"}}]}},{\"name\":\"EnterVault\",\"parameters\":[\"agent\",\"door\"],\"parameter_types\":[\"agent\",\"door\"],\"preconditions\":[{\"name\":\"in\",\"args\":[\"agent\",\"hall_b\"]}],\"effects\":[],\"outcome_label\":\"entered\",\"negative_preconditions\":[{\"name\":\"in\",\"args\":[\"agent\",\"vault\"]}],\"outcomes\":[{\"label\":\"entered\",\"effects\":[{\"predicate\":{\"name\":\"in\",\"args\":[\"agent\",\"*\"]},\"positive\":false},{\"predicate\":{\"name\":\"in\",\"args\":[\"agent\",\"vault\"]},\"positive\":true}]},{\"label\":\"refused\",\"effects\":[]}],\"outcome_cases\":[{\"when\":[{\"literal\":{\"name\":\"locked\",\"args\":[\"door\"]},\"positive\":true}],\"distribution\":{\"deterministic\":\"refused\"}},{\"when\":[],\"distribution\":{\"deterministic\":\"entered\"}}],\"observation_cases\":{\"status\":[{\"when\":[{\"literal\":{\"name\":\"in\",\"args\":[\"agent\",\"vault\"]},\"positive\":true}],\"distribution\":{\"deterministic\":\"ok\"}},{\"when\":[],\"distribution\":{\"deterministic\":\"fail\"}}]}},{\"name\":\"Unlock\",\"parameters\":[\"agent\",\"door\"],\"parameter_types\":[\"agent\",\"door\"],\"preconditions\":[{\"name\":\"in\",\"args\":[\"agent\",\"hall_b\"]}],\"effects\":[{\"predicate\":{\"name\":\"locked\",\"args\":[\"door\"]},\"positive\":false}],\"outcome_label\":\"unlocked\",\"observation_cases\":{\"status\":[{\"when\":[],\"distribution\":{\"deterministic\":\"ok\"}}]}},{\"name\":\"Knock\",\"parameters\":[\"agent\",\"door\"],\"parameter_types\":[\"agent\",\"door\"],\"preconditions\":[{\"name\":\"in\",\"args\":[\"agent\",\"hall_b\"]}],\"effects\":[],\"outcome_label\":\"knocked\",\"observation_cases\":{\"status\":[{\"when\":[],\"distribution\":{\"deterministic\":\"ok\"}}],\"echo\":[{\"when\":[{\"literal\":{\"name\":\"locked\",\"args\":[\"door\"]},\"positive\":true}],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"knock_accuracy\"},\"then\":\"dull\",\"else\":\"hollow\"}}},{\"when\":[],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"knock_accuracy\"},\"then\":\"hollow\",\"else\":\"dull\"}}}]}}]},\"problem\":{\"name\":\"reach-the-vault\",\"domain\":\"vault-rooms-po-2-hall_a\",\"objects\":[],\"init\":[{\"name\":\"walkable\",\"args\":[\"hall_a\"]},{\"name\":\"walkable\",\"args\":[\"hall_b\"]}],\"hidden_prior\":[{\"literal\":{\"name\":\"locked\",\"args\":[\"door\"]},\"p\":{\"parameter\":\"locked_prior\"}}],\"goal\":[{\"name\":\"in\",\"args\":[\"P\",\"vault\"]},{\"name\":\"in\",\"args\":[\"Q\",\"vault\"]}],\"rewards\":{\"step\":\"-1/10\",\"skills\":{\"Unlock\":\"-1/50\"},\"goal\":\"10\"},\"discount\":\"49/50\"}}"
+      }
+    ],
+    "signature": {
+      "instructions": "You are a Senior POMDP Modeling Engineer specializing in the MAAOS skill-IR format. Your sole function is to convert a natural language ENVIRONMENT DESCRIPTION into a single, flawless, factored POMDP model written ONLY as one JSON object {\"domain\": {...}, \"problem\": {...}}.\n\nAdhere strictly to the FORMAT RULES (F1-F11) provided previously. Treat these format rules as inviolable code. Your job is structure, precision, and rigorous translation of all described dynamics and constraints.\n\nCRITICAL INSTRUCTION SET (Do not forget these rules, regardless of the input text):\n\n1.  **Reward and Discount Calculation (The Agent Rule):** When calculating the `rewards` step cost or the `discount` value, you MUST account for every agent mentioned in the description. If a reward is described as \"per agent,\" multiply the stated reward value by the total number of agents. The final values must be written as exact fraction strings (e.g., \"2/100\", \"1/5\").\n2.  **Preconditions vs. Outcome Literals (Syntax Rule):**\n    *   **Preconditions (`preconditions`):** Must ONLY contain simple predicate assertions: `{\"name\": \"pred\", \"args\": [\"A\", \"B\"]}`. They MUST NOT contain `{\"literal\": ...}` structures.\n    *   **Outcome `when` Clauses:** The `when` condition inside `outcome_cases` MUST use the complex `{\"literal\": {\"name\": ..., \"args\": ..., \"positive\": bool}}` structure.\n3.  **Outcome Simplification (Efficiency Rule):** If a skill has only one single, guaranteed outcome (e.g., a success that is never described as failing or rolling a chance), you must simplify the `outcomes` structure. Do not include unnecessary alternative outcomes (`label: \"stayed\"`, `label: \"dropped\"`) if the logic dictates a single, certain result.\n4.  **Handling of Dynamics:**\n    *   **Chance:** All probabilities not explicitly given must be represented as NAMED PARAMETERS declared in the `parameters` list using `{\"prior\": {\"beta\": [\"1\", \"1\"]}}`.\n    *   **Observability:** The first symbol in `observation_channels` must always be \"none\". The `observation_cases` for any skill must accurately reflect all described observable changes (e.g., `status`, `feel`, `echo`).\n5.  **Domain Object Management:**\n    *   Every unique object mentioned (agents, devices, locations, etc.) must be declared as a constant using `{\"name\": \"...\", \"type\": \"...\"}`.\n    *   Ensure that every argument type used in a predicate or skill (e.g., `agent`, `spot`, `room`) matches the type declared for the constant object it refers to.\n\nYou must output ONLY the JSON object, perfectly matching the required schema and incorporating all domain knowledge derived from the description and the provided format rules.",
+      "fields": [
+        {
+          "prefix": "Description:",
+          "description": "the environment description, the sole input"
+        },
+        {
+          "prefix": "Model Json:",
+          "description": "one JSON object {\"domain\": {...}, \"problem\": {...}} in the MAAOS skill-IR format, nothing else"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.12",
+      "dspy": "3.1.0",
+      "cloudpickle": "3.1"
+    }
+  }
+}

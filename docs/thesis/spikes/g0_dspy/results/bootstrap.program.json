@@ -1,0 +1,790 @@
+{
+  "write": {
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "description": "CRATE_BOX WITH A STICKY LID, PARTIALLY OBSERVABLE\n\nOne agent, R, must open the crate_box.\n\nSkills (one skill per decision cycle):\n  OpenLid(agent, crate_box): lift the closed lid. A stuck lid never opens. A free lid always comes up.\n    The status is ok if the lid is open afterwards.\n  Tap(agent, crate_box): tap the closed lid. Tapping sometimes frees a stuck lid and never sticks a free\n    one. Status ok whenever the tap was made.\n    The agent then hears a sound (thud | click) that usually, but not always, tells whether the\n    lid is still stuck afterwards.\n\nHidden: whether the lid starts stuck is decided at random and never shown directly.\n\nObserved after every skill: whether the lid is open, the skill's status (ok | fail), and after Tap the sound.\n\nRewards: -0.05 per cycle, an extra -0.02 per tap, +5 when the crate_box is open. Discount 0.98.\n\nThe probabilities are NOT given: model each one as a named parameter.",
+        "gold": {
+          "domain": {
+            "name": "crate_box-lid-po",
+            "model_version": "crate_box-lid-po.r1",
+            "types": [
+              "agent",
+              "container"
+            ],
+            "provenance": {
+              "source": "docs/thesis/spikes/g0_dspy/corpus.py",
+              "model_version": "crate_box-lid-po.r1"
+            },
+            "constants": [
+              {
+                "name": "R",
+                "type": "agent"
+              },
+              {
+                "name": "crate_box",
+                "type": "container"
+              }
+            ],
+            "parameters": [
+              {
+                "name": "stuck_prior",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              },
+              {
+                "name": "tap_success",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              },
+              {
+                "name": "sound_accuracy",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              }
+            ],
+            "observation_channels": [
+              {
+                "name": "status",
+                "symbols": [
+                  "none",
+                  "ok",
+                  "fail"
+                ]
+              },
+              {
+                "name": "sound",
+                "symbols": [
+                  "none",
+                  "thud",
+                  "click"
+                ]
+              }
+            ],
+            "predicates": [
+              {
+                "name": "open",
+                "param_types": [
+                  "container"
+                ],
+                "fluent": true
+              },
+              {
+                "name": "stuck",
+                "param_types": [
+                  "container"
+                ],
+                "fluent": true,
+                "observable": false
+              }
+            ],
+            "skills": [
+              {
+                "name": "OpenLid",
+                "parameters": [
+                  "agent",
+                  "crate_box"
+                ],
+                "parameter_types": [
+                  "agent",
+                  "container"
+                ],
+                "preconditions": [],
+                "effects": [],
+                "outcome_label": "opened",
+                "negative_preconditions": [
+                  {
+                    "name": "open",
+                    "args": [
+                      "crate_box"
+                    ]
+                  }
+                ],
+                "outcomes": [
+                  {
+                    "label": "opened",
+                    "effects": [
+                      {
+                        "predicate": {
+                          "name": "open",
+                          "args": [
+                            "crate_box"
+                          ]
+                        },
+                        "positive": true
+                      }
+                    ]
+                  },
+                  {
+                    "label": "shut",
+                    "effects": []
+                  }
+                ],
+                "outcome_cases": [
+                  {
+                    "when": [
+                      {
+                        "literal": {
+                          "name": "stuck",
+                          "args": [
+                            "crate_box"
+                          ]
+                        },
+                        "positive": true
+                      }
+                    ],
+                    "distribution": {
+                      "deterministic": "shut"
+                    }
+                  },
+                  {
+                    "when": [],
+                    "distribution": {
+                      "deterministic": "opened"
+                    }
+                  }
+                ],
+                "observation_cases": {
+                  "status": [
+                    {
+                      "when": [
+                        {
+                          "literal": {
+                            "name": "open",
+                            "args": [
+                              "crate_box"
+                            ]
+                          },
+                          "positive": true
+                        }
+                      ],
+                      "distribution": {
+                        "deterministic": "ok"
+                      }
+                    },
+                    {
+                      "when": [],
+                      "distribution": {
+                        "deterministic": "fail"
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "Tap",
+                "parameters": [
+                  "agent",
+                  "crate_box"
+                ],
+                "parameter_types": [
+                  "agent",
+                  "container"
+                ],
+                "preconditions": [],
+                "effects": [],
+                "outcome_label": "freed",
+                "negative_preconditions": [
+                  {
+                    "name": "open",
+                    "args": [
+                      "crate_box"
+                    ]
+                  }
+                ],
+                "outcomes": [
+                  {
+                    "label": "freed",
+                    "effects": [
+                      {
+                        "predicate": {
+                          "name": "stuck",
+                          "args": [
+                            "crate_box"
+                          ]
+                        },
+                        "positive": false
+                      }
+                    ]
+                  },
+                  {
+                    "label": "unchanged",
+                    "effects": []
+                  }
+                ],
+                "outcome_cases": [
+                  {
+                    "when": [
+                      {
+                        "literal": {
+                          "name": "stuck",
+                          "args": [
+                            "crate_box"
+                          ]
+                        },
+                        "positive": true
+                      }
+                    ],
+                    "distribution": {
+                      "bernoulli": {
+                        "p": {
+                          "parameter": "tap_success"
+                        },
+                        "then": "freed",
+                        "else": "unchanged"
+                      }
+                    }
+                  },
+                  {
+                    "when": [],
+                    "distribution": {
+                      "deterministic": "unchanged"
+                    }
+                  }
+                ],
+                "observation_cases": {
+                  "status": [
+                    {
+                      "when": [],
+                      "distribution": {
+                        "deterministic": "ok"
+                      }
+                    }
+                  ],
+                  "sound": [
+                    {
+                      "when": [
+                        {
+                          "literal": {
+                            "name": "stuck",
+                            "args": [
+                              "crate_box"
+                            ]
+                          },
+                          "positive": true
+                        }
+                      ],
+                      "distribution": {
+                        "bernoulli": {
+                          "p": {
+                            "parameter": "sound_accuracy"
+                          },
+                          "then": "thud",
+                          "else": "click"
+                        }
+                      }
+                    },
+                    {
+                      "when": [],
+                      "distribution": {
+                        "bernoulli": {
+                          "p": {
+                            "parameter": "sound_accuracy"
+                          },
+                          "then": "click",
+                          "else": "thud"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "problem": {
+            "name": "open-the-crate_box",
+            "domain": "crate_box-lid-po",
+            "objects": [],
+            "init": [],
+            "hidden_prior": [
+              {
+                "literal": {
+                  "name": "stuck",
+                  "args": [
+                    "crate_box"
+                  ]
+                },
+                "p": {
+                  "parameter": "stuck_prior"
+                }
+              }
+            ],
+            "goal": [
+              {
+                "name": "open",
+                "args": [
+                  "crate_box"
+                ]
+              }
+            ],
+            "rewards": {
+              "step": "-1/20",
+              "skills": {
+                "Tap": "-1/50"
+              },
+              "goal": "5"
+            },
+            "discount": "49/50"
+          }
+        },
+        "id": "lid-09",
+        "model_json": "{\"domain\":{\"name\":\"crate_box-lid-po\",\"model_version\":\"crate_box-lid-po.r1\",\"types\":[\"agent\",\"container\"],\"provenance\":{\"source\":\"docs/thesis/spikes/g0_dspy/corpus.py\",\"model_version\":\"crate_box-lid-po.r1\"},\"constants\":[{\"name\":\"R\",\"type\":\"agent\"},{\"name\":\"crate_box\",\"type\":\"container\"}],\"parameters\":[{\"name\":\"stuck_prior\",\"prior\":{\"beta\":[\"1\",\"1\"]}},{\"name\":\"tap_success\",\"prior\":{\"beta\":[\"1\",\"1\"]}},{\"name\":\"sound_accuracy\",\"prior\":{\"beta\":[\"1\",\"1\"]}}],\"observation_channels\":[{\"name\":\"status\",\"symbols\":[\"none\",\"ok\",\"fail\"]},{\"name\":\"sound\",\"symbols\":[\"none\",\"thud\",\"click\"]}],\"predicates\":[{\"name\":\"open\",\"param_types\":[\"container\"],\"fluent\":true},{\"name\":\"stuck\",\"param_types\":[\"container\"],\"fluent\":true,\"observable\":false}],\"skills\":[{\"name\":\"OpenLid\",\"parameters\":[\"agent\",\"crate_box\"],\"parameter_types\":[\"agent\",\"container\"],\"preconditions\":[],\"effects\":[],\"outcome_label\":\"opened\",\"negative_preconditions\":[{\"name\":\"open\",\"args\":[\"crate_box\"]}],\"outcomes\":[{\"label\":\"opened\",\"effects\":[{\"predicate\":{\"name\":\"open\",\"args\":[\"crate_box\"]},\"positive\":true}]},{\"label\":\"shut\",\"effects\":[]}],\"outcome_cases\":[{\"when\":[{\"literal\":{\"name\":\"stuck\",\"args\":[\"crate_box\"]},\"positive\":true}],\"distribution\":{\"deterministic\":\"shut\"}},{\"when\":[],\"distribution\":{\"deterministic\":\"opened\"}}],\"observation_cases\":{\"status\":[{\"when\":[{\"literal\":{\"name\":\"open\",\"args\":[\"crate_box\"]},\"positive\":true}],\"distribution\":{\"deterministic\":\"ok\"}},{\"when\":[],\"distribution\":{\"deterministic\":\"fail\"}}]}},{\"name\":\"Tap\",\"parameters\":[\"agent\",\"crate_box\"],\"parameter_types\":[\"agent\",\"container\"],\"preconditions\":[],\"effects\":[],\"outcome_label\":\"freed\",\"negative_preconditions\":[{\"name\":\"open\",\"args\":[\"crate_box\"]}],\"outcomes\":[{\"label\":\"freed\",\"effects\":[{\"predicate\":{\"name\":\"stuck\",\"args\":[\"crate_box\"]},\"positive\":false}]},{\"label\":\"unchanged\",\"effects\":[]}],\"outcome_cases\":[{\"when\":[{\"literal\":{\"name\":\"stuck\",\"args\":[\"crate_box\"]},\"positive\":true}],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"tap_success\"},\"then\":\"freed\",\"else\":\"unchanged\"}}},{\"when\":[],\"distribution\":{\"deterministic\":\"unchanged\"}}],\"observation_cases\":{\"status\":[{\"when\":[],\"distribution\":{\"deterministic\":\"ok\"}}],\"sound\":[{\"when\":[{\"literal\":{\"name\":\"stuck\",\"args\":[\"crate_box\"]},\"positive\":true}],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"sound_accuracy\"},\"then\":\"thud\",\"else\":\"click\"}}},{\"when\":[],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"sound_accuracy\"},\"then\":\"click\",\"else\":\"thud\"}}}]}}]},\"problem\":{\"name\":\"open-the-crate_box\",\"domain\":\"crate_box-lid-po\",\"objects\":[],\"init\":[],\"hidden_prior\":[{\"literal\":{\"name\":\"stuck\",\"args\":[\"crate_box\"]},\"p\":{\"parameter\":\"stuck_prior\"}}],\"goal\":[{\"name\":\"open\",\"args\":[\"crate_box\"]}],\"rewards\":{\"step\":\"-1/20\",\"skills\":{\"Tap\":\"-1/50\"},\"goal\":\"5\"},\"discount\":\"49/50\"}}"
+      },
+      {
+        "description": "CRATE THAT MAY BE HEAVY, PARTIALLY OBSERVABLE\n\nTwo agents, A and B, must raise the crate together. It has two grip spots, front and back.\n\nSkills (one skill per decision cycle):\n  Approach(agent, spot), spot in {front, back}: step to a grip spot. A spot holds one agent,\n    and an agent never approaches the spot it already holds. Status ok.\n  JointLift(agent, crate, partner): the agent on front and the partner on back lift together.\n    A heavy crate never comes up. Even a light crate sometimes slips back down. The status is ok if the\n    crate is raised afterwards.\n  Probe(agent, crate): the agent on front tests the weight. The feel (strains | easy) is\n    usually, but not always, right about whether the crate is heavy. Status ok.\n\nHidden: whether the crate is heavy is decided at random at the start, never changes, and is never\nshown directly.\n\nObserved after every skill: which spot each agent holds, whether the crate is raised, the skill's\nstatus (ok | fail), and after Probe the feel.\n\nRewards: -0.01 per agent per cycle, an extra -0.1 per probe, +1 per agent when the crate is raised. Discount 0.9.\n\nThe probabilities are NOT given: model each one as a named parameter.",
+        "gold": {
+          "domain": {
+            "name": "crate-lift-po",
+            "model_version": "crate-lift-po.r1",
+            "types": [
+              "agent",
+              "spot",
+              "crate"
+            ],
+            "provenance": {
+              "source": "docs/thesis/spikes/g0_dspy/corpus.py",
+              "model_version": "crate-lift-po.r1"
+            },
+            "constants": [
+              {
+                "name": "A",
+                "type": "agent"
+              },
+              {
+                "name": "B",
+                "type": "agent"
+              },
+              {
+                "name": "front",
+                "type": "spot"
+              },
+              {
+                "name": "back",
+                "type": "spot"
+              },
+              {
+                "name": "crate",
+                "type": "crate"
+              }
+            ],
+            "parameters": [
+              {
+                "name": "heavy_prior",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              },
+              {
+                "name": "lift_success",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              },
+              {
+                "name": "probe_accuracy",
+                "prior": {
+                  "beta": [
+                    "1",
+                    "1"
+                  ]
+                }
+              }
+            ],
+            "observation_channels": [
+              {
+                "name": "status",
+                "symbols": [
+                  "none",
+                  "ok",
+                  "fail"
+                ]
+              },
+              {
+                "name": "strain",
+                "symbols": [
+                  "none",
+                  "strains",
+                  "easy"
+                ]
+              }
+            ],
+            "predicates": [
+              {
+                "name": "at",
+                "param_types": [
+                  "agent",
+                  "spot"
+                ],
+                "fluent": true
+              },
+              {
+                "name": "grip",
+                "param_types": [
+                  "spot"
+                ],
+                "fluent": false
+              },
+              {
+                "name": "raised",
+                "param_types": [
+                  "crate"
+                ],
+                "fluent": true
+              },
+              {
+                "name": "heavy",
+                "param_types": [
+                  "crate"
+                ],
+                "fluent": false,
+                "observable": false
+              }
+            ],
+            "skills": [
+              {
+                "name": "Approach",
+                "parameters": [
+                  "agent",
+                  "spot"
+                ],
+                "parameter_types": [
+                  "agent",
+                  "spot"
+                ],
+                "preconditions": [
+                  {
+                    "name": "grip",
+                    "args": [
+                      "spot"
+                    ]
+                  }
+                ],
+                "effects": [],
+                "outcome_label": "arrived",
+                "negative_preconditions": [
+                  {
+                    "name": "at",
+                    "args": [
+                      "*",
+                      "spot"
+                    ]
+                  }
+                ],
+                "outcomes": [
+                  {
+                    "label": "arrived",
+                    "effects": [
+                      {
+                        "predicate": {
+                          "name": "at",
+                          "args": [
+                            "agent",
+                            "*"
+                          ]
+                        },
+                        "positive": false
+                      },
+                      {
+                        "predicate": {
+                          "name": "at",
+                          "args": [
+                            "agent",
+                            "spot"
+                          ]
+                        },
+                        "positive": true
+                      }
+                    ]
+                  }
+                ],
+                "observation_cases": {
+                  "status": [
+                    {
+                      "when": [],
+                      "distribution": {
+                        "deterministic": "ok"
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "JointLift",
+                "parameters": [
+                  "agent",
+                  "crate",
+                  "partner"
+                ],
+                "parameter_types": [
+                  "agent",
+                  "crate",
+                  "agent"
+                ],
+                "preconditions": [
+                  {
+                    "name": "at",
+                    "args": [
+                      "agent",
+                      "front"
+                    ]
+                  },
+                  {
+                    "name": "at",
+                    "args": [
+                      "partner",
+                      "back"
+                    ]
+                  }
+                ],
+                "effects": [],
+                "outcome_label": "lifted",
+                "negative_preconditions": [
+                  {
+                    "name": "raised",
+                    "args": [
+                      "crate"
+                    ]
+                  }
+                ],
+                "outcomes": [
+                  {
+                    "label": "lifted",
+                    "effects": [
+                      {
+                        "predicate": {
+                          "name": "raised",
+                          "args": [
+                            "crate"
+                          ]
+                        },
+                        "positive": true
+                      }
+                    ]
+                  },
+                  {
+                    "label": "dropped",
+                    "effects": []
+                  }
+                ],
+                "outcome_cases": [
+                  {
+                    "when": [
+                      {
+                        "literal": {
+                          "name": "heavy",
+                          "args": [
+                            "crate"
+                          ]
+                        },
+                        "positive": true
+                      }
+                    ],
+                    "distribution": {
+                      "deterministic": "dropped"
+                    }
+                  },
+                  {
+                    "when": [],
+                    "distribution": {
+                      "bernoulli": {
+                        "p": {
+                          "parameter": "lift_success"
+                        },
+                        "then": "lifted",
+                        "else": "dropped"
+                      }
+                    }
+                  }
+                ],
+                "observation_cases": {
+                  "status": [
+                    {
+                      "when": [
+                        {
+                          "literal": {
+                            "name": "raised",
+                            "args": [
+                              "crate"
+                            ]
+                          },
+                          "positive": true
+                        }
+                      ],
+                      "distribution": {
+                        "deterministic": "ok"
+                      }
+                    },
+                    {
+                      "when": [],
+                      "distribution": {
+                        "deterministic": "fail"
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "Probe",
+                "parameters": [
+                  "agent",
+                  "crate"
+                ],
+                "parameter_types": [
+                  "agent",
+                  "crate"
+                ],
+                "preconditions": [
+                  {
+                    "name": "at",
+                    "args": [
+                      "agent",
+                      "front"
+                    ]
+                  }
+                ],
+                "effects": [],
+                "outcome_label": "probed",
+                "observation_cases": {
+                  "status": [
+                    {
+                      "when": [],
+                      "distribution": {
+                        "deterministic": "ok"
+                      }
+                    }
+                  ],
+                  "strain": [
+                    {
+                      "when": [
+                        {
+                          "literal": {
+                            "name": "heavy",
+                            "args": [
+                              "crate"
+                            ]
+                          },
+                          "positive": true
+                        }
+                      ],
+                      "distribution": {
+                        "bernoulli": {
+                          "p": {
+                            "parameter": "probe_accuracy"
+                          },
+                          "then": "strains",
+                          "else": "easy"
+                        }
+                      }
+                    },
+                    {
+                      "when": [],
+                      "distribution": {
+                        "bernoulli": {
+                          "p": {
+                            "parameter": "probe_accuracy"
+                          },
+                          "then": "easy",
+                          "else": "strains"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "problem": {
+            "name": "raise-the-crate",
+            "domain": "crate-lift-po",
+            "objects": [],
+            "init": [
+              {
+                "name": "grip",
+                "args": [
+                  "front"
+                ]
+              },
+              {
+                "name": "grip",
+                "args": [
+                  "back"
+                ]
+              }
+            ],
+            "hidden_prior": [
+              {
+                "literal": {
+                  "name": "heavy",
+                  "args": [
+                    "crate"
+                  ]
+                },
+                "p": {
+                  "parameter": "heavy_prior"
+                }
+              }
+            ],
+            "goal": [
+              {
+                "name": "raised",
+                "args": [
+                  "crate"
+                ]
+              }
+            ],
+            "rewards": {
+              "step": "-1/50",
+              "skills": {
+                "Probe": "-1/10"
+              },
+              "goal": "2"
+            },
+            "discount": "9/10"
+          }
+        },
+        "id": "lift-24",
+        "model_json": "{\"domain\":{\"name\":\"crate-lift-po\",\"model_version\":\"crate-lift-po.r1\",\"types\":[\"agent\",\"spot\",\"crate\"],\"provenance\":{\"source\":\"docs/thesis/spikes/g0_dspy/corpus.py\",\"model_version\":\"crate-lift-po.r1\"},\"constants\":[{\"name\":\"A\",\"type\":\"agent\"},{\"name\":\"B\",\"type\":\"agent\"},{\"name\":\"front\",\"type\":\"spot\"},{\"name\":\"back\",\"type\":\"spot\"},{\"name\":\"crate\",\"type\":\"crate\"}],\"parameters\":[{\"name\":\"heavy_prior\",\"prior\":{\"beta\":[\"1\",\"1\"]}},{\"name\":\"lift_success\",\"prior\":{\"beta\":[\"1\",\"1\"]}},{\"name\":\"probe_accuracy\",\"prior\":{\"beta\":[\"1\",\"1\"]}}],\"observation_channels\":[{\"name\":\"status\",\"symbols\":[\"none\",\"ok\",\"fail\"]},{\"name\":\"strain\",\"symbols\":[\"none\",\"strains\",\"easy\"]}],\"predicates\":[{\"name\":\"at\",\"param_types\":[\"agent\",\"spot\"],\"fluent\":true},{\"name\":\"grip\",\"param_types\":[\"spot\"],\"fluent\":false},{\"name\":\"raised\",\"param_types\":[\"crate\"],\"fluent\":true},{\"name\":\"heavy\",\"param_types\":[\"crate\"],\"fluent\":false,\"observable\":false}],\"skills\":[{\"name\":\"Approach\",\"parameters\":[\"agent\",\"spot\"],\"parameter_types\":[\"agent\",\"spot\"],\"preconditions\":[{\"name\":\"grip\",\"args\":[\"spot\"]}],\"effects\":[],\"outcome_label\":\"arrived\",\"negative_preconditions\":[{\"name\":\"at\",\"args\":[\"*\",\"spot\"]}],\"outcomes\":[{\"label\":\"arrived\",\"effects\":[{\"predicate\":{\"name\":\"at\",\"args\":[\"agent\",\"*\"]},\"positive\":false},{\"predicate\":{\"name\":\"at\",\"args\":[\"agent\",\"spot\"]},\"positive\":true}]}],\"observation_cases\":{\"status\":[{\"when\":[],\"distribution\":{\"deterministic\":\"ok\"}}]}},{\"name\":\"JointLift\",\"parameters\":[\"agent\",\"crate\",\"partner\"],\"parameter_types\":[\"agent\",\"crate\",\"agent\"],\"preconditions\":[{\"name\":\"at\",\"args\":[\"agent\",\"front\"]},{\"name\":\"at\",\"args\":[\"partner\",\"back\"]}],\"effects\":[],\"outcome_label\":\"lifted\",\"negative_preconditions\":[{\"name\":\"raised\",\"args\":[\"crate\"]}],\"outcomes\":[{\"label\":\"lifted\",\"effects\":[{\"predicate\":{\"name\":\"raised\",\"args\":[\"crate\"]},\"positive\":true}]},{\"label\":\"dropped\",\"effects\":[]}],\"outcome_cases\":[{\"when\":[{\"literal\":{\"name\":\"heavy\",\"args\":[\"crate\"]},\"positive\":true}],\"distribution\":{\"deterministic\":\"dropped\"}},{\"when\":[],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"lift_success\"},\"then\":\"lifted\",\"else\":\"dropped\"}}}],\"observation_cases\":{\"status\":[{\"when\":[{\"literal\":{\"name\":\"raised\",\"args\":[\"crate\"]},\"positive\":true}],\"distribution\":{\"deterministic\":\"ok\"}},{\"when\":[],\"distribution\":{\"deterministic\":\"fail\"}}]}},{\"name\":\"Probe\",\"parameters\":[\"agent\",\"crate\"],\"parameter_types\":[\"agent\",\"crate\"],\"preconditions\":[{\"name\":\"at\",\"args\":[\"agent\",\"front\"]}],\"effects\":[],\"outcome_label\":\"probed\",\"observation_cases\":{\"status\":[{\"when\":[],\"distribution\":{\"deterministic\":\"ok\"}}],\"strain\":[{\"when\":[{\"literal\":{\"name\":\"heavy\",\"args\":[\"crate\"]},\"positive\":true}],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"probe_accuracy\"},\"then\":\"strains\",\"else\":\"easy\"}}},{\"when\":[],\"distribution\":{\"bernoulli\":{\"p\":{\"parameter\":\"probe_accuracy\"},\"then\":\"easy\",\"else\":\"strains\"}}}]}}]},\"problem\":{\"name\":\"raise-the-crate\",\"domain\":\"crate-lift-po\",\"objects\":[],\"init\":[{\"name\":\"grip\",\"args\":[\"front\"]},{\"name\":\"grip\",\"args\":[\"back\"]}],\"hidden_prior\":[{\"literal\":{\"name\":\"heavy\",\"args\":[\"crate\"]},\"p\":{\"parameter\":\"heavy_prior\"}}],\"goal\":[{\"name\":\"raised\",\"args\":[\"crate\"]}],\"rewards\":{\"step\":\"-1/50\",\"skills\":{\"Probe\":\"-1/10\"},\"goal\":\"2\"},\"discount\":\"9/10\"}}"
+      }
+    ],
+    "signature": {
+      "instructions": "You are a POMDP modeling engineer. Convert the ENVIRONMENT DESCRIPTION below into a factored\nPOMDP model written ONLY as one JSON object {\"domain\": {...}, \"problem\": {...}} in the MAAOS\nskill-IR format. A deterministic compiler (not you) turns it into tables for a POMDP solver, and\na statistical fitter (not you) estimates every probability from data. YOUR JOB IS STRUCTURE.\n\nFORMAT RULES\nF1  domain keys: name, model_version, types, constants, parameters, observation_channels,\n    predicates, skills, provenance. problem keys: name, domain, objects, init, hidden_prior,\n    goal, rewards, discount.\nF2  Every object you mention is a constant {\"name\",\"type\"} with a declared type.\nF3  Predicates are boolean: {\"name\",\"param_types\",\"fluent\"} plus \"observable\": false for a\n    variable that is never shown. fluent=false means the value never changes.\nF4  A skill has \"name\", \"parameters\" (names), \"parameter_types\" (parallel types),\n    \"preconditions\" and optional \"negative_preconditions\" (lists of {\"name\",\"args\"}), and either\n    plain \"effects\" (one certain outcome) or \"outcomes\": [{\"label\",\"effects\"}] with\n    \"outcome_label\" naming the outcome a planner should hope for. An effect is\n    {\"predicate\": {\"name\",\"args\"}, \"positive\": true|false}. Args are parameter names or constants.\nF5  \"*\" as an argument is allowed ONLY in a negative precondition (no grounding holds) or a\n    negative effect (delete every grounding), e.g. not at(agent, *) before adding at(agent, place).\nF6  Hidden (observable=false) predicates must NEVER appear in preconditions. They may appear in\n    outcome cases, effects and observation cases.\nF7  With two or more outcomes, give \"outcome_cases\": a decision list\n    [{\"when\": [atoms], \"distribution\": D}], first match wins, the LAST case has \"when\": [].\n    An atom is {\"literal\": {\"name\",\"args\"}, \"positive\": bool} or {\"equals\": [parameter, constant]}.\nF8  D is {\"deterministic\": label} or\n    {\"bernoulli\": {\"p\": {\"parameter\": name}, \"then\": label1, \"else\": label2}}.\n    Every probability you were not given is a NAMED PARAMETER declared in \"parameters\" as\n    {\"name\": ..., \"prior\": {\"beta\": [\"1\", \"1\"]}}. Never write a number for it.\nF9  \"observation_channels\": [{\"name\", \"symbols\"}]; the first symbol is \"none\". A skill's\n    \"observation_cases\" is an object {channel: decision list}; conditions are read on the state\n    AFTER the skill. Positions and other observable predicates are observed automatically.\nF10 problem: \"init\" = observable ground literals true at the start (static ones included);\n    \"hidden_prior\" = [{\"literal\": {\"name\",\"args\"}, \"p\": {\"parameter\": name}}];\n    \"goal\" = ground literals; \"rewards\" = {\"step\": r, \"skills\": {skill: extra}, \"goal\": r} as\n    exact fraction strings such as \"-1/50\"; \"discount\" as a fraction string.\nF11 Use exactly the skill names and parameters given in the description. Output ONLY the JSON.",
+      "fields": [
+        {
+          "prefix": "Description:",
+          "description": "the environment description, the sole input"
+        },
+        {
+          "prefix": "Model Json:",
+          "description": "one JSON object {\"domain\": {...}, \"problem\": {...}} in the MAAOS skill-IR format, nothing else"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.12",
+      "dspy": "3.1.0",
+      "cloudpickle": "3.1"
+    }
+  }
+}

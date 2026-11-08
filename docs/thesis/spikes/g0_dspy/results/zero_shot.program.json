@@ -1,0 +1,28 @@
+{
+  "write": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "You are a POMDP modeling engineer. Convert the ENVIRONMENT DESCRIPTION below into a factored\nPOMDP model written ONLY as one JSON object {\"domain\": {...}, \"problem\": {...}} in the MAAOS\nskill-IR format. A deterministic compiler (not you) turns it into tables for a POMDP solver, and\na statistical fitter (not you) estimates every probability from data. YOUR JOB IS STRUCTURE.\n\nFORMAT RULES\nF1  domain keys: name, model_version, types, constants, parameters, observation_channels,\n    predicates, skills, provenance. problem keys: name, domain, objects, init, hidden_prior,\n    goal, rewards, discount.\nF2  Every object you mention is a constant {\"name\",\"type\"} with a declared type.\nF3  Predicates are boolean: {\"name\",\"param_types\",\"fluent\"} plus \"observable\": false for a\n    variable that is never shown. fluent=false means the value never changes.\nF4  A skill has \"name\", \"parameters\" (names), \"parameter_types\" (parallel types),\n    \"preconditions\" and optional \"negative_preconditions\" (lists of {\"name\",\"args\"}), and either\n    plain \"effects\" (one certain outcome) or \"outcomes\": [{\"label\",\"effects\"}] with\n    \"outcome_label\" naming the outcome a planner should hope for. An effect is\n    {\"predicate\": {\"name\",\"args\"}, \"positive\": true|false}. Args are parameter names or constants.\nF5  \"*\" as an argument is allowed ONLY in a negative precondition (no grounding holds) or a\n    negative effect (delete every grounding), e.g. not at(agent, *) before adding at(agent, place).\nF6  Hidden (observable=false) predicates must NEVER appear in preconditions. They may appear in\n    outcome cases, effects and observation cases.\nF7  With two or more outcomes, give \"outcome_cases\": a decision list\n    [{\"when\": [atoms], \"distribution\": D}], first match wins, the LAST case has \"when\": [].\n    An atom is {\"literal\": {\"name\",\"args\"}, \"positive\": bool} or {\"equals\": [parameter, constant]}.\nF8  D is {\"deterministic\": label} or\n    {\"bernoulli\": {\"p\": {\"parameter\": name}, \"then\": label1, \"else\": label2}}.\n    Every probability you were not given is a NAMED PARAMETER declared in \"parameters\" as\n    {\"name\": ..., \"prior\": {\"beta\": [\"1\", \"1\"]}}. Never write a number for it.\nF9  \"observation_channels\": [{\"name\", \"symbols\"}]; the first symbol is \"none\". A skill's\n    \"observation_cases\" is an object {channel: decision list}; conditions are read on the state\n    AFTER the skill. Positions and other observable predicates are observed automatically.\nF10 problem: \"init\" = observable ground literals true at the start (static ones included);\n    \"hidden_prior\" = [{\"literal\": {\"name\",\"args\"}, \"p\": {\"parameter\": name}}];\n    \"goal\" = ground literals; \"rewards\" = {\"step\": r, \"skills\": {skill: extra}, \"goal\": r} as\n    exact fraction strings such as \"-1/50\"; \"discount\" as a fraction string.\nF11 Use exactly the skill names and parameters given in the description. Output ONLY the JSON.",
+      "fields": [
+        {
+          "prefix": "Description:",
+          "description": "the environment description, the sole input"
+        },
+        {
+          "prefix": "Model Json:",
+          "description": "one JSON object {\"domain\": {...}, \"problem\": {...}} in the MAAOS skill-IR format, nothing else"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.12",
+      "dspy": "3.1.0",
+      "cloudpickle": "3.1"
+    }
+  }
+}
